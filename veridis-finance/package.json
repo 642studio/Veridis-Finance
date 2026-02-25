@@ -1,0 +1,26 @@
+{
+  "name": "veridis-finance",
+  "version": "1.0.0",
+  "description": "Production-ready finance microservice built with Fastify and PostgreSQL",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^9.2.1",
+    "dotenv": "^16.4.5",
+    "fast-xml-parser": "^5.0.8",
+    "fastify": "^5.7.4",
+    "jsonwebtoken": "^9.0.2",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.12.0",
+    "pino": "^9.4.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.23.8"
+  }
+}
