@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Edit3, Plus, Trash2 } from "lucide-react";
 
@@ -19,7 +21,8 @@ import {
 } from "@/components/ui/table";
 import { useNotify } from "@/hooks/use-notify";
 import { ApiClientError, clientApiFetch } from "@/lib/api-client";
-import type { ApiEnvelope, Vendor, VendorType } from "@/types/finance";
+import { findBestContactMatchId } from "@/lib/contact-matching";
+import type { ApiEnvelope, Contact, Vendor, VendorType } from "@/types/finance";
 
 interface VendorFormState {
   name: string;
@@ -172,8 +175,10 @@ function VendorModal({
 
 export default function DashboardVendorsPage() {
   const notify = useNotify();
+  const searchParams = useSearchParams();
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -182,6 +187,17 @@ export default function DashboardVendorsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [form, setForm] = useState<VendorFormState>(EMPTY_FORM);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const loadContacts = useCallback(async () => {
+    try {
+      const response = await clientApiFetch<ApiEnvelope<Contact[]>>(
+        "/api/finance/contacts?sort_by=name&sort_order=asc"
+      );
+      setContacts(response.data);
+    } catch {
+      setContacts([]);
+    }
+  }, []);
 
   const loadVendors = useCallback(async () => {
     setIsLoading(true);
@@ -205,6 +221,30 @@ export default function DashboardVendorsPage() {
   useEffect(() => {
     loadVendors();
   }, [loadVendors]);
+
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
+
+  useEffect(() => {
+    const vendorId = searchParams.get("vendorId");
+    if (!vendorId || vendors.length === 0) {
+      return;
+    }
+
+    const match = vendors.find((vendor) => vendor.id === vendorId);
+    if (!match) {
+      return;
+    }
+
+    if (editingVendor?.id === match.id && isModalOpen) {
+      return;
+    }
+
+    setEditingVendor(match);
+    setForm(toForm(match));
+    setIsModalOpen(true);
+  }, [editingVendor?.id, isModalOpen, searchParams, vendors]);
 
   const openCreateModal = () => {
     setEditingVendor(null);
@@ -323,6 +363,20 @@ export default function DashboardVendorsPage() {
     () => vendors.filter((vendor) => vendor.active).length,
     [vendors]
   );
+  const contactByVendorId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const vendor of vendors) {
+      const matchId = findBestContactMatchId({
+        contacts,
+        preferredTypes: ["vendor"],
+        candidates: [vendor.name],
+      });
+      if (matchId) {
+        map.set(vendor.id, matchId);
+      }
+    }
+    return map;
+  }, [contacts, vendors]);
 
   return (
     <div className="space-y-6">
@@ -384,6 +438,19 @@ export default function DashboardVendorsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex flex-wrap justify-end gap-2">
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link
+                              href={
+                                contactByVendorId.has(vendor.id)
+                                  ? `/dashboard/transactions?contact_id=${contactByVendorId.get(
+                                      vendor.id
+                                    )}`
+                                  : `/dashboard/transactions?vendor_id=${vendor.id}`
+                              }
+                            >
+                              Transactions
+                            </Link>
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"

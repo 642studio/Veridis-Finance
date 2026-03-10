@@ -24,7 +24,58 @@ Production-ready SaaS frontend for **veridis-finance** built with **Next.js 14**
 - `/dashboard/invoices`
 - `/dashboard/reports`
 - `/dashboard/planning`
+- `/dashboard/accounts`
+- `/dashboard/contacts`
+- `/dashboard/categories`
+- `/dashboard/members`
+- `/dashboard/clients`
+- `/dashboard/vendors`
 - `/dashboard/settings`
+
+## Phase 1 Frontend (Core Operational Accounting)
+
+The frontend now supports the backend Phase 1 model:
+
+- Transaction create/edit now supports:
+  - `account_id`
+  - `contact_id`
+  - `status`
+  - `source`
+  - `tags`
+- Transactions table includes:
+  - account, status, source, linked entity badges
+- Transactions filters include:
+  - member, contact, account, status, source
+- Transactions now include split management modal:
+  - list splits
+  - create split
+  - edit split
+  - delete split
+- Dashboard overview now includes recurring-candidate insights:
+  - pulls from `/api/finance/transactions/recurring-candidates`
+  - shows frequency, confidence, and projected next occurrence
+- Dashboard overview includes recurring alerts panel:
+  - pulls from `/api/finance/transactions/recurring-alerts`
+  - highlights `due_soon` and `overdue` expected recurring movements
+- Recurring management actions in dashboard:
+  - `Approve` candidate as persistent rule
+  - `Suppress 30d` to mute alerts
+  - `Unsuppress` from suppressed rules list
+- New operational CRUD sections:
+  - Accounts
+  - Contacts
+  - Categories + Subcategories
+- Accounts, Contacts, and Categories now include:
+  - text search
+  - client-side pagination
+  - page size selector
+- Added Next.js API proxy handlers for:
+  - `/api/finance/accounts*`
+  - `/api/finance/contacts*`
+  - `/api/finance/categories*`
+  - `/api/finance/subcategories*`
+  - `/api/finance/transactions/:transactionId/splits`
+  - `/api/finance/transaction-splits/:splitId`
 
 ## Implemented UI Components
 

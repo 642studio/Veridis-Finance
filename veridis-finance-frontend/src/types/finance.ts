@@ -1,6 +1,7 @@
 export type UserRole = "owner" | "admin" | "ops" | "viewer";
 export type PlanTier = "free" | "pro" | "enterprise";
 export type TransactionType = "income" | "expense";
+export type TransactionStatus = "posted" | "pending" | "reconciled" | "void";
 export type InvoiceStatus = "pending" | "paid";
 export type BankStatementStatus = "preview" | "confirmed";
 export type SupportedBank = "santander" | "bbva" | "banorte";
@@ -21,6 +22,22 @@ export type VendorType =
   | "utilities"
   | "payroll"
   | "other";
+export type AccountType =
+  | "bank"
+  | "cash"
+  | "credit_card"
+  | "wallet"
+  | "accounts_receivable"
+  | "accounts_payable"
+  | "internal";
+export type AccountStatus = "active" | "inactive" | "archived";
+export type ContactType =
+  | "customer"
+  | "vendor"
+  | "employee"
+  | "contractor"
+  | "internal";
+export type ContactStatus = "active" | "inactive";
 
 export interface SessionClaims {
   user_id: string;
@@ -56,6 +73,16 @@ export interface AuthResponseData {
 export interface Transaction {
   id: string;
   organization_id: string;
+  account_id?: string | null;
+  account_name?: string | null;
+  contact_id?: string | null;
+  contact_name?: string | null;
+  contact_type?: ContactType | null;
+  currency?: string;
+  status?: TransactionStatus;
+  tags?: string[];
+  source?: string | null;
+  original_description?: string | null;
   type: TransactionType;
   amount: number;
   category: string;
@@ -72,6 +99,88 @@ export interface Transaction {
   match_confidence?: number | null;
   match_method?: "rule" | "fuzzy" | "manual" | null;
   transaction_date: string;
+  created_at: string;
+}
+
+export interface Account {
+  id: string;
+  organization_id: string;
+  name: string;
+  type: AccountType;
+  bank_name?: string | null;
+  account_number_last4?: string | null;
+  credit_limit?: number | null;
+  cut_day?: number | null;
+  due_day?: number | null;
+  balance: number;
+  currency: string;
+  status: AccountStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Contact {
+  id: string;
+  organization_id: string;
+  type: ContactType;
+  name: string;
+  business_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  rfc?: string | null;
+  notes?: string | null;
+  tags: string[];
+  status: ContactStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Category {
+  id: string;
+  organization_id: string;
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Subcategory {
+  id: string;
+  organization_id: string;
+  category_id: string;
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  category_name?: string | null;
+}
+
+export interface TransactionSplit {
+  id: string;
+  organization_id: string;
+  transaction_id: string;
+  category_id: string;
+  subcategory_id?: string | null;
+  amount: number;
+  created_at: string;
+  updated_at: string;
+  category_name?: string | null;
+  subcategory_name?: string | null;
+}
+
+export interface TransactionAuditEntry {
+  id: string;
+  organization_id: string;
+  transaction_id: string;
+  action: "create" | "update" | "delete";
+  actor_user_id?: string | null;
+  actor_role?: string | null;
+  source?: string | null;
+  changes: Record<string, unknown>;
   created_at: string;
 }
 
@@ -120,6 +229,10 @@ export interface Invoice {
   total: number;
   status: InvoiceStatus;
   invoice_date: string;
+  paid_at?: string | null;
+  payment_method?: string | null;
+  payment_reference?: string | null;
+  updated_at?: string;
   created_at: string;
 }
 
@@ -150,6 +263,59 @@ export interface CashflowProjection {
   projected_end_month: number;
   estimated_negative_date: string | null;
   trend: CashflowTrend;
+}
+
+export interface RecurringTransactionCandidate {
+  key: string;
+  type: TransactionType;
+  amount: number;
+  category: string;
+  normalized_description: string;
+  sample_descriptions: string[];
+  occurrences: number;
+  average_interval_days: number;
+  frequency: string;
+  last_transaction_date: string;
+  next_expected_date: string;
+  confidence: number;
+  rule_id?: string | null;
+  rule_status?: "approved" | "suppressed" | null;
+  suppress_until?: string | null;
+  is_suppressed?: boolean;
+}
+
+export interface RecurringTransactionAlert extends RecurringTransactionCandidate {
+  days_until_due: number;
+}
+
+export interface RecurringAlertsPayload {
+  generated_at: string;
+  due_window_days: number;
+  overdue_grace_days: number;
+  total_monitored: number;
+  due_soon: RecurringTransactionAlert[];
+  overdue: RecurringTransactionAlert[];
+}
+
+export interface RecurringRule {
+  id: string;
+  organization_id: string;
+  candidate_key: string;
+  status: "approved" | "suppressed";
+  type: TransactionType;
+  amount: number;
+  category: string | null;
+  normalized_description: string;
+  frequency: string;
+  average_interval_days: number;
+  next_expected_date: string | null;
+  confidence_score: number;
+  suppress_until: string | null;
+  notes: string | null;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface ApiEnvelope<T> {

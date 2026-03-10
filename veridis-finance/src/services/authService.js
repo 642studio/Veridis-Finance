@@ -85,6 +85,22 @@ async function register(payload) {
     );
 
     const organization = organizationResult.rows[0];
+
+    await client.query(
+      `
+        INSERT INTO finance.accounts (
+          organization_id,
+          name,
+          type,
+          currency,
+          status
+        )
+        VALUES ($1, 'General', 'bank'::finance.account_type, 'MXN', 'active'::finance.account_status)
+        ON CONFLICT DO NOTHING
+      `,
+      [organization.organization_id]
+    );
+
     const passwordHash = hashPassword(payload.password);
 
     const userResult = await client.query(

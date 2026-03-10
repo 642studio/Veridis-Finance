@@ -151,6 +151,14 @@ function parseInteger(value) {
   return Number.isInteger(intValue) ? intValue : null;
 }
 
+function round2(value) {
+  if (!Number.isFinite(value)) {
+    return value;
+  }
+
+  return Number(value.toFixed(2));
+}
+
 function parseBoolean(value, defaultValue = true) {
   if (value === null || value === undefined || String(value).trim() === '') {
     return defaultValue;
@@ -655,10 +663,10 @@ function parseProductsSheet(matrix, errors, sheetName = 'PRODUCTS_INPUT') {
         header.columns.category >= 0
           ? String(row[header.columns.category] || '').trim().slice(0, 120) || null
           : null,
-      base_monthly_units: Number(baseUnits),
-      price: Number(price),
-      growth_percent_annual: Number(annualGrowthPercent),
-      cogs_percent: Number(cogs),
+      base_monthly_units: round2(Number(baseUnits)),
+      price: round2(Number(price)),
+      growth_percent_annual: round2(Number(annualGrowthPercent)),
+      cogs_percent: round2(Number(cogs)),
       active:
         header.columns.active >= 0
           ? activeLooksRecurring

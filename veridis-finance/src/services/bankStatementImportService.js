@@ -4,6 +4,7 @@ const {
   learnRuleFromManualCategorization,
   normalizeDescription,
 } = require('../modules/finance/intelligence/classification.service');
+const { getDefaultAccount } = require('./financeAccountsService');
 
 function notFound(message) {
   const error = new Error(message);
@@ -153,13 +154,17 @@ function normalizeImportedTransaction(transaction, fallbackBank) {
   const memberId = toUuidOrNull(transaction?.member_id);
   const clientId = toUuidOrNull(transaction?.client_id);
   const vendorId = toUuidOrNull(transaction?.vendor_id);
+  const contactId = toUuidOrNull(transaction?.contact_id);
 
-  const linkedEntityCount = [memberId, clientId, vendorId].filter(Boolean).length;
+  const linkedEntityCount = [memberId, clientId, vendorId, contactId].filter(
+    Boolean
+  ).length;
   if (linkedEntityCount > 1) {
     return null;
   }
 
   const finalEntityLinks = {
+    contact_id: contactId,
     member_id: memberId,
     client_id: clientId,
     vendor_id: vendorId,
@@ -168,7 +173,10 @@ function normalizeImportedTransaction(transaction, fallbackBank) {
   const initialMatchMethod = normalizeMatchMethod(transaction?.match_method);
   const inferredMatchMethod =
     initialMatchMethod ||
-    (finalEntityLinks.member_id || finalEntityLinks.client_id || finalEntityLinks.vendor_id
+    (finalEntityLinks.contact_id ||
+    finalEntityLinks.member_id ||
+    finalEntityLinks.client_id ||
+    finalEntityLinks.vendor_id
       ? 'manual'
       : null);
   const initialMatchConfidence = normalizeMatchConfidence(transaction?.match_confidence);
@@ -188,9 +196,11 @@ function normalizeImportedTransaction(transaction, fallbackBank) {
     bank: trimLength(transaction?.bank || fallbackBank, 80) || trimLength(fallbackBank, 80),
     category_id: toUuidOrNull(transaction?.category_id),
     subcategory_id: toUuidOrNull(transaction?.subcategory_id),
+    contact_id: finalEntityLinks.contact_id,
     member_id: finalEntityLinks.member_id,
     client_id: finalEntityLinks.client_id,
     vendor_id: finalEntityLinks.vendor_id,
+    contact_name: trimLength(transaction?.contact_name, 120),
     member_name: trimLength(transaction?.member_name, 120),
     client_name: trimLength(transaction?.client_name, 120),
     vendor_name: trimLength(transaction?.vendor_name, 120),
@@ -366,9 +376,14 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
     }
 
     const seenKeys = new Set();
+    const defaultAccount = await getDefaultAccount({
+      organization_id: organizationId,
+      client,
+    });
     const memberNameById = new Map();
     const clientNameById = new Map();
     const vendorNameById = new Map();
+    const contactNameById = new Map();
     let insertedCount = 0;
     let skippedDuplicates = 0;
     let skippedInvalid = 0;
@@ -398,6 +413,33 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
       const fullName = String(memberResult.rows[0]?.full_name || '').trim() || null;
       memberNameById.set(memberId, fullName);
       return fullName;
+    }
+
+    async function resolveContactName(contactId) {
+      if (!contactId) {
+        return null;
+      }
+
+      if (contactNameById.has(contactId)) {
+        return contactNameById.get(contactId);
+      }
+
+      const contactQuery = {
+        text: `
+          SELECT name
+          FROM finance.contacts
+          WHERE organization_id = $1
+            AND id = $2
+            AND status = 'active'
+          LIMIT 1
+        `,
+        values: [organizationId, contactId],
+      };
+
+      const contactResult = await client.query(contactQuery);
+      const name = String(contactResult.rows[0]?.name || '').trim() || null;
+      contactNameById.set(contactId, name);
+      return name;
     }
 
     async function resolveClientName(clientId) {
@@ -541,8 +583,11 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
         normalized.client_name || (await resolveClientName(normalized.client_id));
       const resolvedVendorName =
         normalized.vendor_name || (await resolveVendorName(normalized.vendor_id));
+      const resolvedContactName =
+        normalized.contact_name || (await resolveContactName(normalized.contact_id));
 
       const resolvedEntityName =
+        resolvedContactName ||
         resolvedMemberName ||
         resolvedClientName ||
         resolvedVendorName ||
@@ -582,6 +627,13 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
         text: `
           INSERT INTO finance.transactions (
             organization_id,
+            account_id,
+            contact_id,
+            currency,
+            status,
+            tags,
+            source,
+            original_description,
             type,
             amount,
             category,
@@ -594,10 +646,20 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
             match_method,
             transaction_date
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          VALUES (
+            $1, $2, $3, $4, $5, $6::text[], $7, $8,
+            $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+          )
         `,
         values: [
           organizationId,
+          defaultAccount.id,
+          normalized.contact_id,
+          'MXN',
+          'posted',
+          [],
+          'bank_statement_import',
+          normalized.raw_description,
           normalized.type,
           normalized.amount,
           normalized.category,

@@ -13,6 +13,10 @@ const aiProvidersRoutes = require('./routes/aiProviders');
 const clientsRoutes = require('./routes/clients');
 const vendorsRoutes = require('./routes/vendors');
 const planningRoutes = require('./routes/planning');
+const accountsRoutes = require('./routes/accounts');
+const contactsRoutes = require('./routes/contacts');
+const categoriesRoutes = require('./routes/categories');
+const transactionSplitsRoutes = require('./routes/transactionSplits');
 const logger = require('./logger');
 
 function buildApp() {
@@ -65,12 +69,20 @@ function buildApp() {
   app.register(membersRoutes, { prefix: '/api/finance' });
   app.register(clientsRoutes, { prefix: '/api/finance' });
   app.register(vendorsRoutes, { prefix: '/api/finance' });
+  app.register(accountsRoutes, { prefix: '/api/finance' });
+  app.register(contactsRoutes, { prefix: '/api/finance' });
+  app.register(categoriesRoutes, { prefix: '/api/finance' });
+  app.register(transactionSplitsRoutes, { prefix: '/api/finance' });
   app.register(planningRoutes, { prefix: '/api' });
 
   // Canonical SaaS endpoints requested for entity modules and transactions.
   app.register(transactionsRoutes, { prefix: '/api' });
   app.register(clientsRoutes, { prefix: '/api' });
   app.register(vendorsRoutes, { prefix: '/api' });
+  app.register(accountsRoutes, { prefix: '/api' });
+  app.register(contactsRoutes, { prefix: '/api' });
+  app.register(categoriesRoutes, { prefix: '/api' });
+  app.register(transactionSplitsRoutes, { prefix: '/api' });
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, 'Request failed');

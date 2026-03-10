@@ -16,6 +16,12 @@ SaaS-ready, multi-tenant finance microservice built with Node.js, Fastify, Postg
 - JWT auth with tenant claims
 - Organization + owner registration flow
 - Role-based access control (`owner`, `admin`, `ops`, `viewer`)
+- Operational accounting core (Phase 1):
+  - financial accounts
+  - unified contacts
+  - categories and subcategories
+  - transaction split support
+  - extended transaction metadata (account/contact/currency/status/tags/source)
 - Subscription plan logic:
   - `free`: max 200 transactions/month
   - `pro`: unlimited
@@ -56,6 +62,10 @@ veridis-finance/
       bankStatements.js
       intelligence.js
       aiProviders.js
+      accounts.js
+      contacts.js
+      categories.js
+      transactionSplits.js
       planning.js
     controllers/
       authController.js
@@ -65,6 +75,10 @@ veridis-finance/
       bankStatementsController.js
       intelligenceController.js
       aiProvidersController.js
+      financeAccountsController.js
+      contactsController.js
+      categoriesController.js
+      transactionSplitsController.js
       planningController.js
     services/
       authService.js
@@ -76,6 +90,10 @@ veridis-finance/
       invoicesService.js
       cfdiParserService.js
       bankStatementImportService.js
+      financeAccountsService.js
+      contactsService.js
+      categoriesService.js
+      transactionSplitsService.js
       planningService.js
       bankStatements/
         parserRegistry.js
@@ -167,6 +185,11 @@ Main tables:
 - `finance.bank_statement_imports`
 - `finance.members`
 - `finance.transaction_rules`
+- `finance.accounts`
+- `finance.contacts`
+- `finance.categories`
+- `finance.subcategories`
+- `finance.transaction_splits`
 
 Planning v3 (current):
 
@@ -276,6 +299,28 @@ Protected finance:
 - `GET /health`
 - `POST /api/finance/transactions`
 - `GET /api/finance/transactions`
+- `PUT /api/finance/transactions/:id`
+- `DELETE /api/finance/transactions/:id`
+- `GET /api/finance/accounts`
+- `POST /api/finance/accounts`
+- `PUT /api/finance/accounts/:id`
+- `DELETE /api/finance/accounts/:id`
+- `GET /api/finance/contacts`
+- `POST /api/finance/contacts`
+- `PUT /api/finance/contacts/:id`
+- `DELETE /api/finance/contacts/:id`
+- `GET /api/finance/categories`
+- `POST /api/finance/categories`
+- `PUT /api/finance/categories/:categoryId`
+- `DELETE /api/finance/categories/:categoryId`
+- `GET /api/finance/categories/:categoryId/subcategories`
+- `POST /api/finance/categories/:categoryId/subcategories`
+- `PUT /api/finance/subcategories/:subcategoryId`
+- `DELETE /api/finance/subcategories/:subcategoryId`
+- `GET /api/finance/transactions/:transactionId/splits`
+- `POST /api/finance/transactions/:transactionId/splits`
+- `PUT /api/finance/transaction-splits/:splitId`
+- `DELETE /api/finance/transaction-splits/:splitId`
 - `GET /api/finance/report/month?month=MM&year=YYYY`
 - `POST /api/finance/invoices`
 - `POST /api/finance/invoices/upload`
@@ -317,6 +362,51 @@ Planning import v3 requirements:
 API-key automation (enterprise only):
 
 - `POST /api/finance/transactions/automation`
+
+Canonical aliases (same handlers, no `/finance` prefix):
+
+- `/api/transactions`
+- `/api/accounts`
+- `/api/contacts`
+- `/api/categories`
+- `/api/subcategories/:subcategoryId`
+- `/api/transactions/:transactionId/splits`
+- `/api/transaction-splits/:splitId`
+
+## Phase 1 Operational Core
+
+Phase 1 is now implemented with tenant-safe scoping by `organization_id`.
+
+- Transactions now include:
+  - `account_id` (required, auto-fallback to default account if omitted)
+  - `contact_id` (optional)
+  - `currency`, `status`, `tags`, `source`, `original_description`
+- Single entity guard enforced on transactions:
+  - only one of `contact_id`, `member_id`, `client_id`, `vendor_id`
+- Transaction audit trail:
+  - logs `create`, `update`, `delete`
+  - endpoint: `GET /api/transactions/:id/history`
+- Recurring detection:
+  - endpoint: `GET /api/transactions/recurring-candidates`
+  - pattern engine groups by normalized description + amount + type
+  - includes `frequency`, `confidence`, and `next_expected_date`
+  - alerts endpoint: `GET /api/transactions/recurring-alerts`
+    with `due_soon` and `overdue` buckets
+  - persistent rules:
+    - `GET /api/transactions/recurring-rules`
+    - `POST /api/transactions/recurring-rules/approve`
+    - `POST /api/transactions/recurring-rules/suppress`
+    - `POST /api/transactions/recurring-rules/:id/unsuppress`
+- Soft delete preserved:
+  - transactions use `deleted_at`
+  - accounts/contacts/categories/subcategories use status or `active=false`
+- Bank statement confirm import now inserts transactions with required `account_id`.
+- If an organization has no active accounts yet, service auto-creates `General`.
+- Detailed step-by-step guide:
+  - `docs/phase-1-core-operational.md`
+- Automated smoke test (server must be running):
+  - `npm run smoke:phase1`
+  - optional base URL override: `API_BASE_URL=http://127.0.0.1:4000 npm run smoke:phase1`
 
 ## Automation API Key Endpoint
 

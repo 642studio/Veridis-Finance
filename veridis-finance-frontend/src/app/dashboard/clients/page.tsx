@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Edit3, Plus, Trash2 } from "lucide-react";
 
@@ -19,7 +21,8 @@ import {
 } from "@/components/ui/table";
 import { useNotify } from "@/hooks/use-notify";
 import { ApiClientError, clientApiFetch } from "@/lib/api-client";
-import type { ApiEnvelope, Client } from "@/types/finance";
+import { findBestContactMatchId } from "@/lib/contact-matching";
+import type { ApiEnvelope, Client, Contact } from "@/types/finance";
 
 interface ClientFormState {
   name: string;
@@ -185,8 +188,19 @@ function ClientModal({
 
 export default function DashboardClientsPage() {
   const notify = useNotify();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldRedirectToContacts = searchParams.toString().length === 0;
+
+  useEffect(() => {
+    if (!shouldRedirectToContacts) {
+      return;
+    }
+    router.replace("/dashboard/contacts?type=customer");
+  }, [router, shouldRedirectToContacts]);
 
   const [clients, setClients] = useState<Client[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -196,7 +210,27 @@ export default function DashboardClientsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const loadContacts = useCallback(async () => {
+    if (shouldRedirectToContacts) {
+      return;
+    }
+
+    try {
+      const response = await clientApiFetch<ApiEnvelope<Contact[]>>(
+        "/api/finance/contacts?sort_by=name&sort_order=asc"
+      );
+      setContacts(response.data);
+    } catch {
+      setContacts([]);
+    }
+  }, [shouldRedirectToContacts]);
+
   const loadClients = useCallback(async () => {
+    if (shouldRedirectToContacts) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const search = new URLSearchParams();
@@ -213,11 +247,35 @@ export default function DashboardClientsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [notify, showInactive]);
+  }, [notify, shouldRedirectToContacts, showInactive]);
 
   useEffect(() => {
     loadClients();
   }, [loadClients]);
+
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
+
+  useEffect(() => {
+    const clientId = searchParams.get("clientId");
+    if (!clientId || clients.length === 0) {
+      return;
+    }
+
+    const match = clients.find((client) => client.id === clientId);
+    if (!match) {
+      return;
+    }
+
+    if (editingClient?.id === match.id && isModalOpen) {
+      return;
+    }
+
+    setEditingClient(match);
+    setForm(toForm(match));
+    setIsModalOpen(true);
+  }, [clients, editingClient?.id, isModalOpen, searchParams]);
 
   const openCreateModal = () => {
     setEditingClient(null);
@@ -336,6 +394,24 @@ export default function DashboardClientsPage() {
     () => clients.filter((client) => client.active).length,
     [clients]
   );
+  const contactByClientId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const client of clients) {
+      const matchId = findBestContactMatchId({
+        contacts,
+        preferredTypes: ["customer"],
+        candidates: [client.business_name, client.name, client.email],
+      });
+      if (matchId) {
+        map.set(client.id, matchId);
+      }
+    }
+    return map;
+  }, [clients, contacts]);
+
+  if (shouldRedirectToContacts) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -408,6 +484,19 @@ export default function DashboardClientsPage() {
                       <TableCell className="max-w-[280px] truncate">{client.notes || "-"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex flex-wrap justify-end gap-2">
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link
+                              href={
+                                contactByClientId.has(client.id)
+                                  ? `/dashboard/transactions?contact_id=${contactByClientId.get(
+                                      client.id
+                                    )}`
+                                  : `/dashboard/transactions?client_id=${client.id}`
+                              }
+                            >
+                              Transactions
+                            </Link>
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"

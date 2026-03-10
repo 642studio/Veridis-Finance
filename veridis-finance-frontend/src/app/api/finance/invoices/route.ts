@@ -9,14 +9,26 @@ function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
-export async function GET() {
-  return NextResponse.json(
+export async function GET(request: Request) {
+  const token = getAuthTokenFromCookies();
+  if (!token) {
+    return unauthorized();
+  }
+
+  const url = new URL(request.url);
+  const backendResponse = await fetch(
+    backendUrl(`/api/finance/invoices${url.search}`),
     {
-      error:
-        "Backend does not expose invoice list endpoint yet. Uploads are shown client-side.",
-    },
-    { status: 501 }
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    }
   );
+
+  const payload = await parseBackendBody(backendResponse);
+  return NextResponse.json(payload, { status: backendResponse.status });
 }
 
 export async function POST(request: Request) {

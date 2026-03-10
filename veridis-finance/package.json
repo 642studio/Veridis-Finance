@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "smoke:phase1": "node scripts/smoke-phase1.js"
   },
   "dependencies": {
     "@fastify/multipart": "^9.2.1",

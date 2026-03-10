@@ -18,6 +18,22 @@ const uploadInvoiceFormSchema = z.object({
   organization_id: z.string().uuid().optional(),
 });
 
+const listInvoicesQuerySchema = z.object({
+  status: z.enum(['pending', 'paid']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+const invoiceParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+const updateInvoiceStatusSchema = z.object({
+  status: z.enum(['pending', 'paid']),
+  payment_method: z.string().trim().max(120).optional().nullable(),
+  payment_reference: z.string().trim().max(255).optional().nullable(),
+});
+
 function badRequest(message) {
   const error = new Error(message);
   error.statusCode = 400;
@@ -33,6 +49,20 @@ async function createInvoice(request, reply) {
   });
 
   reply.status(201).send({ data: created });
+}
+
+async function listInvoices(request, reply) {
+  const query = listInvoicesQuerySchema.parse(request.query || {});
+  const organizationId = resolveOrganizationId(request);
+
+  const rows = await invoicesService.listInvoices({
+    organization_id: organizationId,
+    status: query.status,
+    limit: query.limit,
+    offset: query.offset,
+  });
+
+  reply.send({ data: rows });
 }
 
 async function uploadInvoice(request, reply) {
@@ -107,7 +137,35 @@ async function uploadInvoice(request, reply) {
   reply.status(201).send({ data: created });
 }
 
+async function updateInvoiceStatus(request, reply) {
+  const params = invoiceParamsSchema.parse(request.params || {});
+  const payload = updateInvoiceStatusSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+
+  const updated = await invoicesService.updateInvoiceStatus({
+    organization_id: organizationId,
+    invoice_id: params.id,
+    status: payload.status,
+    payment_method: payload.payment_method,
+    payment_reference: payload.payment_reference,
+  });
+
+  request.log.info(
+    {
+      source: 'invoice_status_update',
+      organization_id: organizationId,
+      invoice_id: updated.id,
+      status: updated.status,
+    },
+    'Invoice status updated'
+  );
+
+  reply.send({ data: updated });
+}
+
 module.exports = {
+  listInvoices,
   createInvoice,
   uploadInvoice,
+  updateInvoiceStatus,
 };

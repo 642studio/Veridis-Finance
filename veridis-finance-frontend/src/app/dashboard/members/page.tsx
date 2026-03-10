@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConfirmModal } from "@/components/common/confirm-modal";
@@ -18,8 +20,9 @@ import {
 } from "@/components/ui/table";
 import { useNotify } from "@/hooks/use-notify";
 import { ApiClientError, clientApiFetch } from "@/lib/api-client";
+import { findBestContactMatchId } from "@/lib/contact-matching";
 import { formatCurrency } from "@/lib/format";
-import type { ApiEnvelope, Member } from "@/types/finance";
+import type { ApiEnvelope, Contact, Member } from "@/types/finance";
 
 interface MemberFormState {
   full_name: string;
@@ -68,8 +71,19 @@ function toForm(member: Member): MemberFormState {
 
 export default function DashboardMembersPage() {
   const notify = useNotify();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldRedirectToContacts = searchParams.toString().length === 0;
+
+  useEffect(() => {
+    if (!shouldRedirectToContacts) {
+      return;
+    }
+    router.replace("/dashboard/contacts?type=internal");
+  }, [router, shouldRedirectToContacts]);
 
   const [members, setMembers] = useState<Member[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
@@ -77,7 +91,27 @@ export default function DashboardMembersPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [form, setForm] = useState<MemberFormState>(EMPTY_FORM);
 
+  const loadContacts = useCallback(async () => {
+    if (shouldRedirectToContacts) {
+      return;
+    }
+
+    try {
+      const response = await clientApiFetch<ApiEnvelope<Contact[]>>(
+        "/api/finance/contacts?sort_by=name&sort_order=asc"
+      );
+      setContacts(response.data);
+    } catch {
+      setContacts([]);
+    }
+  }, [shouldRedirectToContacts]);
+
   const loadMembers = useCallback(async () => {
+    if (shouldRedirectToContacts) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const response = await clientApiFetch<ApiEnvelope<Member[]>>(
@@ -91,11 +125,34 @@ export default function DashboardMembersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [notify]);
+  }, [notify, shouldRedirectToContacts]);
 
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
+
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
+
+  useEffect(() => {
+    const memberId = searchParams.get("memberId");
+    if (!memberId || members.length === 0) {
+      return;
+    }
+
+    const match = members.find((member) => member.id === memberId);
+    if (!match) {
+      return;
+    }
+
+    if (editingMemberId === match.id) {
+      return;
+    }
+
+    setEditingMemberId(match.id);
+    setForm(toForm(match));
+  }, [editingMemberId, members, searchParams]);
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
@@ -224,6 +281,24 @@ export default function DashboardMembersPage() {
     () => members.filter((member) => member.active).length,
     [members]
   );
+  const contactByMemberId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of members) {
+      const matchId = findBestContactMatchId({
+        contacts,
+        preferredTypes: ["internal", "employee", "contractor"],
+        candidates: [member.full_name, member.alias, member.rfc],
+      });
+      if (matchId) {
+        map.set(member.id, matchId);
+      }
+    }
+    return map;
+  }, [contacts, members]);
+
+  if (shouldRedirectToContacts) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -387,6 +462,19 @@ export default function DashboardMembersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex flex-wrap justify-end gap-2">
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link
+                              href={
+                                contactByMemberId.has(member.id)
+                                  ? `/dashboard/transactions?contact_id=${contactByMemberId.get(
+                                      member.id
+                                    )}`
+                                  : `/dashboard/transactions?member_id=${member.id}`
+                              }
+                            >
+                              Transactions
+                            </Link>
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"

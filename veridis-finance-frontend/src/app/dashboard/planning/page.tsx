@@ -171,6 +171,7 @@ export default function DashboardPlanningPage() {
   const [importEndYear, setImportEndYear] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<PlanningImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const selectedPlan = useMemo(
     () => plans.find((plan) => plan.id === selectedPlanId) || null,
@@ -781,45 +782,60 @@ export default function DashboardPlanningPage() {
     event.preventDefault();
 
     if (!importFile) {
-      notify.error({ title: "Validation", description: "Select an XLSX file first." });
+      const message = "Select an XLSX file first.";
+      setImportError(message);
+      notify.error({ title: "Validation", description: message });
       return;
     }
 
-    if (!importStartYear.trim() || !importEndYear.trim()) {
+    const startYearRaw = importStartYear.trim();
+    const endYearRaw = importEndYear.trim();
+    const startYear =
+      startYearRaw.length > 0 ? Number.parseInt(startYearRaw, 10) : undefined;
+    const endYear = endYearRaw.length > 0 ? Number.parseInt(endYearRaw, 10) : undefined;
+
+    if (
+      (startYearRaw.length > 0 && !Number.isInteger(startYear)) ||
+      (endYearRaw.length > 0 && !Number.isInteger(endYear))
+    ) {
+      const message = "Start Year and End Year must be valid integers when provided.";
+      setImportError(message);
       notify.error({
         title: "Validation",
-        description: "Start Year and End Year are required for import.",
+        description: message,
       });
       return;
     }
 
-    const startYear = Number.parseInt(importStartYear.trim(), 10);
-    const endYear = Number.parseInt(importEndYear.trim(), 10);
-
-    if (!Number.isInteger(startYear) || !Number.isInteger(endYear)) {
+    if (
+      startYear !== undefined &&
+      endYear !== undefined &&
+      endYear < startYear
+    ) {
+      const message = "End Year must be greater than or equal to Start Year.";
+      setImportError(message);
       notify.error({
         title: "Validation",
-        description: "Start Year and End Year must be valid integers.",
+        description: message,
       });
       return;
     }
 
-    if (endYear < startYear) {
+    if (
+      startYear !== undefined &&
+      endYear !== undefined &&
+      endYear - startYear + 1 > 20
+    ) {
+      const message = "Year range cannot exceed 20 years.";
+      setImportError(message);
       notify.error({
         title: "Validation",
-        description: "End Year must be greater than or equal to Start Year.",
+        description: message,
       });
       return;
     }
 
-    if (endYear - startYear + 1 > 20) {
-      notify.error({
-        title: "Validation",
-        description: "Year range cannot exceed 20 years.",
-      });
-      return;
-    }
-
+    setImportError(null);
     setIsImporting(true);
 
     try {
@@ -830,8 +846,12 @@ export default function DashboardPlanningPage() {
         formData.append("plan_name", importPlanName.trim());
       }
 
-      formData.append("start_year", String(startYear));
-      formData.append("end_year", String(endYear));
+      if (startYear !== undefined) {
+        formData.append("start_year", String(startYear));
+      }
+      if (endYear !== undefined) {
+        formData.append("end_year", String(endYear));
+      }
 
       const response = await clientApiFetch<ApiEnvelope<PlanningImportResult>>(
         "/api/planning/import",
@@ -842,6 +862,7 @@ export default function DashboardPlanningPage() {
       );
 
       setImportResult(response.data);
+      setImportError(null);
       notify.success({
         title: "Planning imported",
         description: `${response.data.parsed_counts.products} products loaded and projected.`,
@@ -857,6 +878,7 @@ export default function DashboardPlanningPage() {
     } catch (error) {
       const message =
         error instanceof ApiClientError ? error.message : "Could not import planning workbook";
+      setImportError(message);
       notify.error({ title: "Import failed", description: message });
     } finally {
       setIsImporting(false);
@@ -1537,7 +1559,7 @@ export default function DashboardPlanningPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="import_start_year">Start Year</Label>
+                  <Label htmlFor="import_start_year">Start Year (optional override)</Label>
                   <Input
                     id="import_start_year"
                     type="number"
@@ -1548,7 +1570,7 @@ export default function DashboardPlanningPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="import_end_year">End Year</Label>
+                  <Label htmlFor="import_end_year">End Year (optional override)</Label>
                   <Input
                     id="import_end_year"
                     type="number"
@@ -1561,11 +1583,17 @@ export default function DashboardPlanningPage() {
 
               <Button
                 type="submit"
-                disabled={isImporting || !importFile || !importStartYear.trim() || !importEndYear.trim()}
+                disabled={isImporting || !importFile}
               >
                 {isImporting ? "Importing..." : "Import Workbook"}
               </Button>
             </form>
+
+            {importError ? (
+              <div className="mt-4 rounded-xl border border-red-500/35 bg-red-500/10 p-4 text-sm text-red-200">
+                {importError}
+              </div>
+            ) : null}
 
             {importResult ? (
               <div className="mt-6 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-sm">

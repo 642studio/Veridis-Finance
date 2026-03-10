@@ -2,8 +2,24 @@ const pool = require('../db/pool');
 const { assertMemberExists } = require('./membersService');
 const { assertClientExists } = require('./clientsService');
 const { assertVendorExists } = require('./vendorsService');
+const {
+  assertAccountExists,
+  getDefaultAccount,
+  getOrCreateCashAccount,
+} = require('./financeAccountsService');
+const { assertContactExists } = require('./contactsService');
+const {
+  logTransactionAudit,
+  listTransactionAudit,
+} = require('./transactionAuditService');
 
 const ALLOWED_MATCH_METHODS = new Set(['rule', 'fuzzy', 'manual']);
+const ALLOWED_TRANSACTION_STATUSES = new Set([
+  'posted',
+  'pending',
+  'reconciled',
+  'void',
+]);
 
 function notFound(message) {
   const error = new Error(message);
@@ -70,11 +86,108 @@ function normalizeMatchConfidence(value, options = {}) {
   return Number(parsed.toFixed(4));
 }
 
-function ensureSingleLinkedEntity({ member_id, client_id, vendor_id }) {
-  const nonNullCount = [member_id, client_id, vendor_id].filter(Boolean).length;
+function normalizeCurrency(value, options = {}) {
+  if (value === undefined && options.allowUndefined !== false) {
+    return undefined;
+  }
+
+  const normalized = String(value || 'MXN').trim().toUpperCase().slice(0, 10);
+  if (!normalized) {
+    return 'MXN';
+  }
+  return normalized;
+}
+
+function normalizeTransactionStatus(value, options = {}) {
+  if (value === undefined && options.allowUndefined !== false) {
+    return undefined;
+  }
+
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (!normalized) {
+    return 'posted';
+  }
+
+  if (!ALLOWED_TRANSACTION_STATUSES.has(normalized)) {
+    throw badRequest(
+      'status must be one of: posted, pending, reconciled, void'
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeTags(value, options = {}) {
+  if (value === undefined && options.allowUndefined !== false) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const tags = [];
+
+  for (const item of value) {
+    const tag = String(item || '').trim().toLowerCase().slice(0, 60);
+    if (!tag || seen.has(tag)) {
+      continue;
+    }
+    seen.add(tag);
+    tags.push(tag);
+  }
+
+  return tags;
+}
+
+function normalizeSource(value, options = {}) {
+  if (value === undefined && options.allowUndefined !== false) {
+    return undefined;
+  }
+
+  const normalized = String(value || '').trim().toLowerCase().slice(0, 80);
+  if (!normalized) {
+    return 'manual';
+  }
+
+  return normalized;
+}
+
+function normalizeEntity(value, options = {}) {
+  if (value === undefined) {
+    if (options.allowUndefined === false) {
+      return null;
+    }
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim().slice(0, 255);
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function ensureSingleLinkedEntity({
+  member_id,
+  client_id,
+  vendor_id,
+  contact_id,
+}) {
+  const nonNullCount = [member_id, client_id, vendor_id, contact_id].filter(
+    Boolean
+  ).length;
   if (nonNullCount > 1) {
     throw badRequest(
-      'Only one linked entity is allowed per transaction (member, client, or vendor)'
+      'Only one linked entity is allowed per transaction (member, client, vendor, or contact)'
     );
   }
 }
@@ -83,6 +196,24 @@ async function assertLinkedEntities(payload) {
   ensureSingleLinkedEntity(payload);
 
   const checks = [];
+  if (payload.account_id) {
+    checks.push(
+      assertAccountExists({
+        organization_id: payload.organization_id,
+        account_id: payload.account_id,
+      })
+    );
+  }
+
+  if (payload.contact_id) {
+    checks.push(
+      assertContactExists({
+        organization_id: payload.organization_id,
+        contact_id: payload.contact_id,
+      })
+    );
+  }
+
   if (payload.member_id) {
     checks.push(
       assertMemberExists({
@@ -113,6 +244,72 @@ async function assertLinkedEntities(payload) {
   await Promise.all(checks);
 }
 
+async function resolveLinkedEntityLabel({
+  organization_id,
+  contact_id,
+  member_id,
+  client_id,
+  vendor_id,
+}) {
+  if (contact_id) {
+    const { rows } = await pool.query(
+      `
+        SELECT name
+        FROM finance.contacts
+        WHERE organization_id = $1
+          AND id = $2
+        LIMIT 1
+      `,
+      [organization_id, contact_id]
+    );
+    return rows[0]?.name || null;
+  }
+
+  if (member_id) {
+    const { rows } = await pool.query(
+      `
+        SELECT full_name
+        FROM finance.members
+        WHERE organization_id = $1
+          AND id = $2
+        LIMIT 1
+      `,
+      [organization_id, member_id]
+    );
+    return rows[0]?.full_name || null;
+  }
+
+  if (client_id) {
+    const { rows } = await pool.query(
+      `
+        SELECT COALESCE(business_name, name) AS display_name
+        FROM finance.clients
+        WHERE organization_id = $1
+          AND id = $2
+        LIMIT 1
+      `,
+      [organization_id, client_id]
+    );
+    return rows[0]?.display_name || null;
+  }
+
+  if (vendor_id) {
+    const { rows } = await pool.query(
+      `
+        SELECT name
+        FROM finance.vendors
+        WHERE organization_id = $1
+          AND id = $2
+        LIMIT 1
+      `,
+      [organization_id, vendor_id]
+    );
+    return rows[0]?.name || null;
+  }
+
+  return null;
+}
+
 function mapTransactionRow(row) {
   if (!row) {
     return null;
@@ -121,6 +318,16 @@ function mapTransactionRow(row) {
   return {
     id: row.id,
     organization_id: row.organization_id,
+    account_id: row.account_id || null,
+    account_name: row.account_name || null,
+    contact_id: row.contact_id || null,
+    contact_name: row.contact_name || null,
+    contact_type: row.contact_type || null,
+    currency: row.currency || 'MXN',
+    status: row.status || 'posted',
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    source: row.source || 'manual',
+    original_description: row.original_description || row.description || null,
     type: row.type,
     amount: Number(row.amount),
     category: row.category,
@@ -145,38 +352,116 @@ function mapTransactionRow(row) {
   };
 }
 
-async function createTransaction(payload) {
+function toAuditSnapshot(transaction) {
+  if (!transaction) {
+    return null;
+  }
+
+  return {
+    id: transaction.id,
+    type: transaction.type,
+    amount: transaction.amount,
+    category: transaction.category,
+    account_id: transaction.account_id,
+    contact_id: transaction.contact_id,
+    member_id: transaction.member_id,
+    client_id: transaction.client_id,
+    vendor_id: transaction.vendor_id,
+    entity: transaction.entity,
+    status: transaction.status,
+    source: transaction.source,
+    notes: transaction.notes,
+    transaction_date: transaction.transaction_date,
+  };
+}
+
+function mapTransactionAuditRow(row) {
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    transaction_id: row.transaction_id,
+    action: row.action,
+    actor_user_id: row.actor_user_id || null,
+    actor_role: row.actor_role || null,
+    source: row.source || 'api',
+    changes: row.changes || {},
+    created_at: row.created_at,
+  };
+}
+
+async function createTransaction(payload, options = {}) {
+  const source = normalizeSource(payload.source, { allowUndefined: false });
+  const accountId = coerceUuidOrNull(payload.account_id);
+  const contactId = coerceUuidOrNull(payload.contact_id);
   const memberId = coerceUuidOrNull(payload.member_id);
   const clientId = coerceUuidOrNull(payload.client_id);
   const vendorId = coerceUuidOrNull(payload.vendor_id);
-  const hasLinkedEntity = Boolean(memberId || clientId || vendorId);
+  const hasLinkedEntity = Boolean(memberId || clientId || vendorId || contactId);
   const providedMatchMethod = normalizeMatchMethod(payload.match_method);
   const effectiveMatchMethod = providedMatchMethod || (hasLinkedEntity ? 'manual' : null);
   const providedMatchConfidence = normalizeMatchConfidence(payload.match_confidence);
   const effectiveMatchConfidence =
     providedMatchConfidence ??
     (effectiveMatchMethod === 'manual' ? 1 : null);
+  const fallbackAccount = (() => {
+    if (payload.type === 'expense' && source === 'cash') {
+      return getOrCreateCashAccount({
+        organization_id: payload.organization_id,
+      }).then((account) => account.id);
+    }
+
+    if (accountId) {
+      return Promise.resolve(accountId);
+    }
+
+    return getDefaultAccount({
+      organization_id: payload.organization_id,
+    }).then((account) => account.id);
+  })();
 
   const normalized = {
     ...payload,
+    account_id: await fallbackAccount,
+    contact_id: contactId,
     member_id: memberId,
     client_id: clientId,
     vendor_id: vendorId,
+    currency: normalizeCurrency(payload.currency, { allowUndefined: false }),
+    status: normalizeTransactionStatus(payload.status, { allowUndefined: false }),
+    tags: normalizeTags(payload.tags, { allowUndefined: false }),
+    source,
+    original_description:
+      payload.original_description === undefined ||
+      payload.original_description === null
+        ? payload.description === undefined
+          ? null
+          : String(payload.description).trim().slice(0, 500)
+        : String(payload.original_description).trim().slice(0, 500),
     editable: payload.editable === undefined ? true : Boolean(payload.editable),
     notes:
       payload.notes === undefined || payload.notes === null
         ? null
         : String(payload.notes).trim().slice(0, 2000),
+    entity: normalizeEntity(payload.entity, { allowUndefined: false }),
     match_method: effectiveMatchMethod,
     match_confidence: effectiveMatchConfidence,
   };
 
   await assertLinkedEntities(normalized);
+  const linkedEntityLabel = await resolveLinkedEntityLabel(normalized);
+  const resolvedEntity = normalized.entity || linkedEntityLabel || null;
 
   const query = {
     text: `
       INSERT INTO finance.transactions (
         organization_id,
+        account_id,
+        contact_id,
+        currency,
+        status,
+        tags,
+        source,
+        original_description,
         type,
         amount,
         category,
@@ -191,10 +476,20 @@ async function createTransaction(payload) {
         match_method,
         transaction_date
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES (
+        $1, $2, $3, $4, $5, $6::text[], $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+      )
       RETURNING
         id,
         organization_id,
+        account_id,
+        contact_id,
+        currency,
+        status,
+        tags,
+        source,
+        original_description,
         type,
         amount,
         category,
@@ -213,11 +508,18 @@ async function createTransaction(payload) {
     `,
     values: [
       normalized.organization_id,
+      normalized.account_id,
+      normalized.contact_id,
+      normalized.currency,
+      normalized.status,
+      normalized.tags,
+      normalized.source,
+      normalized.original_description,
       normalized.type,
       normalized.amount,
       normalized.category,
       normalized.description ?? null,
-      normalized.entity ?? null,
+      resolvedEntity,
       normalized.member_id,
       normalized.client_id,
       normalized.vendor_id,
@@ -232,12 +534,26 @@ async function createTransaction(payload) {
   const { rows } = await pool.query(query);
 
   const created = rows[0];
-  return mapTransactionRow({
+  const mappedCreated = mapTransactionRow({
     ...created,
     member_name: null,
     client_name: null,
     vendor_name: null,
   });
+
+  await logTransactionAudit({
+    organization_id: mappedCreated.organization_id,
+    transaction_id: mappedCreated.id,
+    action: 'create',
+    actor_user_id: options.actor_user_id || null,
+    actor_role: options.actor_role || null,
+    source: options.audit_source || mappedCreated.source || 'api',
+    changes: {
+      after: toAuditSnapshot(mappedCreated),
+    },
+  });
+
+  return mappedCreated;
 }
 
 async function getTransactionById({ organization_id, transaction_id }) {
@@ -246,6 +562,16 @@ async function getTransactionById({ organization_id, transaction_id }) {
       SELECT
         t.id,
         t.organization_id,
+        t.account_id,
+        a.name AS account_name,
+        t.contact_id,
+        ct.name AS contact_name,
+        ct.type AS contact_type,
+        t.currency,
+        t.status,
+        t.tags,
+        t.source,
+        t.original_description,
         t.type,
         t.amount,
         t.category,
@@ -268,6 +594,12 @@ async function getTransactionById({ organization_id, transaction_id }) {
       LEFT JOIN finance.members m
         ON m.id = t.member_id
        AND m.organization_id = t.organization_id
+      LEFT JOIN finance.accounts a
+        ON a.id = t.account_id
+       AND a.organization_id = t.organization_id
+      LEFT JOIN finance.contacts ct
+        ON ct.id = t.contact_id
+       AND ct.organization_id = t.organization_id
       LEFT JOIN finance.clients c
         ON c.id = t.client_id
        AND c.organization_id = t.organization_id
@@ -294,6 +626,15 @@ async function listTransactions(filters) {
   const values = [filters.organization_id];
   const conditions = ['t.organization_id = $1'];
   let cursor = 2;
+  const allowedSortColumns = {
+    transaction_date: 't.transaction_date',
+    amount: 't.amount',
+    created_at: 't.created_at',
+    category: 't.category',
+  };
+  const sortBy = allowedSortColumns[filters.sort_by] || 't.transaction_date';
+  const sortOrder =
+    String(filters.sort_order || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
   if (filters.type) {
     conditions.push(`t.type = $${cursor}`);
@@ -316,6 +657,46 @@ async function listTransactions(filters) {
   if (filters.vendor_id) {
     conditions.push(`t.vendor_id = $${cursor}`);
     values.push(filters.vendor_id);
+    cursor += 1;
+  }
+
+  if (filters.account_id) {
+    conditions.push(`t.account_id = $${cursor}`);
+    values.push(filters.account_id);
+    cursor += 1;
+  }
+
+  if (filters.contact_id) {
+    conditions.push(`t.contact_id = $${cursor}`);
+    values.push(filters.contact_id);
+    cursor += 1;
+  }
+
+  if (filters.status) {
+    conditions.push(`t.status = $${cursor}`);
+    values.push(normalizeTransactionStatus(filters.status, { allowUndefined: false }));
+    cursor += 1;
+  }
+
+  if (filters.q) {
+    const queryText = String(filters.q).trim();
+    if (queryText) {
+      values.push(`%${queryText}%`);
+      conditions.push(`(
+        COALESCE(t.description, '') ILIKE $${cursor}
+        OR COALESCE(t.original_description, '') ILIKE $${cursor}
+        OR COALESCE(t.category, '') ILIKE $${cursor}
+        OR COALESCE(t.entity, '') ILIKE $${cursor}
+        OR COALESCE(t.notes, '') ILIKE $${cursor}
+        OR COALESCE(t.source, '') ILIKE $${cursor}
+      )`);
+      cursor += 1;
+    }
+  }
+
+  if (filters.source) {
+    conditions.push(`t.source = $${cursor}`);
+    values.push(normalizeSource(filters.source, { allowUndefined: false }));
     cursor += 1;
   }
 
@@ -343,6 +724,16 @@ async function listTransactions(filters) {
       SELECT
         t.id,
         t.organization_id,
+        t.account_id,
+        a.name AS account_name,
+        t.contact_id,
+        ct.name AS contact_name,
+        ct.type AS contact_type,
+        t.currency,
+        t.status,
+        t.tags,
+        t.source,
+        t.original_description,
         t.type,
         t.amount,
         t.category,
@@ -362,6 +753,12 @@ async function listTransactions(filters) {
         COALESCE(c.business_name, c.name) AS client_name,
         v.name AS vendor_name
       FROM finance.transactions t
+      LEFT JOIN finance.accounts a
+        ON a.id = t.account_id
+       AND a.organization_id = t.organization_id
+      LEFT JOIN finance.contacts ct
+        ON ct.id = t.contact_id
+       AND ct.organization_id = t.organization_id
       LEFT JOIN finance.members m
         ON m.id = t.member_id
        AND m.organization_id = t.organization_id
@@ -373,7 +770,7 @@ async function listTransactions(filters) {
        AND v.organization_id = t.organization_id
       WHERE ${conditions.join(' AND ')}
         AND t.deleted_at IS NULL
-      ORDER BY t.transaction_date DESC, t.created_at DESC
+      ORDER BY ${sortBy} ${sortOrder}, t.created_at DESC
       LIMIT $${limitIndex}
       OFFSET $${offsetIndex}
     `,
@@ -384,11 +781,51 @@ async function listTransactions(filters) {
   return rows.map(mapTransactionRow);
 }
 
-async function updateTransaction({ organization_id, transaction_id, patch }) {
+async function updateTransaction({
+  organization_id,
+  transaction_id,
+  patch,
+  actor_user_id = null,
+  actor_role = null,
+  audit_source = null,
+}) {
   const existing = await getTransactionById({ organization_id, transaction_id });
+  const existingAccountId = coerceUuidOrNull(existing.account_id);
+  const existingSource = normalizeSource(existing.source, { allowUndefined: false });
+  const nextSource =
+    patch.source === undefined
+      ? existingSource
+      : normalizeSource(patch.source, { allowUndefined: false });
+  const nextType = patch.type || existing.type;
+
+  let resolvedAccountId =
+    patch.account_id === undefined
+      ? existingAccountId
+      : coerceUuidOrNull(patch.account_id);
+
+  if (nextType === 'expense' && nextSource === 'cash') {
+    resolvedAccountId = (
+      await getOrCreateCashAccount({
+        organization_id,
+      })
+    ).id;
+  } else if (!resolvedAccountId) {
+    resolvedAccountId = (
+      await getDefaultAccount({
+        organization_id,
+      })
+    ).id;
+  }
+
+  const shouldUpdateAccountId = resolvedAccountId !== existingAccountId;
 
   const normalized = {
     organization_id,
+    account_id: resolvedAccountId,
+    contact_id:
+      patch.contact_id === undefined
+        ? coerceUuidOrNull(existing.contact_id)
+        : coerceUuidOrNull(patch.contact_id),
     member_id:
       patch.member_id === undefined
         ? coerceUuidOrNull(existing.member_id)
@@ -406,11 +843,15 @@ async function updateTransaction({ organization_id, transaction_id, patch }) {
   await assertLinkedEntities(normalized);
 
   const hasEntityPatch =
+    patch.contact_id !== undefined ||
     patch.member_id !== undefined ||
     patch.client_id !== undefined ||
     patch.vendor_id !== undefined;
   const hasLinkedEntity = Boolean(
-    normalized.member_id || normalized.client_id || normalized.vendor_id
+    normalized.contact_id ||
+      normalized.member_id ||
+      normalized.client_id ||
+      normalized.vendor_id
   );
 
   let resolvedMatchMethod = normalizeMatchMethod(patch.match_method);
@@ -449,6 +890,28 @@ async function updateTransaction({ organization_id, transaction_id, patch }) {
   const assignments = [];
 
   const mutable = {
+    account_id: shouldUpdateAccountId ? resolvedAccountId : undefined,
+    contact_id:
+      patch.contact_id === undefined ? undefined : coerceUuidOrNull(patch.contact_id),
+    currency:
+      patch.currency === undefined
+        ? undefined
+        : normalizeCurrency(patch.currency, { allowUndefined: false }),
+    status:
+      patch.status === undefined
+        ? undefined
+        : normalizeTransactionStatus(patch.status, { allowUndefined: false }),
+    tags:
+      patch.tags === undefined
+        ? undefined
+        : normalizeTags(patch.tags, { allowUndefined: false }),
+    source: patch.source === undefined ? undefined : nextSource,
+    original_description:
+      patch.original_description === undefined
+        ? undefined
+        : patch.original_description === null
+        ? null
+        : String(patch.original_description).trim().slice(0, 500),
     type: patch.type,
     amount: patch.amount,
     category: patch.category,
@@ -461,9 +924,7 @@ async function updateTransaction({ organization_id, transaction_id, patch }) {
     entity:
       patch.entity === undefined
         ? undefined
-        : patch.entity === null
-        ? null
-        : String(patch.entity).trim().slice(0, 255),
+        : normalizeEntity(patch.entity, { allowUndefined: false }),
     member_id:
       patch.member_id === undefined ? undefined : coerceUuidOrNull(patch.member_id),
     client_id:
@@ -481,6 +942,10 @@ async function updateTransaction({ organization_id, transaction_id, patch }) {
     match_method: resolvedMatchMethod,
     transaction_date: patch.transaction_date,
   };
+
+  if (patch.entity === undefined && hasEntityPatch && hasLinkedEntity) {
+    mutable.entity = await resolveLinkedEntityLabel(normalized);
+  }
 
   for (const [key, value] of Object.entries(mutable)) {
     if (value === undefined) {
@@ -511,11 +976,32 @@ async function updateTransaction({ organization_id, transaction_id, patch }) {
   if (!rows[0]) {
     throw notFound(`Transaction not found: ${transaction_id}`);
   }
+  const updated = await getTransactionById({ organization_id, transaction_id });
 
-  return getTransactionById({ organization_id, transaction_id });
+  await logTransactionAudit({
+    organization_id,
+    transaction_id,
+    action: 'update',
+    actor_user_id,
+    actor_role,
+    source: audit_source || updated.source || existing.source || 'api',
+    changes: {
+      patch,
+      before: toAuditSnapshot(existing),
+      after: toAuditSnapshot(updated),
+    },
+  });
+
+  return updated;
 }
 
-async function deleteTransaction({ organization_id, transaction_id }) {
+async function deleteTransaction({
+  organization_id,
+  transaction_id,
+  actor_user_id = null,
+  actor_role = null,
+  audit_source = 'api',
+}) {
   const transaction = await getTransactionById({ organization_id, transaction_id });
 
   if (!transaction.editable) {
@@ -539,10 +1025,32 @@ async function deleteTransaction({ organization_id, transaction_id }) {
     throw notFound(`Transaction not found: ${transaction_id}`);
   }
 
+  await logTransactionAudit({
+    organization_id,
+    transaction_id,
+    action: 'delete',
+    actor_user_id,
+    actor_role,
+    source: audit_source,
+    changes: {
+      before: toAuditSnapshot(transaction),
+    },
+  });
+
   return {
     id: rows[0].id,
     deleted: true,
   };
+}
+
+async function listTransactionHistory({ organization_id, transaction_id, limit = 100 }) {
+  await getTransactionById({ organization_id, transaction_id });
+  const rows = await listTransactionAudit({
+    organization_id,
+    transaction_id,
+    limit,
+  });
+  return rows.map(mapTransactionAuditRow);
 }
 
 async function countTransactionsInRange({ organization_id, from, to }) {
@@ -568,5 +1076,6 @@ module.exports = {
   updateTransaction,
   deleteTransaction,
   getTransactionById,
+  listTransactionHistory,
   countTransactionsInRange,
 };

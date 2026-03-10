@@ -1,12 +1,13 @@
 import {
+  BadgeCheck,
   BarChart3,
+  BookUser,
   CalendarRange,
   Building2,
-  Handshake,
+  Landmark,
   LayoutDashboard,
   Receipt,
   Store,
-  Users,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -44,19 +45,24 @@ export const DASHBOARD_NAV_ITEMS: DashboardNavItem[] = [
     icon: CalendarRange,
   },
   {
-    href: "/dashboard/members",
-    label: "Members",
-    icon: Users,
-  },
-  {
-    href: "/dashboard/clients",
-    label: "Clients",
-    icon: Handshake,
-  },
-  {
     href: "/dashboard/vendors",
     label: "Vendors",
     icon: Store,
+  },
+  {
+    href: "/dashboard/accounts",
+    label: "Accounts",
+    icon: Landmark,
+  },
+  {
+    href: "/dashboard/contacts",
+    label: "Contacts",
+    icon: BookUser,
+  },
+  {
+    href: "/dashboard/categories",
+    label: "Categories",
+    icon: BadgeCheck,
   },
   {
     href: "/dashboard/settings",

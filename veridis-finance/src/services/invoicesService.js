@@ -50,9 +50,12 @@ async function createInvoice(payload) {
         receiver,
         total,
         status,
-        invoice_date
+        invoice_date,
+        paid_at,
+        payment_method,
+        payment_reference
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING
         id,
         organization_id,
@@ -62,6 +65,10 @@ async function createInvoice(payload) {
         total,
         status,
         invoice_date,
+        paid_at,
+        payment_method,
+        payment_reference,
+        updated_at,
         created_at
     `,
     values: [
@@ -72,6 +79,9 @@ async function createInvoice(payload) {
       payload.total,
       payload.status,
       payload.invoice_date,
+      payload.status === 'paid' ? new Date() : null,
+      null,
+      null,
     ],
   };
 
@@ -86,7 +96,136 @@ async function createInvoice(payload) {
   }
 }
 
+async function listInvoices({
+  organization_id,
+  status,
+  limit = 100,
+  offset = 0,
+}) {
+  const values = [organization_id];
+  const conditions = ['organization_id = $1'];
+
+  if (status) {
+    values.push(status);
+    conditions.push(`status = $${values.length}`);
+  }
+
+  values.push(limit);
+  const limitParam = `$${values.length}`;
+  values.push(offset);
+  const offsetParam = `$${values.length}`;
+
+  const query = {
+    text: `
+      SELECT
+        id,
+        organization_id,
+        uuid_sat,
+        emitter,
+        receiver,
+        total,
+        status,
+        invoice_date,
+        paid_at,
+        payment_method,
+        payment_reference,
+        updated_at,
+        created_at
+      FROM finance.invoices
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY invoice_date DESC, created_at DESC
+      LIMIT ${limitParam}
+      OFFSET ${offsetParam}
+    `,
+    values,
+  };
+
+  const { rows } = await pool.query(query);
+  return rows;
+}
+
+async function updateInvoiceStatus({
+  organization_id,
+  invoice_id,
+  status,
+  payment_method = null,
+  payment_reference = null,
+}) {
+  const normalizedStatus = String(status || '')
+    .trim()
+    .toLowerCase();
+  if (normalizedStatus !== 'pending' && normalizedStatus !== 'paid') {
+    const error = new Error('status must be pending or paid');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const methodValue =
+    payment_method === null || payment_method === undefined
+      ? null
+      : String(payment_method).trim().slice(0, 120) || null;
+  const referenceValue =
+    payment_reference === null || payment_reference === undefined
+      ? null
+      : String(payment_reference).trim().slice(0, 255) || null;
+
+  const query = {
+    text: `
+      UPDATE finance.invoices
+      SET
+        status = $3::finance.invoice_status,
+        paid_at = CASE
+          WHEN $3 = 'paid'::finance.invoice_status THEN COALESCE(paid_at, now())
+          ELSE NULL
+        END,
+        payment_method = CASE
+          WHEN $3 = 'paid'::finance.invoice_status THEN $4
+          ELSE NULL
+        END,
+        payment_reference = CASE
+          WHEN $3 = 'paid'::finance.invoice_status THEN $5
+          ELSE NULL
+        END,
+        updated_at = now()
+      WHERE organization_id = $1
+        AND id = $2
+      RETURNING
+        id,
+        organization_id,
+        uuid_sat,
+        emitter,
+        receiver,
+        total,
+        status,
+        invoice_date,
+        paid_at,
+        payment_method,
+        payment_reference,
+        updated_at,
+        created_at
+    `,
+    values: [
+      organization_id,
+      invoice_id,
+      normalizedStatus,
+      normalizedStatus === 'paid' ? methodValue : null,
+      normalizedStatus === 'paid' ? referenceValue : null,
+    ],
+  };
+
+  const { rows } = await pool.query(query);
+  if (!rows[0]) {
+    const error = new Error(`Invoice not found: ${invoice_id}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return rows[0];
+}
+
 module.exports = {
   createInvoice,
+  listInvoices,
   findInvoiceByUuid,
+  updateInvoiceStatus,
 };

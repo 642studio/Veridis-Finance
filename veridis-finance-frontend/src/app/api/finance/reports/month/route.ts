@@ -15,17 +15,31 @@ export async function GET(request: NextRequest) {
     return unauthorized();
   }
 
-  const backendResponse = await fetch(
-    backendUrl(`/api/finance/report/month${request.nextUrl.search}`),
-    {
-      method: "GET",
-      headers: {
-        authorization: `Bearer ${token}`,
-      },
-      cache: "no-store",
-    }
-  );
+  try {
+    const backendResponse = await fetch(
+      backendUrl(`/api/finance/report/month${request.nextUrl.search}`),
+      {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      }
+    );
 
-  const payload = await parseBackendBody(backendResponse);
-  return NextResponse.json(payload, { status: backendResponse.status });
+    const payload = await parseBackendBody(backendResponse);
+    return NextResponse.json(payload, { status: backendResponse.status });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Could not connect to backend finance service";
+    return NextResponse.json(
+      {
+        error: "Backend unavailable",
+        detail: message,
+      },
+      { status: 503 }
+    );
+  }
 }

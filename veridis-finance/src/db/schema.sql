@@ -103,6 +103,31 @@ BEGIN
   END IF;
 END $$;
 
+CREATE TABLE IF NOT EXISTS finance.transaction_audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL
+    REFERENCES finance.organizations(organization_id)
+      ON DELETE CASCADE,
+  transaction_id UUID NOT NULL
+    REFERENCES finance.transactions(id)
+      ON DELETE CASCADE,
+  action TEXT NOT NULL
+    CHECK (action IN ('create', 'update', 'delete')),
+  actor_user_id UUID NULL
+    REFERENCES finance.users(id)
+      ON DELETE SET NULL,
+  actor_role TEXT NULL,
+  source TEXT NOT NULL DEFAULT 'api',
+  changes JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_audit_org_transaction_created
+  ON finance.transaction_audit_logs (organization_id, transaction_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_audit_org_created
+  ON finance.transaction_audit_logs (organization_id, created_at DESC);
+
 ALTER TYPE finance.user_role ADD VALUE IF NOT EXISTS 'owner';
 ALTER TYPE finance.user_role ADD VALUE IF NOT EXISTS 'admin';
 ALTER TYPE finance.user_role ADD VALUE IF NOT EXISTS 'ops';
@@ -417,8 +442,28 @@ CREATE TABLE IF NOT EXISTS finance.invoices (
   total NUMERIC(12, 2) NOT NULL CHECK (total >= 0),
   status finance.invoice_status NOT NULL DEFAULT 'pending',
   invoice_date TIMESTAMP NOT NULL,
+  paid_at TIMESTAMP,
+  payment_method TEXT,
+  payment_reference TEXT,
+  updated_at TIMESTAMP NOT NULL DEFAULT now(),
   created_at TIMESTAMP NOT NULL DEFAULT now()
 );
+
+ALTER TABLE finance.invoices
+  ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
+
+ALTER TABLE finance.invoices
+  ADD COLUMN IF NOT EXISTS payment_method TEXT;
+
+ALTER TABLE finance.invoices
+  ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+
+ALTER TABLE finance.invoices
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT now();
+
+UPDATE finance.invoices
+SET updated_at = COALESCE(updated_at, created_at, now())
+WHERE updated_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_invoices_org_id
   ON finance.invoices (organization_id);
@@ -1829,3 +1874,421 @@ CREATE INDEX IF NOT EXISTS idx_financial_products_plan_active
 
 CREATE INDEX IF NOT EXISTS idx_financial_fixed_costs_plan_active
   ON finance.financial_fixed_costs (plan_id, active);
+
+-- ============================================================
+-- Phase 1: Core accounting normalization
+-- accounts, contacts, categories, subcategories, transaction_splits
+-- transactions extension: account/contact/currency/status/tags/source/original_description
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'account_type'
+      AND n.nspname = 'finance'
+  ) THEN
+    CREATE TYPE finance.account_type AS ENUM (
+      'bank',
+      'cash',
+      'credit_card',
+      'wallet',
+      'accounts_receivable',
+      'accounts_payable',
+      'internal'
+    );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'account_status'
+      AND n.nspname = 'finance'
+  ) THEN
+    CREATE TYPE finance.account_status AS ENUM (
+      'active',
+      'inactive',
+      'archived'
+    );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'contact_type'
+      AND n.nspname = 'finance'
+  ) THEN
+    CREATE TYPE finance.contact_type AS ENUM (
+      'customer',
+      'vendor',
+      'employee',
+      'contractor',
+      'internal'
+    );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'contact_status'
+      AND n.nspname = 'finance'
+  ) THEN
+    CREATE TYPE finance.contact_status AS ENUM (
+      'active',
+      'inactive'
+    );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'transaction_status'
+      AND n.nspname = 'finance'
+  ) THEN
+    CREATE TYPE finance.transaction_status AS ENUM (
+      'posted',
+      'pending',
+      'reconciled',
+      'void'
+    );
+  END IF;
+END $$;
+
+ALTER TYPE finance.account_type ADD VALUE IF NOT EXISTS 'bank';
+ALTER TYPE finance.account_type ADD VALUE IF NOT EXISTS 'cash';
+ALTER TYPE finance.account_type ADD VALUE IF NOT EXISTS 'credit_card';
+ALTER TYPE finance.account_type ADD VALUE IF NOT EXISTS 'wallet';
+ALTER TYPE finance.account_type ADD VALUE IF NOT EXISTS 'accounts_receivable';
+ALTER TYPE finance.account_type ADD VALUE IF NOT EXISTS 'accounts_payable';
+ALTER TYPE finance.account_type ADD VALUE IF NOT EXISTS 'internal';
+
+ALTER TYPE finance.account_status ADD VALUE IF NOT EXISTS 'active';
+ALTER TYPE finance.account_status ADD VALUE IF NOT EXISTS 'inactive';
+ALTER TYPE finance.account_status ADD VALUE IF NOT EXISTS 'archived';
+
+ALTER TYPE finance.contact_type ADD VALUE IF NOT EXISTS 'customer';
+ALTER TYPE finance.contact_type ADD VALUE IF NOT EXISTS 'vendor';
+ALTER TYPE finance.contact_type ADD VALUE IF NOT EXISTS 'employee';
+ALTER TYPE finance.contact_type ADD VALUE IF NOT EXISTS 'contractor';
+ALTER TYPE finance.contact_type ADD VALUE IF NOT EXISTS 'internal';
+
+ALTER TYPE finance.contact_status ADD VALUE IF NOT EXISTS 'active';
+ALTER TYPE finance.contact_status ADD VALUE IF NOT EXISTS 'inactive';
+
+ALTER TYPE finance.transaction_status ADD VALUE IF NOT EXISTS 'posted';
+ALTER TYPE finance.transaction_status ADD VALUE IF NOT EXISTS 'pending';
+ALTER TYPE finance.transaction_status ADD VALUE IF NOT EXISTS 'reconciled';
+ALTER TYPE finance.transaction_status ADD VALUE IF NOT EXISTS 'void';
+
+CREATE TABLE IF NOT EXISTS finance.accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES finance.organizations(organization_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type finance.account_type NOT NULL DEFAULT 'bank',
+  bank_name TEXT,
+  account_number_last4 TEXT,
+  credit_limit NUMERIC(14, 2) CHECK (credit_limit IS NULL OR credit_limit >= 0),
+  cut_day INT CHECK (cut_day IS NULL OR (cut_day BETWEEN 1 AND 31)),
+  due_day INT CHECK (due_day IS NULL OR (due_day BETWEEN 1 AND 31)),
+  balance NUMERIC(14, 2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'MXN',
+  status finance.account_status NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_org
+  ON finance.accounts (organization_id);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_org_status
+  ON finance.accounts (organization_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_org_type
+  ON finance.accounts (organization_id, type);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_org_name
+  ON finance.accounts (organization_id, lower(name));
+
+CREATE TABLE IF NOT EXISTS finance.contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES finance.organizations(organization_id) ON DELETE CASCADE,
+  type finance.contact_type NOT NULL,
+  name TEXT NOT NULL,
+  business_name TEXT,
+  email TEXT,
+  phone TEXT,
+  rfc TEXT,
+  notes TEXT,
+  tags TEXT[] NOT NULL DEFAULT '{}'::text[],
+  status finance.contact_status NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_contacts_org
+  ON finance.contacts (organization_id);
+
+CREATE INDEX IF NOT EXISTS idx_contacts_org_type
+  ON finance.contacts (organization_id, type);
+
+CREATE INDEX IF NOT EXISTS idx_contacts_org_status
+  ON finance.contacts (organization_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_contacts_org_name
+  ON finance.contacts (organization_id, lower(name));
+
+CREATE TABLE IF NOT EXISTS finance.categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES finance.organizations(organization_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  icon TEXT,
+  color TEXT,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_categories_org
+  ON finance.categories (organization_id);
+
+CREATE INDEX IF NOT EXISTS idx_categories_org_active
+  ON finance.categories (organization_id, active);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_org_name
+  ON finance.categories (organization_id, lower(name));
+
+CREATE TABLE IF NOT EXISTS finance.subcategories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES finance.organizations(organization_id) ON DELETE CASCADE,
+  category_id UUID NOT NULL REFERENCES finance.categories(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  icon TEXT,
+  color TEXT,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_subcategories_org
+  ON finance.subcategories (organization_id);
+
+CREATE INDEX IF NOT EXISTS idx_subcategories_org_active
+  ON finance.subcategories (organization_id, active);
+
+CREATE INDEX IF NOT EXISTS idx_subcategories_category
+  ON finance.subcategories (category_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subcategories_category_name
+  ON finance.subcategories (category_id, lower(name));
+
+CREATE TABLE IF NOT EXISTS finance.transaction_splits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES finance.organizations(organization_id) ON DELETE CASCADE,
+  transaction_id UUID NOT NULL REFERENCES finance.transactions(id) ON DELETE CASCADE,
+  category_id UUID NOT NULL REFERENCES finance.categories(id) ON DELETE RESTRICT,
+  subcategory_id UUID REFERENCES finance.subcategories(id) ON DELETE SET NULL,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_splits_org
+  ON finance.transaction_splits (organization_id);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_splits_transaction
+  ON finance.transaction_splits (transaction_id);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_splits_category
+  ON finance.transaction_splits (category_id);
+
+ALTER TABLE finance.transactions
+  ADD COLUMN IF NOT EXISTS account_id UUID;
+
+ALTER TABLE finance.transactions
+  ADD COLUMN IF NOT EXISTS contact_id UUID;
+
+ALTER TABLE finance.transactions
+  ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'MXN';
+
+ALTER TABLE finance.transactions
+  ADD COLUMN IF NOT EXISTS status finance.transaction_status NOT NULL DEFAULT 'posted';
+
+ALTER TABLE finance.transactions
+  ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}'::text[];
+
+ALTER TABLE finance.transactions
+  ADD COLUMN IF NOT EXISTS source TEXT;
+
+ALTER TABLE finance.transactions
+  ADD COLUMN IF NOT EXISTS original_description TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_org_account
+  ON finance.transactions (organization_id, account_id);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_org_contact
+  ON finance.transactions (organization_id, contact_id);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_org_status
+  ON finance.transactions (organization_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_org_source
+  ON finance.transactions (organization_id, source);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_transactions_account'
+  ) THEN
+    ALTER TABLE finance.transactions
+      ADD CONSTRAINT fk_transactions_account
+      FOREIGN KEY (account_id)
+      REFERENCES finance.accounts(id)
+      ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_transactions_contact'
+  ) THEN
+    ALTER TABLE finance.transactions
+      ADD CONSTRAINT fk_transactions_contact
+      FOREIGN KEY (contact_id)
+      REFERENCES finance.contacts(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+
+INSERT INTO finance.accounts (
+  organization_id,
+  name,
+  type,
+  currency,
+  status,
+  created_at,
+  updated_at
+)
+SELECT
+  o.organization_id,
+  'General',
+  'bank'::finance.account_type,
+  COALESCE(NULLIF(trim(o.currency), ''), 'MXN'),
+  'active'::finance.account_status,
+  now(),
+  now()
+FROM finance.organizations o
+LEFT JOIN finance.accounts a
+  ON a.organization_id = o.organization_id
+ AND lower(a.name) = 'general'
+WHERE a.id IS NULL;
+
+UPDATE finance.transactions t
+SET account_id = (
+  SELECT a.id
+  FROM finance.accounts a
+  WHERE a.organization_id = t.organization_id
+  ORDER BY
+    CASE WHEN lower(a.name) = 'general' THEN 0 ELSE 1 END,
+    a.created_at ASC
+  LIMIT 1
+)
+WHERE t.account_id IS NULL;
+
+UPDATE finance.transactions
+SET currency = 'MXN'
+WHERE currency IS NULL OR length(trim(currency)) = 0;
+
+UPDATE finance.transactions
+SET status = 'posted'
+WHERE status IS NULL;
+
+UPDATE finance.transactions
+SET tags = '{}'::text[]
+WHERE tags IS NULL;
+
+UPDATE finance.transactions
+SET source = COALESCE(source, 'manual')
+WHERE source IS NULL;
+
+UPDATE finance.transactions
+SET original_description = COALESCE(original_description, description)
+WHERE original_description IS NULL;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'finance'
+      AND table_name = 'transactions'
+      AND column_name = 'account_id'
+      AND is_nullable = 'YES'
+  ) THEN
+    ALTER TABLE finance.transactions
+      ALTER COLUMN account_id SET NOT NULL;
+  END IF;
+END $$;
+
+ALTER TABLE finance.transactions
+  DROP CONSTRAINT IF EXISTS chk_transactions_single_entity;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'chk_transactions_single_entity'
+  ) THEN
+    ALTER TABLE finance.transactions
+      ADD CONSTRAINT chk_transactions_single_entity
+      CHECK (num_nonnulls(member_id, client_id, vendor_id, contact_id) <= 1);
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS finance.recurring_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL
+    REFERENCES finance.organizations(organization_id)
+      ON DELETE CASCADE,
+  candidate_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'approved'
+    CHECK (status IN ('approved', 'suppressed')),
+  type finance.transaction_type NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL CHECK (amount > 0),
+  category TEXT,
+  normalized_description TEXT NOT NULL,
+  frequency TEXT NOT NULL,
+  average_interval_days NUMERIC(8, 2) NOT NULL CHECK (average_interval_days > 0),
+  next_expected_date TIMESTAMP NOT NULL,
+  confidence_score NUMERIC(5, 4) NOT NULL DEFAULT 0
+    CHECK (confidence_score >= 0 AND confidence_score <= 1),
+  suppress_until TIMESTAMP,
+  notes TEXT,
+  created_by_user_id UUID
+    REFERENCES finance.users(id)
+      ON DELETE SET NULL,
+  updated_by_user_id UUID
+    REFERENCES finance.users(id)
+      ON DELETE SET NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_recurring_rules_org_key
+  ON finance.recurring_rules (organization_id, candidate_key);
+
+CREATE INDEX IF NOT EXISTS idx_recurring_rules_org_status
+  ON finance.recurring_rules (organization_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_recurring_rules_org_next_expected
+  ON finance.recurring_rules (organization_id, next_expected_date);
