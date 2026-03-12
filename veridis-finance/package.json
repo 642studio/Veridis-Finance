@@ -13,6 +13,7 @@
     "smoke:phase1": "node scripts/smoke-phase1.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^9.2.1",
     "dotenv": "^16.4.5",
     "fast-xml-parser": "^5.0.8",

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ErrorBoundary } from "@/components/common/error-boundary";
 import { Footer } from "@/components/layout/footer";
 import { Navbar } from "@/components/layout/navbar";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -21,7 +22,9 @@ export default function DashboardLayout({
       <Navbar session={session} />
       <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <Sidebar session={session} />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1">
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </main>
       </div>
       <Footer />
     </div>

@@ -1,5 +1,6 @@
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
+const cors = require('@fastify/cors');
 const { ZodError } = require('zod');
 
 const transactionsRoutes = require('./routes/transactions');
@@ -18,6 +19,7 @@ const contactsRoutes = require('./routes/contacts');
 const categoriesRoutes = require('./routes/categories');
 const transactionSplitsRoutes = require('./routes/transactionSplits');
 const logger = require('./logger');
+const pool = require('./db/pool');
 
 function buildApp() {
   const maxXmlFileSizeBytes = Number.parseInt(
@@ -42,6 +44,13 @@ function buildApp() {
     trustProxy: true,
   });
 
+  app.register(cors, {
+    origin: process.env.CORS_ORIGIN || true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  });
+
   app.register(multipart, {
     limits: {
       files: 1,
@@ -51,11 +60,21 @@ function buildApp() {
     throwFileSizeLimit: true,
   });
 
-  app.get('/health', async () => ({
-    status: 'ok',
-    service: 'veridis-finance',
-    timestamp: new Date().toISOString(),
-  }));
+  app.get('/health', async () => {
+    let dbStatus = 'unknown';
+    try {
+      const result = await pool.query('SELECT 1 AS ok');
+      dbStatus = result.rows[0]?.ok === 1 ? 'connected' : 'error';
+    } catch {
+      dbStatus = 'disconnected';
+    }
+    return {
+      status: dbStatus === 'connected' ? 'ok' : 'degraded',
+      service: 'veridis-finance',
+      database: dbStatus,
+      timestamp: new Date().toISOString(),
+    };
+  });
 
   app.register(authRoutes, { prefix: '/auth' });
 

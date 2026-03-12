@@ -253,7 +253,7 @@ async function listTransactions(request, reply) {
     organization_id: organizationId,
   });
 
-  reply.send({ data: results });
+  reply.send({ data: results.data, pagination: results.pagination });
 }
 
 async function updateTransaction(request, reply) {

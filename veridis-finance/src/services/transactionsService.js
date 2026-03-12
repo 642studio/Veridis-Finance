@@ -778,7 +778,35 @@ async function listTransactions(filters) {
   };
 
   const { rows } = await pool.query(query);
-  return rows.map(mapTransactionRow);
+
+  // Pagination metadata
+  const countQuery = {
+    text: `
+      SELECT COUNT(*) AS total
+      FROM finance.transactions t
+      LEFT JOIN finance.accounts a ON a.id = t.account_id AND a.organization_id = t.organization_id
+      LEFT JOIN finance.contacts ct ON ct.id = t.contact_id AND ct.organization_id = t.organization_id
+      LEFT JOIN finance.members m ON m.id = t.member_id AND m.organization_id = t.organization_id
+      LEFT JOIN finance.clients c ON c.id = t.client_id AND c.organization_id = t.organization_id
+      LEFT JOIN finance.vendors v ON v.id = t.vendor_id AND v.organization_id = t.organization_id
+      WHERE ${conditions.join(' AND ')}
+        AND t.deleted_at IS NULL
+    `,
+    values: values.slice(0, -2), // remove LIMIT and OFFSET params
+  };
+  const { rows: countRows } = await pool.query(countQuery);
+  const totalCount = Number(countRows[0]?.total || 0);
+
+  const page = Math.floor(filters.offset / filters.limit) + 1;
+  return {
+    data: rows.map(mapTransactionRow),
+    pagination: {
+      total_count: totalCount,
+      page,
+      per_page: filters.limit,
+      has_next: filters.offset + filters.limit < totalCount,
+    },
+  };
 }
 
 async function updateTransaction({

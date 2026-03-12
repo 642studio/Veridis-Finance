@@ -9,10 +9,11 @@ const {
   uploadOrganizationLogo,
 } = require('../controllers/accountController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
+const { authRateLimit } = require('../middleware/rateLimit');
 
 async function authRoutes(app) {
-  app.post('/register', register);
-  app.post('/login', login);
+  app.post('/register', { preHandler: [authRateLimit] }, register);
+  app.post('/login', { preHandler: [authRateLimit] }, login);
 
   app.get('/account', { preHandler: [authenticate] }, getAccount);
   app.put('/account', { preHandler: [authenticate] }, updateAccount);
