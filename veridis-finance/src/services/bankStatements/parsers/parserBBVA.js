@@ -1,11 +1,16 @@
-function notImplemented(message) {
-  const error = new Error(message);
-  error.statusCode = 501;
-  return error;
-}
+const { parseGenericStatement } = require('./genericStatementParser');
 
-function parseBBVAStatement() {
-  throw notImplemented('BBVA statement parser is not implemented yet');
+/**
+ * BBVA (Bancomer) statements use the common MX layout:
+ *   OPER  LIQ  COD  DESCRIPCION  CARGO / ABONO  SALDO
+ * We delegate to the generic running-balance parser. BBVA's movement header
+ * commonly contains "descripcion" and "saldo"; we keep the token set permissive.
+ */
+function parseBBVAStatement(rawText) {
+  return parseGenericStatement(rawText, {
+    bank: 'bbva',
+    headerTokens: ['descripcion', 'saldo'],
+  });
 }
 
 module.exports = {

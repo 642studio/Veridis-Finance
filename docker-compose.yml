@@ -1,0 +1,82 @@
+# One-command local stack: PostgreSQL + backend API + frontend.
+#
+#   docker compose up --build
+#
+# Then open http://localhost:3000 and log in with the seeded demo credentials:
+#   Organization Slug: 642-studio
+#   Email:             admin@642studio.com
+#   Password:          ChangeMe123!
+#
+# The backend applies the schema (idempotent) and seeds the demo tenant on start.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: veridis_finance
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d veridis_finance']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./veridis-finance
+      dockerfile: dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: '4000'
+      LOG_LEVEL: info
+      JWT_SECRET: local-dev-jwt-secret-change-me-please
+      AI_MASTER_KEY: local-dev-ai-master-key-change-me-please
+      CORS_ORIGIN: http://localhost:3000
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_NAME: veridis_finance
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: 'false'
+      # Demo seed
+      SEED_ORG_NAME: 642 Studio
+      SEED_ORG_SLUG: 642-studio
+      SEED_ORG_PLAN: free
+      SEED_ADMIN_EMAIL: admin@642studio.com
+      SEED_ADMIN_NAME: 642 Studio Owner
+      SEED_ADMIN_PASSWORD: ChangeMe123!
+    # Apply schema (idempotent) + seed demo tenant, then start the API.
+    command: sh -c "node scripts/apply-schema.js && (node scripts/seed.js || true) && node src/server.js"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '4000:4000'
+
+  frontend:
+    build:
+      context: ./veridis-finance-frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      # Server-side calls from Next.js to the backend go over the compose network.
+      VERIDIS_API_URL: http://backend:4000
+      # Must match the backend JWT_SECRET so the middleware can verify tokens.
+      JWT_SECRET: local-dev-jwt-secret-change-me-please
+      NEXT_PUBLIC_NOTIFICATION_LIBRARY: sonner
+    depends_on:
+      - backend
+    ports:
+      - '3000:3000'
+
+volumes:
+  postgres_data:

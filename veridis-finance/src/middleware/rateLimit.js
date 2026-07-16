@@ -1,6 +1,12 @@
 const crypto = require('node:crypto');
 const { extractApiKey } = require('./apiKeyAuth');
 
+// LIMITATION: these limiters keep counters in an in-process Map. That is correct
+// and sufficient for a single instance, but with multiple instances behind a
+// load balancer the limit is enforced per-instance (effective limit = N * max)
+// and all counters reset on deploy/restart. For horizontal scaling, back these
+// buckets with a shared store (e.g. Redis via a fixed/sliding-window script) and
+// keep the same env-configurable window/max contract.
 const rateBuckets = new Map();
 
 function tooManyRequests(message) {
@@ -76,6 +82,40 @@ async function automationRateLimit(request, reply) {
   }
 }
 
+const loginBuckets = new Map();
+
+async function authRateLimit(request, reply) {
+  const windowMs = 900000; // 15 minutes
+  const maxAttempts = 10;
+  const now = Date.now();
+  const limiterKey = `auth:${request.ip || 'unknown'}`;
+
+  let bucket = loginBuckets.get(limiterKey);
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + windowMs };
+    loginBuckets.set(limiterKey, bucket);
+  }
+
+  bucket.count += 1;
+
+  reply.header('X-RateLimit-Limit', String(maxAttempts));
+  reply.header('X-RateLimit-Remaining', String(Math.max(0, maxAttempts - bucket.count)));
+  reply.header('X-RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+
+  if (bucket.count > maxAttempts) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    reply.header('Retry-After', String(retryAfterSeconds));
+    throw tooManyRequests('Too many login attempts. Please try again later.');
+  }
+
+  if (loginBuckets.size > 10000) {
+    for (const [key, b] of loginBuckets.entries()) {
+      if (b.resetAt <= now) loginBuckets.delete(key);
+    }
+  }
+}
+
 module.exports = {
   automationRateLimit,
+  authRateLimit,
 };

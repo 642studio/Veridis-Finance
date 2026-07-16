@@ -2,14 +2,12 @@ require('dotenv').config();
 
 const buildApp = require('./app');
 const pool = require('./db/pool');
+const { assertEnv } = require('./config/env');
+const logger = require('./logger');
 
-const requiredEnv = ['JWT_SECRET'];
-
-for (const envName of requiredEnv) {
-  if (!process.env[envName]) {
-    throw new Error(`Missing required environment variable: ${envName}`);
-  }
-}
+// Fail fast on misconfiguration (missing/placeholder secrets, unsafe CORS in
+// production, etc.) before the server starts accepting traffic.
+assertEnv({ logger });
 
 const app = buildApp();
 

@@ -1,5 +1,6 @@
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
+const cors = require('@fastify/cors');
 const { ZodError } = require('zod');
 
 const transactionsRoutes = require('./routes/transactions');
@@ -18,6 +19,42 @@ const contactsRoutes = require('./routes/contacts');
 const categoriesRoutes = require('./routes/categories');
 const transactionSplitsRoutes = require('./routes/transactionSplits');
 const logger = require('./logger');
+const pool = require('./db/pool');
+
+/**
+ * Resolves the CORS `origin` option from CORS_ORIGIN.
+ *
+ * - Comma-separated list  -> exact allowlist (recommended, works with credentials)
+ * - "true"                -> reflect any origin (dev convenience only)
+ * - unset                 -> reflect any origin in non-production; in production
+ *                            this is rejected earlier by config/env validation,
+ *                            so we default to `false` (no cross-origin) as a
+ *                            safe fallback.
+ */
+function resolveCorsOrigin() {
+  const raw = (process.env.CORS_ORIGIN || '').trim();
+
+  if (raw === 'true') {
+    return true;
+  }
+
+  if (raw && raw !== '*') {
+    const allowlist = raw
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+    if (allowlist.length > 0) {
+      return allowlist;
+    }
+  }
+
+  if (raw === '*') {
+    return true;
+  }
+
+  // Unset: permissive in dev, closed in production.
+  return process.env.NODE_ENV === 'production' ? false : true;
+}
 
 function buildApp() {
   const maxXmlFileSizeBytes = Number.parseInt(
@@ -42,6 +79,13 @@ function buildApp() {
     trustProxy: true,
   });
 
+  app.register(cors, {
+    origin: resolveCorsOrigin(),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  });
+
   app.register(multipart, {
     limits: {
       files: 1,
@@ -51,11 +95,21 @@ function buildApp() {
     throwFileSizeLimit: true,
   });
 
-  app.get('/health', async () => ({
-    status: 'ok',
-    service: 'veridis-finance',
-    timestamp: new Date().toISOString(),
-  }));
+  app.get('/health', async () => {
+    let dbStatus = 'unknown';
+    try {
+      const result = await pool.query('SELECT 1 AS ok');
+      dbStatus = result.rows[0]?.ok === 1 ? 'connected' : 'error';
+    } catch {
+      dbStatus = 'disconnected';
+    }
+    return {
+      status: dbStatus === 'connected' ? 'ok' : 'degraded',
+      service: 'veridis-finance',
+      database: dbStatus,
+      timestamp: new Date().toISOString(),
+    };
+  });
 
   app.register(authRoutes, { prefix: '/auth' });
 

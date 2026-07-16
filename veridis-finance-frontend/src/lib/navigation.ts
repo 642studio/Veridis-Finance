@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   Receipt,
   Store,
+  Users,
+  UserSquare2,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -45,9 +47,19 @@ export const DASHBOARD_NAV_ITEMS: DashboardNavItem[] = [
     icon: CalendarRange,
   },
   {
+    href: "/dashboard/clients",
+    label: "Clients",
+    icon: UserSquare2,
+  },
+  {
     href: "/dashboard/vendors",
     label: "Vendors",
     icon: Store,
+  },
+  {
+    href: "/dashboard/members",
+    label: "Members",
+    icon: Users,
   },
   {
     href: "/dashboard/accounts",

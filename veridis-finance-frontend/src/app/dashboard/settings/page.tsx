@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -373,10 +374,6 @@ export default function DashboardSettingsPage() {
     }
   };
 
-  const maskedOrganizationKeyPreview = useMemo(() => {
-    const name = account?.organization.name || "Organization";
-    return `${name.slice(0, 1).toUpperCase()}***`;
-  }, [account?.organization.name]);
   const canManageOrganization =
     account?.user.role === "owner" || account?.user.role === "admin";
 
@@ -467,6 +464,58 @@ export default function DashboardSettingsPage() {
 
       {!isLoading && activeTab === "organization" ? (
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Plan &amp; Subscription</CardTitle>
+              <CardDescription>
+                Your current plan and its transaction limits. Billing management is
+                not yet available in-app.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center gap-6 text-sm">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Plan
+                </p>
+                <Badge variant="outline" className="uppercase">
+                  {account?.organization.plan ?? "free"}
+                </Badge>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Status
+                </p>
+                <Badge
+                  variant={
+                    account?.organization.subscription_status === "active"
+                      ? "success"
+                      : "outline"
+                  }
+                >
+                  {account?.organization.subscription_status ?? "active"}
+                </Badge>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Monthly transactions
+                </p>
+                <p className="font-medium">
+                  {account?.organization.plan === "free"
+                    ? "Up to 200 / month"
+                    : "Unlimited"}
+                </p>
+              </div>
+              {account?.organization.plan === "enterprise" ? (
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    API access
+                  </p>
+                  <p className="font-medium">Enabled</p>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Organization</CardTitle>
@@ -611,7 +660,9 @@ export default function DashboardSettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
-                Organization key preview: {maskedOrganizationKeyPreview}
+                Provider API keys are stored encrypted (AES-256) on the server and
+                are never exposed here. Configure and test them from the AI
+                settings page.
               </div>
 
               <Button asChild>

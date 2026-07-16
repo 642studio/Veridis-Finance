@@ -103,30 +103,9 @@ BEGIN
   END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS finance.transaction_audit_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL
-    REFERENCES finance.organizations(organization_id)
-      ON DELETE CASCADE,
-  transaction_id UUID NOT NULL
-    REFERENCES finance.transactions(id)
-      ON DELETE CASCADE,
-  action TEXT NOT NULL
-    CHECK (action IN ('create', 'update', 'delete')),
-  actor_user_id UUID NULL
-    REFERENCES finance.users(id)
-      ON DELETE SET NULL,
-  actor_role TEXT NULL,
-  source TEXT NOT NULL DEFAULT 'api',
-  changes JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMP NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_transaction_audit_org_transaction_created
-  ON finance.transaction_audit_logs (organization_id, transaction_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_transaction_audit_org_created
-  ON finance.transaction_audit_logs (organization_id, created_at DESC);
+-- NOTE: finance.transaction_audit_logs is defined further below, AFTER the
+-- organizations, users and transactions tables it references. Defining it here
+-- (before those tables exist) breaks a clean install (psql -f / docker initdb).
 
 ALTER TYPE finance.user_role ADD VALUE IF NOT EXISTS 'owner';
 ALTER TYPE finance.user_role ADD VALUE IF NOT EXISTS 'admin';
@@ -432,6 +411,34 @@ CREATE INDEX IF NOT EXISTS idx_transactions_org_vendor
 
 CREATE INDEX IF NOT EXISTS idx_transactions_org_deleted
   ON finance.transactions (organization_id, deleted_at);
+
+-- Audit log for transactions. Defined here (not at the top of the file) because
+-- it has foreign keys to organizations, transactions and users, which must all
+-- exist first for a clean install to succeed.
+CREATE TABLE IF NOT EXISTS finance.transaction_audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL
+    REFERENCES finance.organizations(organization_id)
+      ON DELETE CASCADE,
+  transaction_id UUID NOT NULL
+    REFERENCES finance.transactions(id)
+      ON DELETE CASCADE,
+  action TEXT NOT NULL
+    CHECK (action IN ('create', 'update', 'delete')),
+  actor_user_id UUID NULL
+    REFERENCES finance.users(id)
+      ON DELETE SET NULL,
+  actor_role TEXT NULL,
+  source TEXT NOT NULL DEFAULT 'api',
+  changes JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_audit_org_transaction_created
+  ON finance.transaction_audit_logs (organization_id, transaction_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_audit_org_created
+  ON finance.transaction_audit_logs (organization_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS finance.invoices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

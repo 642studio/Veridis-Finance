@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DataTable } from "@/components/data/data-table";
 import { InvoiceUploadForm } from "@/components/finance/invoice-upload-form";
+import { useSession } from "@/components/session-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,12 +25,23 @@ import type { ApiEnvelope, Invoice } from "@/types/finance";
 
 export default function DashboardInvoicesPage() {
   const notify = useNotify();
+  const { canWrite } = useSession();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [markPaidInvoice, setMarkPaidInvoice] = useState<Invoice | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [paymentReference, setPaymentReference] = useState("");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    uuid_sat: "",
+    emitter: "",
+    receiver: "",
+    total: "",
+    invoice_date: "",
+    status: "pending" as "pending" | "paid",
+  });
 
   const loadInvoices = useCallback(async () => {
     setIsLoading(true);
@@ -81,6 +93,70 @@ export default function DashboardInvoicesPage() {
       throw error;
     }
   };
+
+  const resetCreateForm = useCallback(() => {
+    setCreateForm({
+      uuid_sat: "",
+      emitter: "",
+      receiver: "",
+      total: "",
+      invoice_date: "",
+      status: "pending",
+    });
+  }, []);
+
+  const handleCreateInvoice = useCallback(async () => {
+    const total = Number.parseFloat(createForm.total);
+    if (!createForm.uuid_sat.trim()) {
+      notify.error({ title: "Missing UUID", description: "UUID (SAT) is required." });
+      return;
+    }
+    if (!createForm.emitter.trim() || !createForm.receiver.trim()) {
+      notify.error({
+        title: "Missing data",
+        description: "Emitter and receiver are required.",
+      });
+      return;
+    }
+    if (!Number.isFinite(total) || total <= 0) {
+      notify.error({ title: "Invalid total", description: "Total must be greater than 0." });
+      return;
+    }
+    if (!createForm.invoice_date) {
+      notify.error({ title: "Missing date", description: "Invoice date is required." });
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      await clientApiFetch<ApiEnvelope<Invoice>>("/api/finance/invoices", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          uuid_sat: createForm.uuid_sat.trim(),
+          emitter: createForm.emitter.trim(),
+          receiver: createForm.receiver.trim(),
+          total,
+          status: createForm.status,
+          invoice_date: createForm.invoice_date,
+        }),
+      });
+
+      await loadInvoices();
+      setIsCreateOpen(false);
+      resetCreateForm();
+      notify.success({
+        title: "Invoice created",
+        description: "Manual invoice added successfully.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof ApiClientError ? error.message : "Could not create invoice";
+      notify.error({ title: "Create failed", description: message });
+    } finally {
+      setIsCreating(false);
+    }
+  }, [createForm, loadInvoices, notify, resetCreateForm]);
 
   const updateInvoiceStatus = useCallback(
     async (
@@ -161,7 +237,9 @@ export default function DashboardInvoicesPage() {
         key: "actions",
         header: "Actions",
         render: (row: Invoice) =>
-          row.status === "pending" ? (
+          !canWrite ? (
+            <span className="text-xs text-muted-foreground">—</span>
+          ) : row.status === "pending" ? (
             <Button
               size="sm"
               variant="outline"
@@ -188,12 +266,12 @@ export default function DashboardInvoicesPage() {
           ),
       },
     ],
-    [statusUpdatingId, updateInvoiceStatus]
+    [statusUpdatingId, updateInvoiceStatus, canWrite]
   );
 
   return (
     <div className="space-y-6">
-      <InvoiceUploadForm onUpload={handleUpload} />
+      {canWrite ? <InvoiceUploadForm onUpload={handleUpload} /> : null}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -202,6 +280,16 @@ export default function DashboardInvoicesPage() {
             <CardDescription className="hidden md:block">
               Live query mode from backend.
             </CardDescription>
+            {canWrite ? (
+              <Button
+                onClick={() => {
+                  resetCreateForm();
+                  setIsCreateOpen(true);
+                }}
+              >
+                New invoice
+              </Button>
+            ) : null}
             <Button variant="outline" onClick={loadInvoices} disabled={isLoading}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
@@ -216,6 +304,124 @@ export default function DashboardInvoicesPage() {
           />
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(nextOpen) => {
+          setIsCreateOpen(nextOpen);
+          if (!nextOpen) {
+            resetCreateForm();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New invoice (manual)</DialogTitle>
+            <DialogDescription>
+              Register an invoice manually. For SAT CFDI 4.0 XML files, use the
+              upload form instead.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="create_uuid_sat">UUID (SAT)</Label>
+              <Input
+                id="create_uuid_sat"
+                value={createForm.uuid_sat}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({ ...prev, uuid_sat: event.target.value }))
+                }
+                placeholder="A1B2C3D4-E5F6-4789-8ABC-DEF012345678"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="create_emitter">Emitter</Label>
+                <Input
+                  id="create_emitter"
+                  value={createForm.emitter}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, emitter: event.target.value }))
+                  }
+                  placeholder="RFC / name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create_receiver">Receiver</Label>
+                <Input
+                  id="create_receiver"
+                  value={createForm.receiver}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, receiver: event.target.value }))
+                  }
+                  placeholder="RFC / name"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="create_total">Total</Label>
+                <Input
+                  id="create_total"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={createForm.total}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, total: event.target.value }))
+                  }
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create_invoice_date">Invoice date</Label>
+                <Input
+                  id="create_invoice_date"
+                  type="date"
+                  value={createForm.invoice_date}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({ ...prev, invoice_date: event.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create_status">Status</Label>
+              <select
+                id="create_status"
+                className="flex h-10 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                value={createForm.status}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    status: event.target.value === "paid" ? "paid" : "pending",
+                  }))
+                }
+              >
+                <option value="pending">pending</option>
+                <option value="paid">paid</option>
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateOpen(false);
+                resetCreateForm();
+              }}
+              disabled={isCreating}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCreateInvoice} disabled={isCreating}>
+              {isCreating ? "Saving..." : "Create invoice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(markPaidInvoice)}

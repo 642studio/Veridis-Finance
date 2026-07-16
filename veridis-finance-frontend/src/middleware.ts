@@ -10,7 +10,8 @@ async function isValidToken(token: string | undefined) {
 
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    return true;
+    console.error("[middleware] JWT_SECRET is not configured — rejecting all tokens for safety.");
+    return false;
   }
 
   try {
