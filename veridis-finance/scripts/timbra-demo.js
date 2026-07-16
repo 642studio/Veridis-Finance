@@ -27,6 +27,12 @@ async function main() {
 
   const result = await pac.stampIngreso({
     provider,
+    // Issuer = the account's fiscal profile (sandbox).
+    issuer: {
+      rfc: 'SCD2507076C4',
+      name: '642 STUDIO',
+      fiscalRegime: '626',
+    },
     // SAT/PAC sandbox test receiver.
     receiver: {
       rfc: 'URE180429TM6',
@@ -35,7 +41,7 @@ async function main() {
       use: 'G03',
       zip: '65000',
     },
-    expeditionPlace: '65000',
+    expeditionPlace: '85800',
     paymentForm: '03', // Transferencia
     paymentMethod: 'PUE',
     items: [

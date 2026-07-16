@@ -111,6 +111,16 @@ async function stampIngreso(input) {
     CfdiType: 'I',
     NameId: '1', // 1 = Factura
     ExpeditionPlace: input.expeditionPlace || input.receiver.zip, // CP del emisor
+    // Issuer (emisor). In API Web this must match the account's fiscal profile.
+    ...(input.issuer
+      ? {
+          Issuer: {
+            Rfc: input.issuer.rfc,
+            Name: input.issuer.name,
+            FiscalRegime: input.issuer.fiscalRegime,
+          },
+        }
+      : {}),
     PaymentForm: isPPD ? '99' : (input.paymentForm || '01'),
     PaymentMethod: input.paymentMethod || 'PUE',
     Exportation: '01', // No aplica
