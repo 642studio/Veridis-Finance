@@ -45,6 +45,9 @@ function toLabelDate(value: string | null): string | null {
   });
 }
 
+// Builds a smooth day-by-day curve purely for visualisation. Only the two
+// endpoints (current balance and the backend's 30-day projection) are real data;
+// the intermediate points are an interpolated estimate, not per-day forecasts.
 function buildProjectionCurve(
   currentBalance: number,
   projectedThirtyDays: number,
@@ -166,6 +169,8 @@ export function CashflowProjectionCard({
             <CardTitle className="text-slate-100">Cashflow Projection</CardTitle>
             <CardDescription className="text-slate-400">
               Rule-based forecast based on recent transactions and pending invoices.
+              The 30-day endpoints are computed by the backend; the daily curve
+              between them is an interpolated estimate.
             </CardDescription>
           </div>
           <Badge variant="outline" className={trend.badgeClassName}>
