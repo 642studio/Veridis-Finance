@@ -1,6 +1,12 @@
 const crypto = require('node:crypto');
 const { extractApiKey } = require('./apiKeyAuth');
 
+// LIMITATION: these limiters keep counters in an in-process Map. That is correct
+// and sufficient for a single instance, but with multiple instances behind a
+// load balancer the limit is enforced per-instance (effective limit = N * max)
+// and all counters reset on deploy/restart. For horizontal scaling, back these
+// buckets with a shared store (e.g. Redis via a fixed/sliding-window script) and
+// keep the same env-configurable window/max contract.
 const rateBuckets = new Map();
 
 function tooManyRequests(message) {

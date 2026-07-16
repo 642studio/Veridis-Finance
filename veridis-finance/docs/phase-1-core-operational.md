@@ -26,9 +26,11 @@ All reads and writes are scoped by `organization_id`.
 Run schema migration against your configured DB:
 
 ```bash
-cd /Users/642studio/VeridisFinance/veridis-finance
-node -e "require('dotenv').config(); const fs=require('fs'); const pool=require('./src/db/pool'); (async()=>{ await pool.query(fs.readFileSync('src/db/schema.sql','utf8')); await pool.end(); console.log('schema-applied'); })().catch((err)=>{ console.error(err); process.exit(1); });"
+npm run db:migrate
 ```
+
+This runs `scripts/apply-schema.js`, which applies `src/db/schema.sql`
+idempotently and is safe to re-run.
 
 What this migration does:
 
