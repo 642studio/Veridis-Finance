@@ -21,6 +21,41 @@ const transactionSplitsRoutes = require('./routes/transactionSplits');
 const logger = require('./logger');
 const pool = require('./db/pool');
 
+/**
+ * Resolves the CORS `origin` option from CORS_ORIGIN.
+ *
+ * - Comma-separated list  -> exact allowlist (recommended, works with credentials)
+ * - "true"                -> reflect any origin (dev convenience only)
+ * - unset                 -> reflect any origin in non-production; in production
+ *                            this is rejected earlier by config/env validation,
+ *                            so we default to `false` (no cross-origin) as a
+ *                            safe fallback.
+ */
+function resolveCorsOrigin() {
+  const raw = (process.env.CORS_ORIGIN || '').trim();
+
+  if (raw === 'true') {
+    return true;
+  }
+
+  if (raw && raw !== '*') {
+    const allowlist = raw
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+    if (allowlist.length > 0) {
+      return allowlist;
+    }
+  }
+
+  if (raw === '*') {
+    return true;
+  }
+
+  // Unset: permissive in dev, closed in production.
+  return process.env.NODE_ENV === 'production' ? false : true;
+}
+
 function buildApp() {
   const maxXmlFileSizeBytes = Number.parseInt(
     process.env.INVOICE_XML_MAX_FILE_SIZE_BYTES || '1048576',
@@ -45,7 +80,7 @@ function buildApp() {
   });
 
   app.register(cors, {
-    origin: process.env.CORS_ORIGIN || true,
+    origin: resolveCorsOrigin(),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],

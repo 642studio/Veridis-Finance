@@ -1,4 +1,7 @@
-const { getCashflowProjection } = require('../controllers/intelligenceController');
+const {
+  getCashflowProjection,
+  reclassifyTransactions,
+} = require('../controllers/intelligenceController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
 async function intelligenceRoutes(app) {
@@ -11,6 +14,19 @@ async function intelligenceRoutes(app) {
       ],
     },
     getCashflowProjection
+  );
+
+  // Bulk re-run the hybrid classification engine over uncategorized
+  // transactions. Write operation -> excludes viewer.
+  app.post(
+    '/intelligence/reclassify',
+    {
+      preHandler: [
+        authenticate,
+        authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS]),
+      ],
+    },
+    reclassifyTransactions
   );
 }
 

@@ -327,6 +327,7 @@ Protected finance:
 - `POST /api/finance/bank-statements/upload`
 - `POST /api/finance/bank-statements/confirm/:importId`
 - `GET /api/finance/intelligence/projection`
+- `POST /api/finance/intelligence/reclassify` (bulk re-run the hybrid classification engine over uncategorized transactions; body: `{ "limit": 100, "min_confidence": 0.5 }`)
 - `GET /api/finance/intelligence/ai-provider?provider=<name>`
 - `POST /api/finance/intelligence/ai-provider`
 - `POST /api/finance/intelligence/ai-provider/test`
@@ -503,11 +504,16 @@ npm install
 cp .env.example .env
 ```
 
-3. Apply schema:
+3. Apply schema (idempotent, safe to re-run):
 
 ```bash
-psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -f src/db/schema.sql
+npm run db:migrate
 ```
+
+   This runs `scripts/apply-schema.js`, which applies `src/db/schema.sql` against
+   the configured database. You can still apply it manually with
+   `psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -f src/db/schema.sql` if you
+   prefer.
 
 4. Seed default tenant/user (optional):
 
@@ -515,7 +521,15 @@ psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -f src/db/schema.sql
 npm run seed
 ```
 
-5. Start service:
+   Or apply schema + seed in one step: `npm run db:setup`.
+
+5. Run the test suite:
+
+```bash
+npm test
+```
+
+6. Start service:
 
 ```bash
 npm run dev

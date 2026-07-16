@@ -1,11 +1,16 @@
-function notImplemented(message) {
-  const error = new Error(message);
-  error.statusCode = 501;
-  return error;
-}
+const { parseGenericStatement } = require('./genericStatementParser');
 
-function parseBanorteStatement() {
-  throw notImplemented('Banorte statement parser is not implemented yet');
+/**
+ * Banorte statements use the common MX layout:
+ *   FECHA  DESCRIPCION / REFERENCIA  DEPOSITOS / CARGOS / ABONOS  SALDO
+ * so we delegate to the generic running-balance parser with Banorte-oriented
+ * header hints.
+ */
+function parseBanorteStatement(rawText) {
+  return parseGenericStatement(rawText, {
+    bank: 'banorte',
+    headerTokens: ['fecha', 'descripcion', 'saldo'],
+  });
 }
 
 module.exports = {
