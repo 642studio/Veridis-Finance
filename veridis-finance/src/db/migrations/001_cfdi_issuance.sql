@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS finance.cfdi_issuers (
   legal_name          TEXT NOT NULL,
   fiscal_regime       TEXT NOT NULL,                       -- c_RegimenFiscal (e.g. '601')
   zip_code            TEXT NOT NULL,                       -- lugar de expedición (CP emisor)
-  pac_provider        TEXT NOT NULL DEFAULT 'facturapi'    -- 'facturapi' | 'facturama'
+  pac_provider        TEXT NOT NULL DEFAULT 'facturama'    -- 'facturama' | 'facturapi'
                         CHECK (pac_provider IN ('facturapi', 'facturama')),
   pac_organization_id TEXT,                                -- Facturapi Organization id (per tenant)
   pac_api_key_enc     TEXT,                                -- per-tenant PAC key, encrypted at rest

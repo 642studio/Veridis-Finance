@@ -1,40 +1,47 @@
 #!/usr/bin/env node
 /**
- * Demo: stamp a test CFDI de Ingreso against the Facturapi sandbox.
+ * Demo: stamp a test CFDI de Ingreso against the PAC sandbox.
  *
- *   FACTURAPI_KEY=sk_test_xxx node scripts/timbra-demo.js
+ * Facturama (default):
+ *   FACTURAMA_USER=... FACTURAMA_PASSWORD=... FACTURAMA_ENV=sandbox \
+ *     node scripts/timbra-demo.js
  *
- * Uses Facturapi's well-known sandbox test RFCs so it stamps without needing a
- * real receiver. Prints the SAT UUID (Folio Fiscal) and the PDF/XML links.
- * No database access required — this proves the timbrado path end to end.
+ * Facturapi:
+ *   PAC_PROVIDER=facturapi FACTURAPI_KEY=sk_test_... node scripts/timbra-demo.js
+ *
+ * Uses SAT test receiver data so it stamps without a real customer, and prints
+ * the SAT UUID (Folio Fiscal) + PDF/XML links. No database access required.
  */
 
 require('dotenv').config();
 const pac = require('../src/services/pacService');
 
 async function main() {
-  if (!process.env.FACTURAPI_KEY) {
-    console.error('Set FACTURAPI_KEY (use your sk_test_... sandbox key).');
+  const provider = process.env.PAC_PROVIDER || 'facturama';
+  if (provider === 'facturama' && !process.env.FACTURAMA_USER) {
+    console.error('Set FACTURAMA_USER / FACTURAMA_PASSWORD (sandbox credentials).');
     process.exit(1);
   }
 
-  console.log('Timbrando CFDI de prueba en el sandbox de Facturapi...\n');
+  console.log(`Timbrando CFDI de prueba (proveedor: ${provider}, sandbox)...\n`);
 
   const result = await pac.stampIngreso({
+    provider,
+    // SAT/PAC sandbox test receiver.
     receiver: {
-      // Facturapi sandbox test receiver (matches SAT test data).
       rfc: 'URE180429TM6',
       name: 'UNIVERSIDAD ROBOTICA ESPAÑOLA',
       fiscalRegime: '601',
       use: 'G03',
       zip: '65000',
     },
+    expeditionPlace: '65000',
     paymentForm: '03', // Transferencia
     paymentMethod: 'PUE',
     items: [
       {
         description: 'Servicio de consultoría Veridis',
-        productKey: '84111506', // Servicios de facturación
+        productKey: '84111506',
         unitKey: 'E48',
         quantity: 1,
         unitPrice: 1000,
