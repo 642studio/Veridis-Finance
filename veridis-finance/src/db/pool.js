@@ -13,11 +13,20 @@ const baseConfig = connectionString
       password: process.env.DB_PASSWORD || 'postgres',
     };
 
+// Managed Postgres poolers (e.g. Supabase Supavisor) present certificates whose
+// CA is not always in Node's default trust store. Default to verifying in
+// production, but allow an explicit override via DB_SSL_REJECT_UNAUTHORIZED so
+// those providers can be used without disabling TLS globally.
+const rejectUnauthorized =
+  process.env.DB_SSL_REJECT_UNAUTHORIZED !== undefined
+    ? process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true'
+    : process.env.NODE_ENV === 'production';
+
 const pool = new Pool({
   ...baseConfig,
   ssl: useSsl
     ? {
-        rejectUnauthorized: process.env.NODE_ENV === 'production',
+        rejectUnauthorized,
       }
     : false,
   max: Number(process.env.DB_POOL_MAX || 10),
