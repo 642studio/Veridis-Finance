@@ -25,6 +25,7 @@ import {
   type MonthlyIncomeExpenseDatum,
 } from "@/components/charts/monthly-income-expense-bar-chart";
 import { CashflowProjectionCard } from "@/components/finance/cashflow-projection-card";
+import { OnboardingChecklist } from "@/components/finance/onboarding-checklist";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNotify } from "@/hooks/use-notify";
@@ -515,6 +516,9 @@ export default function DashboardOverviewPage() {
 
   return (
     <div className="space-y-6">
+      {/* Guided setup for new organizations (hides itself when complete) */}
+      <OnboardingChecklist />
+
       {/* Header + period */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
