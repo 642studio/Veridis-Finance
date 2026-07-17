@@ -34,6 +34,7 @@ interface Receiver {
 interface Cfdi {
   id: string;
   status: string;
+  cfdi_type?: string;
   uuid: string | null;
   folio: string | null;
   receiver_rfc: string | null;
@@ -90,6 +91,24 @@ export default function CfdiPage() {
   const [issueBusy, setIssueBusy] = useState(false);
   const [receiverId, setReceiverId] = useState("");
   const [items, setItems] = useState([{ ...emptyItem }]);
+
+  // Nota de crédito (CFDI de Egreso)
+  const [ncFor, setNcFor] = useState<Cfdi | null>(null);
+  const [ncBusy, setNcBusy] = useState(false);
+  const [ncForm, setNcForm] = useState({
+    amount: "",
+    description: "Nota de crédito",
+    relation: "01",
+  });
+
+  // Complemento de Pago (REP) para PPD
+  const [repFor, setRepFor] = useState<Cfdi | null>(null);
+  const [repBusy, setRepBusy] = useState(false);
+  const [repForm, setRepForm] = useState({
+    amount: "",
+    payment_form: "03",
+    date: new Date().toISOString().slice(0, 10),
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -285,6 +304,89 @@ export default function CfdiPage() {
       });
     } finally {
       setPayingId(null);
+    }
+  };
+
+  const openCreditNote = (c: Cfdi) => {
+    setNcForm({ amount: String(c.total ?? ""), description: "Nota de crédito", relation: "01" });
+    setNcFor(c);
+  };
+
+  const submitCreditNote = async () => {
+    if (!ncFor) return;
+    const amount = Number(ncForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      notify.error({ title: "Monto inválido", description: "Escribe el monto a acreditar." });
+      return;
+    }
+    setNcBusy(true);
+    try {
+      await clientApiFetch(`/api/finance/cfdi/${ncFor.id}/credit-note`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          relation_type: ncForm.relation,
+          items: [
+            {
+              description: ncForm.description || "Nota de crédito",
+              quantity: 1,
+              // Base sin IVA; el traslado 16% se desglosa en el CFDI.
+              unitPrice: amount,
+              ivaRate: 0.16,
+            },
+          ],
+        }),
+      });
+      notify.success({ title: "Nota de crédito timbrada ✅" });
+      setNcFor(null);
+      load();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo emitir la nota de crédito",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setNcBusy(false);
+    }
+  };
+
+  const openPaymentRep = (c: Cfdi) => {
+    setRepForm({
+      amount: String(c.total ?? ""),
+      payment_form: "03",
+      date: new Date().toISOString().slice(0, 10),
+    });
+    setRepFor(c);
+  };
+
+  const submitPaymentRep = async () => {
+    if (!repFor) return;
+    const amount = Number(repForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      notify.error({ title: "Monto inválido", description: "Escribe el monto del pago." });
+      return;
+    }
+    setRepBusy(true);
+    try {
+      await clientApiFetch(`/api/finance/cfdi/${repFor.id}/payment`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          date: repForm.date,
+          payment_form: repForm.payment_form,
+        }),
+      });
+      notify.success({ title: "Complemento de pago timbrado ✅" });
+      setRepFor(null);
+      load();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo registrar el pago",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setRepBusy(false);
     }
   };
 
@@ -497,6 +599,24 @@ export default function CfdiPage() {
                                 Enviar al CRM
                               </button>
                             ) : null}
+                            {canWrite && c.metodo_pago === "PPD" && c.payment_status !== "paid" ? (
+                              <button
+                                type="button"
+                                className="text-xs font-medium text-primary hover:underline"
+                                onClick={() => openPaymentRep(c)}
+                              >
+                                Registrar pago (REP)
+                              </button>
+                            ) : null}
+                            {canWrite && (c.cfdi_type ?? "I") === "I" ? (
+                              <button
+                                type="button"
+                                className="text-xs font-medium text-amber-700 hover:underline"
+                                onClick={() => openCreditNote(c)}
+                              >
+                                Nota de crédito
+                              </button>
+                            ) : null}
                             <a className="text-primary hover:underline" href={`/api/finance/cfdi/${c.id}/pdf`}>
                               PDF
                             </a>
@@ -520,6 +640,120 @@ export default function CfdiPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Nota de crédito dialog */}
+      <Dialog open={Boolean(ncFor)} onOpenChange={(next) => (!next ? setNcFor(null) : undefined)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nota de crédito</DialogTitle>
+            <DialogDescription>
+              Emite un CFDI de Egreso relacionado a {ncFor?.receiver_name || "este CFDI"} (UUID{" "}
+              {ncFor?.uuid?.slice(0, 13)}…).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="nc_amount">Monto base a acreditar (sin IVA)</Label>
+              <Input
+                id="nc_amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={ncForm.amount}
+                onChange={(e) => setNcForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nc_desc">Concepto</Label>
+              <Input
+                id="nc_desc"
+                value={ncForm.description}
+                onChange={(e) => setNcForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nc_rel">Tipo de relación</Label>
+              <select
+                id="nc_rel"
+                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
+                value={ncForm.relation}
+                onChange={(e) => setNcForm((f) => ({ ...f, relation: e.target.value }))}
+              >
+                <option value="01">01 · Nota de crédito</option>
+                <option value="03">03 · Devolución de mercancía</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNcFor(null)} disabled={ncBusy}>
+              Cancelar
+            </Button>
+            <Button onClick={submitCreditNote} disabled={ncBusy}>
+              {ncBusy ? "Timbrando…" : "Emitir nota de crédito"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Complemento de pago (REP) dialog */}
+      <Dialog open={Boolean(repFor)} onOpenChange={(next) => (!next ? setRepFor(null) : undefined)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar pago (Complemento de Pago)</DialogTitle>
+            <DialogDescription>
+              Emite el REP para la factura PPD de {repFor?.receiver_name || "este receptor"}. Si el
+              pago liquida el saldo, la factura se marca pagada automáticamente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="rep_amount">Monto del pago</Label>
+              <Input
+                id="rep_amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={repForm.amount}
+                onChange={(e) => setRepForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="rep_date">Fecha del pago</Label>
+                <Input
+                  id="rep_date"
+                  type="date"
+                  value={repForm.date}
+                  onChange={(e) => setRepForm((f) => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rep_form">Forma de pago</Label>
+                <select
+                  id="rep_form"
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
+                  value={repForm.payment_form}
+                  onChange={(e) => setRepForm((f) => ({ ...f, payment_form: e.target.value }))}
+                >
+                  <option value="03">03 · Transferencia (SPEI)</option>
+                  <option value="01">01 · Efectivo</option>
+                  <option value="02">02 · Cheque</option>
+                  <option value="04">04 · Tarjeta de crédito</option>
+                  <option value="28">28 · Tarjeta de débito</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRepFor(null)} disabled={repBusy}>
+              Cancelar
+            </Button>
+            <Button onClick={submitPaymentRep} disabled={repBusy}>
+              {repBusy ? "Timbrando…" : "Emitir REP"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* CSF / new receiver dialog */}
       <Dialog open={csfOpen} onOpenChange={setCsfOpen}>
