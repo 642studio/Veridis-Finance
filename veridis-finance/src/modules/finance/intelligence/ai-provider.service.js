@@ -57,6 +57,19 @@ function normalizeProvider(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+/**
+ * Platform-managed AI (default): the SaaS ships with ONE system API key — ours,
+ * configured via AI_SYSTEM_* env vars on the backend — and customers never
+ * bring their own key. Per-organization keys (BYOK) remain available as a
+ * legacy escape hatch by setting AI_PROVIDER_MODE=byok.
+ */
+function platformManaged() {
+  return (
+    String(process.env.AI_PROVIDER_MODE || 'platform').trim().toLowerCase() !==
+    'byok'
+  );
+}
+
 function safeModelName(value, provider) {
   const model = String(value || '').trim().slice(0, 120);
   if (model) {
@@ -548,6 +561,13 @@ function resolveSystemProviderCredentials(preferredProvider) {
 }
 
 async function resolveProviderCredentials({ organizationId, provider, db = pool }) {
+  // Platform mode: always resolve to the system (platform) key and ignore any
+  // per-organization key rows. Usage is still logged per organization, so
+  // per-tenant metering/billing keeps working.
+  if (platformManaged()) {
+    return resolveSystemProviderCredentials(provider);
+  }
+
   const providerRow = await findProviderRow({
     organizationId,
     provider,
@@ -731,6 +751,12 @@ async function saveProvider({
   active,
   db = pool,
 }) {
+  if (platformManaged()) {
+    throw badRequest(
+      'La IA está incluida en tu plan y la administra Veridis; no necesitas configurar una API key.'
+    );
+  }
+
   const normalizedProvider = normalizeProviderInput(provider);
   const existing = await findProviderRow({
     organizationId,
@@ -809,6 +835,28 @@ async function getProvider({
   provider,
   db = pool,
 }) {
+  // Platform mode: report the platform-managed provider (never the key itself)
+  // so the UI can render "IA incluida" instead of a BYOK form.
+  if (platformManaged()) {
+    const sys = resolveSystemProviderCredentials(provider);
+    const fallbackProvider =
+      normalizeProvider(process.env.AI_SYSTEM_PROVIDER) || 'google';
+    return {
+      managed: true,
+      id: null,
+      organization_id: organizationId,
+      provider: sys?.provider || fallbackProvider,
+      model: sys?.model || safeModelName('', sys?.provider || fallbackProvider),
+      active: Boolean(sys),
+      use_system_key: true,
+      key_configured: Boolean(sys),
+      key_source: 'system',
+      api_key_masked: null,
+      system_key_available: Boolean(sys),
+      created_at: null,
+    };
+  }
+
   const normalizedProvider = provider ? normalizeProviderInput(provider) : null;
 
   const row = await findProviderRow({
@@ -973,4 +1021,6 @@ module.exports = {
   testConnection,
   classifyTransactionWithAi,
   getMonthlyUsageStats,
+  platformManaged,
+  resolveProviderCredentials,
 };
