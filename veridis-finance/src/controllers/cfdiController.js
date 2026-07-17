@@ -16,13 +16,16 @@ const itemSchema = z.object({
 const issueSchema = z.object({
   organization_id: z.string().uuid().optional(),
   invoice_id: z.string().uuid().optional(),
+  // Either reference a stored receiver profile...
+  receiver_id: z.string().uuid().optional(),
+  // ...or pass the receiver's fiscal data inline.
   receiver: z.object({
     rfc: z.string().min(12).max(13),
     name: z.string().min(1).max(255),
     fiscalRegime: z.string().min(3).max(4),
     use: z.string().min(3).max(4).optional(),
     zip: z.string().length(5),
-  }),
+  }).optional(),
   items: z.array(itemSchema).min(1),
   expeditionPlace: z.string().length(5).optional(),
   paymentForm: z.string().min(2).max(2).optional(),
@@ -30,6 +33,8 @@ const issueSchema = z.object({
   folio: z.union([z.string(), z.number()]).optional(),
   source: z.enum(['manual', 'ghl', 'api']).optional(),
   source_ref: z.string().max(255).optional(),
+}).refine((v) => v.receiver_id || v.receiver, {
+  message: 'Either receiver_id or receiver is required',
 });
 
 const listQuerySchema = z.object({

@@ -15,6 +15,7 @@ const crypto = require('node:crypto');
 const pool = require('../db/pool');
 const { encrypt, decrypt } = require('../lib/crypto');
 const cfdiService = require('./cfdiService');
+const receiversService = require('./cfdiReceiversService');
 
 const API_BASE = 'https://services.leadconnectorhq.com';
 const TOKEN_URL = `${API_BASE}/oauth/token`;
@@ -171,6 +172,43 @@ async function apiFetch(installId, path, options = {}) {
   return data;
 }
 
+/** Active install for a tenant (the connected GHL location). */
+async function getInstallForOrg(organizationId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM finance.ghl_installs
+      WHERE organization_id = $1 AND is_active = true
+      ORDER BY installed_at DESC LIMIT 1`,
+    [organizationId]
+  );
+  return rows[0] || null;
+}
+
+/** Pull invoices from the connected GHL location. */
+async function listInvoices(organizationId, { limit = 20, offset = 0 } = {}) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) return { connected: false, invoices: [] };
+  const q = new URLSearchParams({
+    altId: install.location_id,
+    altType: 'location',
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const data = await apiFetch(install.id, `/invoices/?${q.toString()}`);
+  return { connected: true, invoices: data.invoices || data.data || [] };
+}
+
+/** Pull contacts from the connected GHL location (Search Contacts). */
+async function listContacts(organizationId, { limit = 20 } = {}) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) return { connected: false, contacts: [] };
+  const data = await apiFetch(install.id, '/contacts/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ locationId: install.location_id, pageLimit: limit }),
+  });
+  return { connected: true, contacts: data.contacts || [] };
+}
+
 // --------------------------------------------------------------------------
 // Webhooks
 // --------------------------------------------------------------------------
@@ -265,15 +303,46 @@ async function processInvoicePaid(event) {
     err.statusCode = 422;
     throw err;
   }
-  const receiver = extractReceiver(data);
-  if (!receiver.rfc || !receiver.zip) {
-    const err = new Error('Missing receiver fiscal data (RFC / CP) on GHL invoice/contact');
+  const organizationId = install.organization_id;
+  const contact = data.contactDetails || data.contact || {};
+
+  // Resolve the receiver's fiscal profile (from an uploaded CSF) by GHL contact
+  // id or email. If none exists, we can't legally stamp — surface a clear error.
+  let receiverProfile = await receiversService.resolve({
+    organization_id: organizationId,
+    ghl_contact_id: data.contactId || contact.id,
+    email: contact.email,
+  });
+
+  // Fallback: fiscal data embedded in GHL custom fields (RFC/CP present).
+  if (!receiverProfile) {
+    const embedded = extractReceiver(data);
+    if (embedded.rfc && embedded.zip) {
+      receiverProfile = await receiversService.upsert({
+        organization_id: organizationId,
+        rfc: embedded.rfc,
+        name: embedded.name,
+        fiscal_regime: embedded.fiscalRegime,
+        zip_code: embedded.zip,
+        cfdi_use: embedded.use,
+        email: contact.email,
+        ghl_contact_id: data.contactId || contact.id,
+        source: 'ghl',
+      });
+    }
+  }
+
+  if (!receiverProfile) {
+    const err = new Error(
+      'No fiscal profile for this contact — upload the client CSF (RFC/CP) first'
+    );
     err.statusCode = 422;
     throw err;
   }
+
   return cfdiService.issueIngreso({
-    organization_id: install.organization_id,
-    receiver,
+    organization_id: organizationId,
+    receiver_id: receiverProfile.id,
     items: mapItems(data),
     paymentForm: '03',
     paymentMethod: 'PUE',
@@ -295,6 +364,9 @@ module.exports = {
   exchangeCode,
   getValidAccessToken,
   apiFetch,
+  getInstallForOrg,
+  listInvoices,
+  listContacts,
   verifyWebhookSignature,
   recordWebhook,
   processInvoicePaid,

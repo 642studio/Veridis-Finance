@@ -7,6 +7,7 @@ const transactionsRoutes = require('./routes/transactions');
 const reportsRoutes = require('./routes/reports');
 const invoicesRoutes = require('./routes/invoices');
 const cfdiRoutes = require('./routes/cfdi');
+const cfdiReceiversRoutes = require('./routes/cfdiReceivers');
 const ghlRoutes = require('./routes/ghl');
 const bankStatementsRoutes = require('./routes/bankStatements');
 const authRoutes = require('./routes/auth');
@@ -120,6 +121,7 @@ function buildApp() {
   app.register(reportsRoutes, { prefix: '/api/finance' });
   app.register(invoicesRoutes, { prefix: '/api/finance' });
   app.register(cfdiRoutes, { prefix: '/api/finance' });
+  app.register(cfdiReceiversRoutes, { prefix: '/api/finance' });
   app.register(ghlRoutes);
   app.register(bankStatementsRoutes, { prefix: '/api/finance' });
   app.register(intelligenceRoutes, { prefix: '/api/finance' });

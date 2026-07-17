@@ -34,6 +34,44 @@ async function ghlRoutes(app) {
     }
   );
 
+  // Connection status for the tenant.
+  app.get(
+    '/integrations/ghl/status',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const organizationId = resolveOrganizationId(request);
+      const install = await ghlService.getInstallForOrg(organizationId);
+      reply.send({
+        data: {
+          connected: Boolean(install),
+          location_id: install?.location_id || null,
+          scope: install?.scope || null,
+          installed_at: install?.installed_at || null,
+        },
+      });
+    }
+  );
+
+  // Pull invoices from the connected GHL location.
+  app.get(
+    '/integrations/ghl/invoices',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER])] },
+    async (request, reply) => {
+      const organizationId = resolveOrganizationId(request);
+      reply.send({ data: await ghlService.listInvoices(organizationId) });
+    }
+  );
+
+  // Pull contacts from the connected GHL location.
+  app.get(
+    '/integrations/ghl/contacts',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER])] },
+    async (request, reply) => {
+      const organizationId = resolveOrganizationId(request);
+      reply.send({ data: await ghlService.listContacts(organizationId) });
+    }
+  );
+
   // OAuth callback (GHL redirects the user's browser here).
   app.get('/integrations/ghl/oauth/callback', async (request, reply) => {
     const { code, state } = request.query || {};

@@ -8,6 +8,7 @@
 
 const pool = require('../db/pool');
 const pac = require('./pacService');
+const receiversService = require('./cfdiReceiversService');
 const { round } = require('../lib/money');
 
 /** Load the active issuer record for a tenant (or null). */
@@ -78,6 +79,26 @@ function mapRow(r) {
 async function issueIngreso(input) {
   const organizationId = input.organization_id;
 
+  // Resolve the receiver: either a stored profile (receiver_id) or inline data.
+  let receiver = input.receiver;
+  let receiverId = input.receiver_id || null;
+  if (receiverId) {
+    const profile = await receiversService.getById({ organization_id: organizationId, id: receiverId });
+    if (!profile) {
+      const err = new Error('Receiver profile not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    receiver = {
+      rfc: profile.rfc,
+      name: profile.name,
+      fiscalRegime: profile.fiscal_regime,
+      use: profile.cfdi_use,
+      zip: profile.zip_code,
+    };
+  }
+  input = { ...input, receiver };
+
   // Idempotency: return the existing CFDI for this external document.
   if (input.source_ref) {
     const { rows } = await pool.query(
@@ -123,13 +144,13 @@ async function issueIngreso(input) {
 
   const { rows } = await pool.query(
     `INSERT INTO finance.cfdi_documents
-      (organization_id, issuer_id, invoice_id, cfdi_type, status, uuid, folio,
+      (organization_id, issuer_id, receiver_id, invoice_id, cfdi_type, status, uuid, folio,
        receiver_rfc, receiver_name, cfdi_use, metodo_pago, forma_pago, currency,
        total, pac_provider, pac_document_id, source, source_ref, raw, stamped_at)
-     VALUES ($1,$2,$3,'I','stamped',$4,$5,$6,$7,$8,$9,$10,'MXN',$11,$12,$13,$14,$15,$16, now())
+     VALUES ($1,$2,$3,$4,'I','stamped',$5,$6,$7,$8,$9,$10,$11,'MXN',$12,$13,$14,$15,$16,$17, now())
      RETURNING *`,
     [
-      organizationId, issuer?.id || null, input.invoice_id || null,
+      organizationId, issuer?.id || null, receiverId, input.invoice_id || null,
       stamped.uuid, String(stamped.folio ?? ''),
       input.receiver.rfc, input.receiver.name, input.receiver.use || 'G03',
       input.paymentMethod || 'PUE', input.paymentForm || '01',
