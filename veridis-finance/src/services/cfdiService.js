@@ -9,37 +9,21 @@
 const pool = require('../db/pool');
 const pac = require('./pacService');
 const receiversService = require('./cfdiReceiversService');
+const issuersService = require('./cfdiIssuersService');
 const { round } = require('../lib/money');
 
 /** Load the active issuer record for a tenant (or null). */
 async function getIssuer(organizationId) {
-  const { rows } = await pool.query(
-    `SELECT * FROM finance.cfdi_issuers
-      WHERE organization_id = $1 AND is_active = true
-      ORDER BY created_at ASC LIMIT 1`,
-    [organizationId]
-  );
-  return rows[0] || null;
+  return issuersService.getActiveIssuer(organizationId);
 }
 
 /**
- * Resolve PAC provider + credentials for a tenant.
- * Prefers the issuer record; falls back to env for the bootstrap tenant.
+ * Resolve PAC provider + decrypted credentials for a tenant.
+ * Prefers the per-tenant issuer record; falls back to env for the bootstrap
+ * tenant. Delegated to cfdiIssuersService so encryption lives in one place.
  */
 function resolveCreds(issuer) {
-  const provider = issuer?.pac_provider || process.env.PAC_PROVIDER || 'facturama';
-  if (provider === 'facturama') {
-    return {
-      provider,
-      creds: {
-        user: process.env.FACTURAMA_USER,
-        password: process.env.FACTURAMA_PASSWORD,
-        env: process.env.FACTURAMA_ENV || 'sandbox',
-      },
-    };
-  }
-  // facturapi
-  return { provider, creds: { apiKey: process.env.FACTURAPI_KEY } };
+  return issuersService.resolveCreds(issuer);
 }
 
 function mapRow(r) {
@@ -236,6 +220,52 @@ async function findByGhlInvoice({ organization_id, ghl_invoice_id }) {
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
+/**
+ * Cancel a stamped CFDI at the PAC and persist the outcome.
+ * motive: '01' (con sustitución, requires substitution UUID) | '02' (default) |
+ * '03' | '04'. The PAC acuse (acknowledgement) is stored on the raw column.
+ */
+async function cancel({ organization_id, id, motive = '02', substitution = null }) {
+  const doc = await getById({ organization_id, id });
+  if (!doc) {
+    const err = new Error('CFDI not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (doc.status === 'canceled') {
+    return { data: doc, idempotent: true };
+  }
+  if (!doc.pac_document_id) {
+    const err = new Error('CFDI has no PAC document id; cannot cancel');
+    err.statusCode = 409;
+    throw err;
+  }
+  if (motive === '01' && !substitution) {
+    const err = new Error('Motivo 01 requiere el UUID de sustitución');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const issuer = await getIssuer(organization_id);
+  const { provider, creds } = resolveCreds(issuer);
+  const acuse = await pac.cancel(doc.pac_document_id, {
+    provider,
+    creds,
+    motive,
+    substitution,
+  });
+
+  const { rows } = await pool.query(
+    `UPDATE finance.cfdi_documents
+        SET status = 'canceled', canceled_at = now(),
+            raw = COALESCE(raw, '{}'::jsonb) || jsonb_build_object('cancel_acuse', $3::jsonb)
+      WHERE organization_id = $1 AND id = $2
+      RETURNING *`,
+    [organization_id, id, JSON.stringify(acuse || {})]
+  );
+  return { data: rows[0] ? mapRow(rows[0]) : doc, acuse };
+}
+
 /** List issued CFDIs from our DB. */
 async function listIssued({ organization_id, limit = 50, offset = 0 }) {
   const { rows } = await pool.query(
@@ -294,6 +324,7 @@ async function listReceived({ organization_id }) {
 
 module.exports = {
   issueIngreso,
+  cancel,
   listIssued,
   getById,
   download,

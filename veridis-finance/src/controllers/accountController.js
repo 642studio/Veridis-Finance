@@ -136,12 +136,14 @@ async function uploadOrganizationLogo(request, reply) {
     throw badRequest('Logo file is required');
   }
 
+  // Raster formats only. SVG is intentionally excluded: it can carry inline
+  // <script>, and since the logo is stored and rendered as a data URL that would
+  // be a stored-XSS vector at the organization level.
   const allowedMimeTypes = new Set([
     'image/png',
     'image/jpeg',
     'image/jpg',
     'image/webp',
-    'image/svg+xml',
   ]);
 
   if (!allowedMimeTypes.has(String(logoPart.mimetype || '').toLowerCase())) {

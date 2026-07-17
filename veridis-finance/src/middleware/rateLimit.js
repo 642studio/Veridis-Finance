@@ -84,26 +84,57 @@ async function automationRateLimit(request, reply) {
 
 const loginBuckets = new Map();
 
-async function authRateLimit(request, reply) {
-  const windowMs = 900000; // 15 minutes
-  const maxAttempts = 10;
-  const now = Date.now();
-  const limiterKey = `auth:${request.ip || 'unknown'}`;
-
-  let bucket = loginBuckets.get(limiterKey);
+function bumpBucket(key, windowMs, now) {
+  let bucket = loginBuckets.get(key);
   if (!bucket || bucket.resetAt <= now) {
     bucket = { count: 0, resetAt: now + windowMs };
-    loginBuckets.set(limiterKey, bucket);
+    loginBuckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  return bucket;
+}
+
+/**
+ * Login limiter with TWO independent gates:
+ *  - per-IP  (10 / 15 min): stops a single host hammering the endpoint.
+ *  - per-account (8 / 15 min): stops credential brute force against ONE account
+ *    even when the attacker rotates X-Forwarded-For / source IPs. The account is
+ *    derived from the login body (organization slug + email) and is only counted
+ *    when the body carries them, so it never blocks unrelated users.
+ */
+async function authRateLimit(request, reply) {
+  const windowMs = 900000; // 15 minutes
+  const maxIpAttempts = 10;
+  const maxAccountAttempts = 8;
+  const now = Date.now();
+
+  const ipBucket = bumpBucket(`auth:ip:${request.ip || 'unknown'}`, windowMs, now);
+
+  const body = request.body || {};
+  const email = String(body.email || '').trim().toLowerCase();
+  const org = String(body.organization_slug || body.organizationSlug || body.slug || '')
+    .trim()
+    .toLowerCase();
+  let accountBucket = null;
+  if (email) {
+    accountBucket = bumpBucket(
+      `auth:acct:${keyHash(`${org}|${email}`)}`,
+      windowMs,
+      now
+    );
   }
 
-  bucket.count += 1;
+  const remaining = Math.max(0, maxIpAttempts - ipBucket.count);
+  reply.header('X-RateLimit-Limit', String(maxIpAttempts));
+  reply.header('X-RateLimit-Remaining', String(remaining));
+  reply.header('X-RateLimit-Reset', String(Math.ceil(ipBucket.resetAt / 1000)));
 
-  reply.header('X-RateLimit-Limit', String(maxAttempts));
-  reply.header('X-RateLimit-Remaining', String(Math.max(0, maxAttempts - bucket.count)));
-  reply.header('X-RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+  const ipExceeded = ipBucket.count > maxIpAttempts;
+  const accountExceeded = accountBucket && accountBucket.count > maxAccountAttempts;
 
-  if (bucket.count > maxAttempts) {
-    const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  if (ipExceeded || accountExceeded) {
+    const resetAt = accountExceeded ? accountBucket.resetAt : ipBucket.resetAt;
+    const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - now) / 1000));
     reply.header('Retry-After', String(retryAfterSeconds));
     throw tooManyRequests('Too many login attempts. Please try again later.');
   }

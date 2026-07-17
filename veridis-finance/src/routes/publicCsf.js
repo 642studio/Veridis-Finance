@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 const receiversService = require('../services/cfdiReceiversService');
+const { automationRateLimit } = require('../middleware/rateLimit');
 
 /**
  * Public self-service CSF upload. A tenant shares a signed link; their client
@@ -11,7 +12,9 @@ const receiversService = require('../services/cfdiReceiversService');
  */
 function verifyToken(token) {
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+    });
     if (payload.purpose !== 'csf' || !payload.org) return null;
     return payload.org;
   } catch {
@@ -28,15 +31,19 @@ async function publicCsfRoutes(app) {
     }
   });
 
+  // These routes are unauthenticated (token-in-URL), so rate-limit by IP to blunt
+  // token brute force and PDF-parsing DoS.
+  const rl = { preHandler: [automationRateLimit] };
+
   // Validate the link and return the org's public name.
-  app.get('/public/csf/:token', async (request, reply) => {
+  app.get('/public/csf/:token', rl, async (request, reply) => {
     const org = verifyToken(request.params.token);
     if (!org) return reply.status(404).send({ error: 'Enlace inválido o expirado' });
     reply.send({ data: { valid: true } });
   });
 
   // Parse an uploaded CSF and return prefilled data (no save).
-  app.post('/public/csf/:token/preview', async (request, reply) => {
+  app.post('/public/csf/:token/preview', rl, async (request, reply) => {
     const org = verifyToken(request.params.token);
     if (!org) return reply.status(404).send({ error: 'Enlace inválido o expirado' });
     if (!request.isMultipart()) {
@@ -51,7 +58,7 @@ async function publicCsfRoutes(app) {
   });
 
   // Save the confirmed receiver for the org in the token.
-  app.post('/public/csf/:token/save', async (request, reply) => {
+  app.post('/public/csf/:token/save', rl, async (request, reply) => {
     const org = verifyToken(request.params.token);
     if (!org) return reply.status(404).send({ error: 'Enlace inválido o expirado' });
     const b = request.body || {};

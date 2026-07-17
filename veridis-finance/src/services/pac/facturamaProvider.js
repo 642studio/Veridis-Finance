@@ -15,6 +15,7 @@
  */
 
 const { money, round, sum } = require('../../lib/money');
+const { computeItemTax, IMPUESTO_NAME } = require('./cfdiTax');
 
 function baseUrl(env) {
   return (env || process.env.FACTURAMA_ENV || 'sandbox') === 'production'
@@ -64,15 +65,42 @@ async function request(method, path, body, creds) {
 }
 
 /**
- * Build a CFDI 4.0 Ingreso line item with computed subtotal/tax/total.
+ * Build a CFDI 4.0 line item, mapping the provider-agnostic tax computation
+ * (traslados IVA/IEPS + retenciones ISR/IVA, exento vs tasa 0%) to Facturama's
+ * "Taxes" array shape.
  */
 function buildItem(it) {
   const quantity = money(it.quantity ?? 1);
   const unitPrice = money(it.unitPrice);
   const subtotal = quantity.times(unitPrice);
-  const ivaRate = it.ivaRate ?? 0.16;
-  const hasTax = ivaRate > 0;
-  const taxTotal = hasTax ? subtotal.times(ivaRate) : money(0);
+  const tax = computeItemTax(it);
+
+  const Taxes = [];
+  // Traslados. An exempt IVA line carries no Total (TipoFactor Exento) and, in
+  // Facturama's API Web model, is expressed by simply not listing the IVA
+  // traslado while keeping TaxObject '02'.
+  for (const t of tax.traslados) {
+    if (t.tipoFactor === 'Exento') continue;
+    Taxes.push({
+      Name: IMPUESTO_NAME[t.impuesto],
+      Rate: Number(t.tasa),
+      Base: Number(t.base),
+      Total: Number(t.importe),
+      IsRetention: false,
+      IsFederalTax: true,
+    });
+  }
+  // Retenciones.
+  for (const r of tax.retenciones) {
+    Taxes.push({
+      Name: IMPUESTO_NAME[r.impuesto],
+      Rate: Number(r.tasa),
+      Base: Number(r.base),
+      Total: Number(r.importe),
+      IsRetention: true,
+      IsFederalTax: true,
+    });
+  }
 
   return {
     ProductCode: it.productKey || '01010101',
@@ -82,18 +110,9 @@ function buildItem(it) {
     Quantity: Number(quantity.toString()),
     UnitPrice: Number(round(unitPrice)),
     Subtotal: Number(round(subtotal)),
-    TaxObject: hasTax ? '02' : '01', // 02 = sí objeto de impuesto
-    Taxes: hasTax
-      ? [{
-          Name: 'IVA',
-          Rate: ivaRate,
-          Base: Number(round(subtotal)),
-          Total: Number(round(taxTotal)),
-          IsRetention: false,
-          IsFederalTax: true,
-        }]
-      : [],
-    Total: Number(round(subtotal.plus(taxTotal))),
+    TaxObject: tax.objetoImp,
+    Taxes,
+    Total: Number(tax.total),
   };
 }
 

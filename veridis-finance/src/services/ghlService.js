@@ -14,6 +14,14 @@
 const crypto = require('node:crypto');
 const pool = require('../db/pool');
 const { encrypt, decrypt } = require('../lib/crypto');
+
+// GHL OAuth access tokens are stored encrypted at rest (like the refresh token).
+// Tolerate legacy plaintext rows written before this change: ciphertext always
+// starts with the "v1:" version prefix.
+function maybeDecrypt(value) {
+  if (!value) return null;
+  return String(value).startsWith('v1:') ? decrypt(value) : value;
+}
 const cfdiService = require('./cfdiService');
 const receiversService = require('./cfdiReceiversService');
 
@@ -88,7 +96,7 @@ function upsertInstallFromToken(tok, organizationId) {
       tok.userType || 'Location',
       tok.locationId || null,
       tok.companyId || null,
-      tok.access_token,
+      encrypt(tok.access_token),
       encrypt(tok.refresh_token),
       tok.scope || null,
       expiresAt,
@@ -128,7 +136,7 @@ async function getValidAccessToken(installId) {
 
     if (install.token_expires_at && new Date(install.token_expires_at) > new Date()) {
       await client.query('COMMIT');
-      return install.access_token;
+      return maybeDecrypt(install.access_token);
     }
 
     const tok = await tokenRequest({
@@ -143,7 +151,7 @@ async function getValidAccessToken(installId) {
       `UPDATE finance.ghl_installs
          SET access_token = $2, refresh_token_enc = $3, token_expires_at = $4, updated_at = now()
        WHERE id = $1`,
-      [installId, tok.access_token, encrypt(tok.refresh_token), expiresAt]
+      [installId, encrypt(tok.access_token), encrypt(tok.refresh_token), expiresAt]
     );
     await client.query('COMMIT');
     return tok.access_token;

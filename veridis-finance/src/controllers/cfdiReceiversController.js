@@ -65,10 +65,13 @@ async function getReceiver(request, reply) {
 /** Generate a self-service link a client can use to upload their own CSF. */
 async function csfLink(request, reply) {
   const organizationId = resolveOrganizationId(request);
+  // Short-lived by default: a leaked link should not grant 6 months of write
+  // access to fiscal receiver data. Configurable via CSF_LINK_EXPIRES_IN.
+  const expiresIn = process.env.CSF_LINK_EXPIRES_IN || '72h';
   const token = jwt.sign(
     { org: organizationId, purpose: 'csf' },
     process.env.JWT_SECRET,
-    { expiresIn: '180d' }
+    { expiresIn, algorithm: 'HS256' }
   );
   const base =
     process.env.FRONTEND_URL || 'https://veridis-finance-adrian-yepizs-projects.vercel.app';

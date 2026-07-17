@@ -30,6 +30,7 @@ import {
 import { useNotify } from "@/hooks/use-notify";
 import { ApiClientError, clientApiFetch } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/format";
+import { chartTheme, tooltipContentStyle } from "@/components/charts/chart-theme";
 import type {
   ApiEnvelope,
   FinancialPlan,
@@ -1037,35 +1038,30 @@ export default function DashboardPlanningPage() {
           <section className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border/80 bg-card/65 text-foreground">
               <CardHeader>
-                <CardTitle>Revenue and Net Profit</CardTitle>
+                <CardTitle>Ingresos y utilidad neta</CardTitle>
                 <CardDescription className="text-muted-foreground">
-                  Deterministic yearly projection computed in backend.
+                  Proyección anual determinística calculada en el backend.
                 </CardDescription>
               </CardHeader>
               <CardContent className="h-80">
                 {chartData.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    No data available
+                    Sin datos disponibles
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData}>
-                      <CartesianGrid stroke="#233252" strokeDasharray="3 3" />
-                      <XAxis dataKey="year" tick={{ fill: "#cbd5e1" }} />
-                      <YAxis tick={{ fill: "#cbd5e1" }} />
+                      <CartesianGrid stroke={chartTheme.grid} strokeDasharray="3 3" />
+                      <XAxis dataKey="year" tick={{ fill: chartTheme.axis }} />
+                      <YAxis tick={{ fill: chartTheme.axis }} />
                       <Tooltip
                         formatter={(value) => formatCurrency(Number(value))}
-                        contentStyle={{
-                          background: "#0f172a",
-                          border: "1px solid #334155",
-                          borderRadius: 12,
-                          color: "#e2e8f0",
-                        }}
+                        contentStyle={tooltipContentStyle}
                       />
-                      <Legend />
-                      <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#22d3ee" strokeWidth={2.5} />
-                      <Line type="monotone" dataKey="net_profit" name="Net Profit" stroke="#34d399" strokeWidth={2.5} />
-                      <Line type="monotone" dataKey="cashflow" name="Cashflow" stroke="#f59e0b" strokeWidth={2.5} />
+                      <Legend wrapperStyle={{ color: chartTheme.legendText, fontSize: 12 }} />
+                      <Line type="monotone" dataKey="revenue" name="Ingresos" stroke={chartTheme.income} strokeWidth={2.5} />
+                      <Line type="monotone" dataKey="net_profit" name="Utilidad neta" stroke={chartTheme.net} strokeWidth={2.5} />
+                      <Line type="monotone" dataKey="cashflow" name="Flujo de efectivo" stroke={chartTheme.categoryPalette[3]} strokeWidth={2.5} />
                     </LineChart>
                   </ResponsiveContainer>
                 )}
@@ -1074,30 +1070,25 @@ export default function DashboardPlanningPage() {
 
             <Card className="border-border/80 bg-card/65 text-foreground">
               <CardHeader>
-                <CardTitle>Margin % by Year</CardTitle>
-                <CardDescription className="text-muted-foreground">Net margin trend over selected range.</CardDescription>
+                <CardTitle>Margen % por año</CardTitle>
+                <CardDescription className="text-muted-foreground">Tendencia del margen neto en el rango seleccionado.</CardDescription>
               </CardHeader>
               <CardContent className="h-80">
                 {chartData.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    No data available
+                    Sin datos disponibles
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
-                      <CartesianGrid stroke="#233252" strokeDasharray="3 3" />
-                      <XAxis dataKey="year" tick={{ fill: "#cbd5e1" }} />
-                      <YAxis tick={{ fill: "#cbd5e1" }} />
+                      <CartesianGrid stroke={chartTheme.grid} strokeDasharray="3 3" />
+                      <XAxis dataKey="year" tick={{ fill: chartTheme.axis }} />
+                      <YAxis tick={{ fill: chartTheme.axis }} />
                       <Tooltip
                         formatter={(value) => `${Number(value).toFixed(2)}%`}
-                        contentStyle={{
-                          background: "#0f172a",
-                          border: "1px solid #334155",
-                          borderRadius: 12,
-                          color: "#e2e8f0",
-                        }}
+                        contentStyle={tooltipContentStyle}
                       />
-                      <Bar dataKey="margin_percent" name="Margin %" fill="#f59e0b" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="margin_percent" name="Margen %" fill={chartTheme.categoryPalette[3]} radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}

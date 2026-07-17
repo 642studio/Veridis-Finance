@@ -43,6 +43,9 @@ export interface SessionClaims {
   user_id: string;
   organization_id: string;
   role: UserRole;
+  /** Display-only claims (never used for authorization). */
+  full_name?: string | null;
+  organization_name?: string | null;
   exp?: number;
   iat?: number;
 }

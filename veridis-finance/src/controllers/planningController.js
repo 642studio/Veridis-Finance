@@ -2,6 +2,7 @@ const { z } = require('zod');
 
 const { resolveOrganizationId } = require('../middleware/auth');
 const planningService = require('../services/planningService');
+const financialProjectionService = require('../services/planning/financialProjectionService');
 
 const variableKeySchema = z.enum([
   'accounts_receivable',
@@ -362,6 +363,22 @@ async function getPlanResults(request, reply) {
   reply.send({ data });
 }
 
+/**
+ * Side-by-side base / optimistic / conservative comparison for a plan.
+ * Read-only: computes all three scenarios without persisting.
+ */
+async function getPlanScenarios(request, reply) {
+  const { planId } = planParamsSchema.parse(request.params || {});
+  const organizationId = resolveOrganizationId(request);
+
+  const data = await financialProjectionService.calculateScenarios({
+    organization_id: organizationId,
+    plan_id: planId,
+  });
+
+  reply.send({ data });
+}
+
 async function updatePlanConfig(request, reply) {
   const { planId } = planParamsSchema.parse(request.params || {});
   const payload = updatePlanConfigSchema.parse(request.body || {});
@@ -694,6 +711,7 @@ module.exports = {
   listPlans,
   getPlanOverview,
   getPlanResults,
+  getPlanScenarios,
   updatePlanConfig,
   getPlanProducts,
   createProduct,

@@ -66,7 +66,9 @@ async function authenticate(request) {
   }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+    });
 
     if (!payload || typeof payload !== 'object') {
       throw unauthorized('Invalid token payload');

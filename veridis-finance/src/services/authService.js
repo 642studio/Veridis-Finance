@@ -32,15 +32,19 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
-function signAccessToken({ userId, organizationId, role }) {
+function signAccessToken({ userId, organizationId, role, fullName, organizationName }) {
   return jwt.sign(
     {
       user_id: userId,
       organization_id: organizationId,
       role,
+      // Display-only claims so the UI can show the real user/org without an
+      // extra round-trip. Never used for authorization decisions.
+      full_name: fullName || null,
+      organization_name: organizationName || null,
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '8h', algorithm: 'HS256' }
   );
 }
 
@@ -126,6 +130,8 @@ async function register(payload) {
       userId: user.id,
       organizationId: user.organization_id,
       role: normalizedRole,
+      fullName: user.full_name,
+      organizationName: organization.name,
     });
 
     return {
@@ -245,6 +251,8 @@ async function login({
     userId: user.user_id,
     organizationId: user.organization_id,
     role: normalizedRole,
+    fullName: user.full_name,
+    organizationName: user.organization_name,
   });
 
   return {

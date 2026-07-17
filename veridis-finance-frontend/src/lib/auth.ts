@@ -38,6 +38,8 @@ export function decodeJwtClaims(token?: string | null): SessionClaims | null {
       user_id: payload.user_id,
       organization_id: payload.organization_id,
       role: payload.role as SessionClaims["role"],
+      full_name: payload.full_name ?? null,
+      organization_name: payload.organization_name ?? null,
       exp: payload.exp,
       iat: payload.iat,
     };

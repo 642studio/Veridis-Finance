@@ -7,15 +7,37 @@ const {
   listReceivedCfdi,
   markPaidCfdi,
   pushCfdiToCrm,
+  cancelCfdi,
+  getIssuer,
+  putIssuer,
 } = require('../controllers/cfdiController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
 async function cfdiRoutes(app) {
+  // Fiscal issuer (emisor) config per tenant. Owner/Admin only — writes PAC creds.
+  app.get(
+    '/cfdi/issuer',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    getIssuer
+  );
+  app.put(
+    '/cfdi/issuer',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    putIssuer
+  );
+
   // Emit (timbrar) a CFDI de Ingreso.
   app.post(
     '/cfdi/issue',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     issueCfdi
+  );
+
+  // Cancel a stamped CFDI (motivo + sustitución + acuse). Owner/Admin only.
+  app.post(
+    '/cfdi/:id/cancel',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    cancelCfdi
   );
 
   // Reconcile a CFDI as paid (syncs the payment to the 642 CRM).

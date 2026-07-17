@@ -2,7 +2,26 @@ const { z } = require('zod');
 
 const cfdiService = require('../services/cfdiService');
 const ghlService = require('../services/ghlService');
+const issuersService = require('../services/cfdiIssuersService');
 const { resolveOrganizationId } = require('../middleware/auth');
+
+// RFC: 3-4 letters + 6 digits (date) + 3 alphanumeric homoclave. Persona moral
+// has 3 leading letters, persona física 4. Case-insensitive.
+const RFC_REGEX = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/i;
+
+const issuerSchema = z.object({
+  rfc: z.string().trim().regex(RFC_REGEX, 'RFC inválido'),
+  legal_name: z.string().trim().min(1).max(255),
+  fiscal_regime: z.string().trim().regex(/^\d{3}$/, 'Régimen fiscal inválido (c_RegimenFiscal, 3 dígitos)'),
+  zip_code: z.string().trim().regex(/^\d{5}$/, 'Código postal inválido'),
+  pac_provider: z.enum(['facturama', 'facturapi']).default('facturama'),
+  pac_env: z.enum(['sandbox', 'production']).default('sandbox'),
+  pac_organization_id: z.string().trim().max(255).optional(),
+  // Secrets — write-only, only applied when provided (rotation-friendly).
+  pac_username: z.string().trim().max(255).optional(),
+  pac_password: z.string().trim().max(500).optional(),
+  pac_api_key: z.string().trim().max(500).optional(),
+});
 
 const itemSchema = z.object({
   description: z.string().min(1).max(1000),
@@ -11,7 +30,14 @@ const itemSchema = z.object({
   unit: z.string().max(120).optional(),
   quantity: z.coerce.number().positive().default(1),
   unitPrice: z.coerce.number().nonnegative(),
+  // IVA: rate (0 = tasa 0%) OR ivaExempt (exento) OR noTaxObject (no objeto).
   ivaRate: z.coerce.number().min(0).max(1).optional(),
+  ivaExempt: z.coerce.boolean().optional(),
+  noTaxObject: z.coerce.boolean().optional(),
+  // Other taxes (honorarios/arrendamiento need retenciones; IEPS for some goods).
+  iepsRate: z.coerce.number().min(0).max(1).optional(),
+  retIvaRate: z.coerce.number().min(0).max(1).optional(),
+  retIsrRate: z.coerce.number().min(0).max(1).optional(),
 });
 
 const issueSchema = z.object({
@@ -148,6 +174,40 @@ async function pushCfdiToCrm(request, reply) {
   reply.send({ data: linked });
 }
 
+const cancelSchema = z.object({
+  motive: z.enum(['01', '02', '03', '04']).default('02'),
+  substitution: z.string().uuid().optional(),
+});
+
+/** Cancel a stamped CFDI at the PAC (with motivo/sustitución + acuse). */
+async function cancelCfdi(request, reply) {
+  const { id } = idParamsSchema.parse(request.params);
+  const { motive, substitution } = cancelSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const result = await cfdiService.cancel({
+    organization_id: organizationId,
+    id,
+    motive,
+    substitution: substitution || null,
+  });
+  reply.send(result);
+}
+
+/** Get the tenant's configured fiscal issuer (no secrets returned). */
+async function getIssuer(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  const data = await issuersService.getIssuerPublic(organizationId);
+  reply.send({ data });
+}
+
+/** Create or update the tenant's fiscal issuer + PAC credentials. */
+async function putIssuer(request, reply) {
+  const payload = issuerSchema.parse(request.body);
+  const organizationId = resolveOrganizationId(request);
+  const data = await issuersService.upsertIssuer(organizationId, payload);
+  reply.send({ data });
+}
+
 module.exports = {
   issueCfdi,
   listCfdi,
@@ -157,4 +217,7 @@ module.exports = {
   listReceivedCfdi,
   markPaidCfdi,
   pushCfdiToCrm,
+  cancelCfdi,
+  getIssuer,
+  putIssuer,
 };

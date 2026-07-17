@@ -19,9 +19,9 @@ const bodyFont = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Veridis Finance SaaS",
+  title: "Veridis Finance",
   description:
-    "Production-ready frontend for Veridis Finance with Next.js, App Router, and interchangeable notification providers.",
+    "Plataforma de finanzas y facturación CFDI para empresas en México, integrada con tu CRM.",
 };
 
 export default function RootLayout({
@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body className={`${headingFont.variable} ${bodyFont.variable} min-h-screen bg-background font-body text-foreground antialiased`}>
         <Providers>{children}</Providers>
       </body>

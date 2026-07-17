@@ -53,6 +53,66 @@ function personAsText(personNode, label) {
   return rfc || name;
 }
 
+function num(value) {
+  const n = Number.parseFloat(String(value ?? ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Structured emisor/receptor fields (RFC, name, régimen, uso, CP). */
+function personFields(node) {
+  if (!node || typeof node !== 'object') return {};
+  return {
+    rfc: pickFirst(node, ['Rfc', 'RFC', 'rfc']) || null,
+    name: pickFirst(node, ['Nombre', 'nombre', 'Name', 'name']) || null,
+    fiscal_regime: pickFirst(node, ['RegimenFiscal', 'RegimenFiscalReceptor']) || null,
+    cfdi_use: pickFirst(node, ['UsoCFDI', 'usoCFDI']) || null,
+    zip_code: pickFirst(node, ['DomicilioFiscalReceptor']) || null,
+  };
+}
+
+/** Flatten a CFDI Impuestos node (Traslados/Retenciones) into simple rows. */
+function extractTaxes(impuestosNode) {
+  const out = { total_trasladados: null, total_retenidos: null, traslados: [], retenciones: [] };
+  if (!impuestosNode || typeof impuestosNode !== 'object') return out;
+
+  out.total_trasladados = num(pickFirst(impuestosNode, ['TotalImpuestosTrasladados']));
+  out.total_retenidos = num(pickFirst(impuestosNode, ['TotalImpuestosRetenidos']));
+
+  const trasladosParent = pickFirst(impuestosNode, ['Traslados']);
+  for (const t of asArray(pickFirst(trasladosParent || {}, ['Traslado']))) {
+    out.traslados.push({
+      impuesto: pickFirst(t, ['Impuesto']) || null,
+      tipo_factor: pickFirst(t, ['TipoFactor']) || null,
+      tasa: num(pickFirst(t, ['TasaOCuota'])),
+      base: num(pickFirst(t, ['Base'])),
+      importe: num(pickFirst(t, ['Importe'])),
+    });
+  }
+  const retParent = pickFirst(impuestosNode, ['Retenciones']);
+  for (const r of asArray(pickFirst(retParent || {}, ['Retencion']))) {
+    out.retenciones.push({
+      impuesto: pickFirst(r, ['Impuesto']) || null,
+      importe: num(pickFirst(r, ['Importe'])),
+    });
+  }
+  return out;
+}
+
+/** Line items (Conceptos) with amounts. */
+function extractConcepts(conceptosNode) {
+  const concepts = [];
+  for (const c of asArray(pickFirst(conceptosNode || {}, ['Concepto']))) {
+    concepts.push({
+      product_key: pickFirst(c, ['ClaveProdServ']) || null,
+      description: pickFirst(c, ['Descripcion']) || null,
+      quantity: num(pickFirst(c, ['Cantidad'])),
+      unit_price: num(pickFirst(c, ['ValorUnitario'])),
+      amount: num(pickFirst(c, ['Importe'])),
+    });
+  }
+  return concepts;
+}
+
 function extractTimbreUuid(comprobanteNode) {
   const complemento = pickFirst(comprobanteNode, ['Complemento', 'cfdi:Complemento']);
   if (!complemento) {
@@ -120,12 +180,34 @@ function parseCfdi40(xmlContent) {
   const emitter = personAsText(emitterNode, 'emitter');
   const receiver = personAsText(receiverNode, 'receiver');
 
+  const emitterFields = personFields(emitterNode);
+  const receiverFields = personFields(receiverNode);
+  const taxes = extractTaxes(pickFirst(comprobante, ['Impuestos', 'cfdi:Impuestos']));
+  const concepts = extractConcepts(pickFirst(comprobante, ['Conceptos', 'cfdi:Conceptos']));
+
   return {
+    // Backward-compatible fields.
     uuid_sat: uuidSat,
     total,
     emitter,
     receiver,
     invoice_date: invoiceDate,
+    // Structured fields for reconciliation, DIOT and supplier ledgers.
+    subtotal: num(pickFirst(comprobante, ['SubTotal', 'subTotal'])),
+    currency: pickFirst(comprobante, ['Moneda', 'moneda']) || null,
+    comprobante_type: pickFirst(comprobante, ['TipoDeComprobante']) || null,
+    forma_pago: pickFirst(comprobante, ['FormaPago']) || null,
+    metodo_pago: pickFirst(comprobante, ['MetodoPago']) || null,
+    emitter_rfc: emitterFields.rfc,
+    emitter_name: emitterFields.name,
+    emitter_fiscal_regime: emitterFields.fiscal_regime,
+    receiver_rfc: receiverFields.rfc,
+    receiver_name: receiverFields.name,
+    receiver_fiscal_regime: receiverFields.fiscal_regime,
+    receiver_cfdi_use: receiverFields.cfdi_use,
+    receiver_zip_code: receiverFields.zip_code,
+    taxes,
+    concepts,
   };
 }
 

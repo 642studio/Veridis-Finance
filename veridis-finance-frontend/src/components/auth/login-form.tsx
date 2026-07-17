@@ -44,16 +44,16 @@ export function LoginForm({ nextPath = "/dashboard" }: LoginFormProps) {
       });
 
       notify.success({
-        title: "Welcome back",
-        description: "Your session is active.",
+        title: "Bienvenido de nuevo",
+        description: "Tu sesión está activa.",
       });
       router.replace(nextPath);
       router.refresh();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Unable to sign in";
+        error instanceof ApiClientError ? error.message : "No se pudo iniciar sesión";
       notify.error({
-        title: "Login failed",
+        title: "Error al iniciar sesión",
         description: message,
       });
     } finally {
@@ -64,19 +64,19 @@ export function LoginForm({ nextPath = "/dashboard" }: LoginFormProps) {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle>Log in</CardTitle>
+        <CardTitle>Iniciar sesión</CardTitle>
         <CardDescription>
-          Access your organization workspace.
+          Accede al espacio de tu organización.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={onSubmit}>
           <div className="space-y-2">
-            <Label htmlFor="organization_slug">Organization Slug</Label>
+            <Label htmlFor="organization_slug">Identificador de organización</Label>
             <Input
               id="organization_slug"
               autoComplete="organization"
-              placeholder="642-studio"
+              placeholder="mi-empresa"
               value={organizationSlug}
               onChange={(event) => setOrganizationSlug(event.target.value)}
               required
@@ -84,12 +84,12 @@ export function LoginForm({ nextPath = "/dashboard" }: LoginFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Correo electrónico</Label>
             <Input
               id="email"
               type="email"
               autoComplete="email"
-              placeholder="owner@company.com"
+              placeholder="dueño@empresa.com"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
@@ -97,7 +97,7 @@ export function LoginForm({ nextPath = "/dashboard" }: LoginFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Contraseña</Label>
             <Input
               id="password"
               type="password"
@@ -111,13 +111,13 @@ export function LoginForm({ nextPath = "/dashboard" }: LoginFormProps) {
           </div>
 
           <Button className="w-full" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Signing in..." : "Sign in"}
+            {isSubmitting ? "Entrando..." : "Entrar"}
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">
-            New account?{" "}
+            ¿Nuevo aquí?{" "}
             <Link className="font-medium text-primary hover:underline" href="/register">
-              Create one
+              Crea una cuenta
             </Link>
           </p>
         </form>
