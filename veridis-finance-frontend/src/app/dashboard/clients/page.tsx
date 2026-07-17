@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Edit3, Plus, Trash2 } from "lucide-react";
 
@@ -188,16 +188,10 @@ function ClientModal({
 
 export default function DashboardClientsPage() {
   const notify = useNotify();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const shouldRedirectToContacts = searchParams.toString().length === 0;
-
-  useEffect(() => {
-    if (!shouldRedirectToContacts) {
-      return;
-    }
-    router.replace("/dashboard/contacts?type=customer");
-  }, [router, shouldRedirectToContacts]);
+  // Clientes is a standalone module (its own `clients` table). Do not bounce to
+  // Contactos — that caused the nav to glitch and hid the real clients list.
+  const shouldRedirectToContacts = false;
 
   const [clients, setClients] = useState<Client[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);

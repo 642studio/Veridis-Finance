@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConfirmModal } from "@/components/common/confirm-modal";
@@ -71,16 +71,10 @@ function toForm(member: Member): MemberFormState {
 
 export default function DashboardMembersPage() {
   const notify = useNotify();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const shouldRedirectToContacts = searchParams.toString().length === 0;
-
-  useEffect(() => {
-    if (!shouldRedirectToContacts) {
-      return;
-    }
-    router.replace("/dashboard/contacts?type=internal");
-  }, [router, shouldRedirectToContacts]);
+  // Equipo is a standalone module (its own `members` table). Do not bounce to
+  // Contactos — that redirect made the nav glitch and hid the real list.
+  const shouldRedirectToContacts = false;
 
   const [members, setMembers] = useState<Member[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
