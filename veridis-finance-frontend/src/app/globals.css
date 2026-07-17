@@ -2,33 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Veridis Finance — 642 design system.
+ * Light-first (matches the 642 Core / 642 Studio ecosystem): white surfaces,
+ * warm neutrals, 642 red as the brand accent. A real dark theme is defined
+ * under `.dark` (darkMode: "class").
+ */
 :root {
-  --background: 222 47% 11%;
-  --foreground: 210 40% 96%;
+  --background: 20 20% 98%;
+  --foreground: 20 14% 12%;
 
-  --card: 222 36% 15%;
-  --card-foreground: 210 40% 96%;
+  --card: 0 0% 100%;
+  --card-foreground: 20 14% 12%;
 
-  --primary: 173 80% 45%;
-  --primary-foreground: 222 47% 11%;
+  /* 642 brand red (#E0342A) */
+  --primary: 3 74% 52%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 31 95% 58%;
-  --secondary-foreground: 222 47% 11%;
+  --secondary: 24 12% 94%;
+  --secondary-foreground: 20 14% 20%;
 
-  --muted: 218 29% 20%;
-  --muted-foreground: 214 20% 72%;
+  --muted: 24 14% 95%;
+  --muted-foreground: 20 8% 42%;
 
-  --accent: 215 28% 24%;
-  --accent-foreground: 210 40% 96%;
+  --accent: 20 14% 94%;
+  --accent-foreground: 20 14% 15%;
 
-  --destructive: 0 68% 55%;
-  --destructive-foreground: 210 40% 96%;
+  /* destructive kept a touch deeper/crimson so it's distinct from the red brand */
+  --destructive: 352 74% 46%;
+  --destructive-foreground: 0 0% 100%;
 
-  --border: 216 23% 26%;
-  --input: 216 23% 26%;
-  --ring: 173 80% 45%;
+  --border: 24 13% 90%;
+  --input: 24 13% 90%;
+  --ring: 3 74% 52%;
 
-  --radius: 1rem;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: 20 12% 8%;
+  --foreground: 30 12% 92%;
+
+  --card: 20 10% 12%;
+  --card-foreground: 30 12% 92%;
+
+  --primary: 6 92% 64%;
+  --primary-foreground: 20 14% 8%;
+
+  --secondary: 20 8% 18%;
+  --secondary-foreground: 30 12% 90%;
+
+  --muted: 20 8% 17%;
+  --muted-foreground: 24 8% 62%;
+
+  --accent: 20 8% 20%;
+  --accent-foreground: 30 12% 92%;
+
+  --destructive: 352 70% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 20 8% 22%;
+  --input: 20 8% 22%;
+  --ring: 6 92% 64%;
 }
 
 * {
@@ -39,10 +74,15 @@ body {
   @apply bg-background text-foreground;
   min-height: 100vh;
   background-image:
-    radial-gradient(circle at 12% 8%, rgba(45, 212, 191, 0.18), transparent 35%),
-    radial-gradient(circle at 88% 82%, rgba(251, 146, 60, 0.2), transparent 38%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
+    radial-gradient(circle at 100% 0%, hsl(3 74% 52% / 0.05), transparent 40%),
+    radial-gradient(circle at 0% 100%, hsl(20 30% 60% / 0.04), transparent 42%);
   background-attachment: fixed;
+}
+
+.dark body {
+  background-image:
+    radial-gradient(circle at 100% 0%, hsl(6 92% 64% / 0.08), transparent 40%),
+    radial-gradient(circle at 0% 100%, hsl(20 20% 40% / 0.06), transparent 42%);
 }
 
 h1,
@@ -58,5 +98,8 @@ h6 {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }
