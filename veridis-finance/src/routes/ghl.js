@@ -25,7 +25,7 @@ async function ghlRoutes(app) {
 
   // Start the install: returns the GHL authorize URL with a signed state.
   app.get(
-    '/integrations/ghl/install',
+    '/integrations/crm/install',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
     async (request, reply) => {
       const organizationId = resolveOrganizationId(request);
@@ -36,7 +36,7 @@ async function ghlRoutes(app) {
 
   // Connection status for the tenant.
   app.get(
-    '/integrations/ghl/status',
+    '/integrations/crm/status',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const organizationId = resolveOrganizationId(request);
@@ -54,7 +54,7 @@ async function ghlRoutes(app) {
 
   // Pull invoices from the connected GHL location.
   app.get(
-    '/integrations/ghl/invoices',
+    '/integrations/crm/invoices',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER])] },
     async (request, reply) => {
       const organizationId = resolveOrganizationId(request);
@@ -64,7 +64,7 @@ async function ghlRoutes(app) {
 
   // Pull contacts from the connected GHL location.
   app.get(
-    '/integrations/ghl/contacts',
+    '/integrations/crm/contacts',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER])] },
     async (request, reply) => {
       const organizationId = resolveOrganizationId(request);
@@ -73,7 +73,7 @@ async function ghlRoutes(app) {
   );
 
   // OAuth callback (GHL redirects the user's browser here).
-  app.get('/integrations/ghl/oauth/callback', async (request, reply) => {
+  app.get('/integrations/crm/oauth/callback', async (request, reply) => {
     const { code, state } = request.query || {};
     if (!code) return reply.status(400).send({ error: 'Missing code' });
 
@@ -91,7 +91,7 @@ async function ghlRoutes(app) {
   });
 
   // Webhook receiver: verify signature, dedupe, process InvoicePaid.
-  app.post('/integrations/ghl/webhook', async (request, reply) => {
+  app.post('/integrations/crm/webhook', async (request, reply) => {
     const signature =
       request.headers['x-ghl-signature'] || request.headers['x-wh-signature'];
     const verified = ghlService.verifyWebhookSignature(request.rawBody, signature);

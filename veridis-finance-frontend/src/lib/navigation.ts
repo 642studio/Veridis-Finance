@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookUser,
   CalendarRange,
+  FileText,
   Building2,
   Landmark,
   LayoutDashboard,
@@ -35,6 +36,11 @@ export const DASHBOARD_NAV_ITEMS: DashboardNavItem[] = [
     href: "/dashboard/invoices",
     label: "Invoices",
     icon: Receipt,
+  },
+  {
+    href: "/dashboard/cfdi",
+    label: "CFDI",
+    icon: FileText,
   },
   {
     href: "/dashboard/reports",
