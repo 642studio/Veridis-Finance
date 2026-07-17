@@ -1,6 +1,7 @@
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const cors = require('@fastify/cors');
+const helmet = require('@fastify/helmet');
 const { ZodError } = require('zod');
 
 const transactionsRoutes = require('./routes/transactions');
@@ -60,6 +61,23 @@ function resolveCorsOrigin() {
   return process.env.NODE_ENV === 'production' ? false : true;
 }
 
+/**
+ * Resolve Fastify's `trustProxy` from TRUST_PROXY.
+ *
+ * `trustProxy: true` trusts X-Forwarded-For unconditionally, which lets a client
+ * spoof `request.ip` and bypass IP rate limiting. Behind a known number of
+ * proxies (Railway/Vercel/an LB) set TRUST_PROXY to the hop count (e.g. "1") or
+ * a CIDR. Default to 1 hop — safe for typical single-proxy PaaS deploys.
+ */
+function resolveTrustProxy() {
+  const raw = (process.env.TRUST_PROXY || '').trim();
+  if (!raw) return 1;
+  if (/^\d+$/.test(raw)) return Number.parseInt(raw, 10);
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return raw; // IP / CIDR / comma-separated list
+}
+
 function buildApp() {
   const maxXmlFileSizeBytes = Number.parseInt(
     process.env.INVOICE_XML_MAX_FILE_SIZE_BYTES || '1048576',
@@ -80,7 +98,23 @@ function buildApp() {
 
   const app = Fastify({
     loggerInstance: logger,
-    trustProxy: true,
+    trustProxy: resolveTrustProxy(),
+  });
+
+  // Security headers (HSTS, X-Content-Type-Options, frame-ancestors, etc.). This
+  // is a JSON API, so a strict CSP that forbids any active content is correct;
+  // it also backstops the stored-XSS risk from user-supplied content.
+  app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'same-site' },
+    hsts: { maxAge: 31536000, includeSubDomains: true },
   });
 
   app.register(cors, {
