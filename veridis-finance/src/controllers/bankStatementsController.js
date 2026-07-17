@@ -99,6 +99,7 @@ async function uploadBankStatement(request, reply) {
   const parsed = await parseBankStatementPdf({
     pdfBuffer,
     bank: formPayload.bank,
+    organization_id: organizationId,
   });
 
   const importRecord = await createImportPreview({

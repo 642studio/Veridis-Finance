@@ -531,27 +531,41 @@ async function createTransaction(payload, options = {}) {
     ],
   };
 
-  const { rows } = await pool.query(query);
+  // Insert + audit log commit atomically: a financial write must never land
+  // without its audit trail (finding from the architecture audit).
+  const client = await pool.connect();
+  let mappedCreated;
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(query);
 
-  const created = rows[0];
-  const mappedCreated = mapTransactionRow({
-    ...created,
-    member_name: null,
-    client_name: null,
-    vendor_name: null,
-  });
+    const created = rows[0];
+    mappedCreated = mapTransactionRow({
+      ...created,
+      member_name: null,
+      client_name: null,
+      vendor_name: null,
+    });
 
-  await logTransactionAudit({
-    organization_id: mappedCreated.organization_id,
-    transaction_id: mappedCreated.id,
-    action: 'create',
-    actor_user_id: options.actor_user_id || null,
-    actor_role: options.actor_role || null,
-    source: options.audit_source || mappedCreated.source || 'api',
-    changes: {
-      after: toAuditSnapshot(mappedCreated),
-    },
-  });
+    await logTransactionAudit({
+      organization_id: mappedCreated.organization_id,
+      transaction_id: mappedCreated.id,
+      action: 'create',
+      actor_user_id: options.actor_user_id || null,
+      actor_role: options.actor_role || null,
+      source: options.audit_source || mappedCreated.source || 'api',
+      changes: {
+        after: toAuditSnapshot(mappedCreated),
+      },
+      db: client,
+    });
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 
   return mappedCreated;
 }
@@ -1000,27 +1014,38 @@ async function updateTransaction({
     values,
   };
 
-  const { rows } = await pool.query(query);
-  if (!rows[0]) {
-    throw notFound(`Transaction not found: ${transaction_id}`);
+  // Update + audit log commit atomically.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(query);
+    if (!rows[0]) {
+      throw notFound(`Transaction not found: ${transaction_id}`);
+    }
+    const updated = await getTransactionById({ organization_id, transaction_id });
+
+    await logTransactionAudit({
+      organization_id,
+      transaction_id,
+      action: 'update',
+      actor_user_id,
+      actor_role,
+      source: audit_source || updated.source || existing.source || 'api',
+      changes: {
+        patch,
+        before: toAuditSnapshot(existing),
+        after: toAuditSnapshot(updated),
+      },
+      db: client,
+    });
+    await client.query('COMMIT');
+    return updated;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-  const updated = await getTransactionById({ organization_id, transaction_id });
-
-  await logTransactionAudit({
-    organization_id,
-    transaction_id,
-    action: 'update',
-    actor_user_id,
-    actor_role,
-    source: audit_source || updated.source || existing.source || 'api',
-    changes: {
-      patch,
-      before: toAuditSnapshot(existing),
-      after: toAuditSnapshot(updated),
-    },
-  });
-
-  return updated;
 }
 
 async function deleteTransaction({
@@ -1048,27 +1073,38 @@ async function deleteTransaction({
     values: [organization_id, transaction_id],
   };
 
-  const { rows } = await pool.query(query);
-  if (!rows[0]) {
-    throw notFound(`Transaction not found: ${transaction_id}`);
+  // Soft delete + audit log commit atomically.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(query);
+    if (!rows[0]) {
+      throw notFound(`Transaction not found: ${transaction_id}`);
+    }
+
+    await logTransactionAudit({
+      organization_id,
+      transaction_id,
+      action: 'delete',
+      actor_user_id,
+      actor_role,
+      source: audit_source,
+      changes: {
+        before: toAuditSnapshot(transaction),
+      },
+      db: client,
+    });
+    await client.query('COMMIT');
+    return {
+      id: rows[0].id,
+      deleted: true,
+    };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-
-  await logTransactionAudit({
-    organization_id,
-    transaction_id,
-    action: 'delete',
-    actor_user_id,
-    actor_role,
-    source: audit_source,
-    changes: {
-      before: toAuditSnapshot(transaction),
-    },
-  });
-
-  return {
-    id: rows[0].id,
-    deleted: true,
-  };
 }
 
 async function listTransactionHistory({ organization_id, transaction_id, limit = 100 }) {

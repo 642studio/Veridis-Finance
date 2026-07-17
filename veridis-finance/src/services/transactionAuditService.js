@@ -23,6 +23,9 @@ async function logTransactionAudit({
   actor_role = null,
   source = 'api',
   changes = {},
+  // Pass the caller's transaction client so the audit row commits atomically
+  // with the financial write it documents.
+  db = pool,
 }) {
   const normalizedAction = normalizeAction(action);
   const normalizedSource = String(source || 'api').trim().toLowerCase().slice(0, 80) || 'api';
@@ -65,7 +68,7 @@ async function logTransactionAudit({
     ],
   };
 
-  const { rows } = await pool.query(query);
+  const { rows } = await db.query(query);
   return rows[0] || null;
 }
 
