@@ -578,5 +578,5 @@ Set on the `veridis-finance-api` project (Production environment):
 ```
 AI_SYSTEM_PROVIDER=google
 AI_SYSTEM_GOOGLE_API_KEY=<Google AI Studio key>
-AI_SYSTEM_GOOGLE_MODEL=gemini-1.5-flash
+AI_SYSTEM_GOOGLE_MODEL=gemini-2.0-flash
 ```

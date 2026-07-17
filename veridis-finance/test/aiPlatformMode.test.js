@@ -41,7 +41,8 @@ test('platform mode resolves the system key without touching org rows', async ()
 
   assert.equal(creds.provider, 'google');
   assert.equal(creds.api_key, 'platform-gemini-key');
-  assert.equal(creds.model, 'gemini-1.5-flash');
+  // gemini-1.5-flash is retired upstream; the resolver maps it to the current model.
+  assert.equal(creds.model, 'gemini-2.0-flash');
   assert.equal(creds.key_source, 'system');
 });
 
@@ -86,4 +87,24 @@ test('platform mode without a configured key reports not-ready (no crash)', asyn
     db: { query() { throw new Error('DB must not be queried in platform mode'); } },
   });
   assert.equal(creds, null);
+});
+
+test('retired Gemini models are mapped to current ones', () => {
+  const { normalizeGoogleModel } = require('../src/modules/finance/intelligence/ai-provider.service');
+  assert.equal(normalizeGoogleModel('gemini-1.5-flash'), 'gemini-2.0-flash');
+  assert.equal(normalizeGoogleModel('gemini-1.5-pro'), 'gemini-2.5-pro');
+  assert.equal(normalizeGoogleModel('gemini-2.0-flash'), 'gemini-2.0-flash');
+  assert.equal(normalizeGoogleModel('gemini-2.5-flash'), 'gemini-2.5-flash');
+});
+
+test('system credentials apply the Google model mapping', async () => {
+  process.env.AI_SYSTEM_PROVIDER = 'google';
+  process.env.AI_SYSTEM_GOOGLE_API_KEY = 'platform-key';
+  process.env.AI_SYSTEM_GOOGLE_MODEL = 'gemini-1.5-flash';
+  const { resolveProviderCredentials } = require('../src/modules/finance/intelligence/ai-provider.service');
+  const creds = await resolveProviderCredentials({
+    organizationId: '00000000-0000-0000-0000-000000000000',
+    db: { query() { throw new Error('no DB in platform mode'); } },
+  });
+  assert.equal(creds.model, 'gemini-2.0-flash');
 });

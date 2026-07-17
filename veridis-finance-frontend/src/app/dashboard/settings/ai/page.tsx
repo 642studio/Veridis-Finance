@@ -25,7 +25,7 @@ const PROVIDERS: ReadonlyArray<{ value: AiProviderName; label: string }> = [
 
 const MODELS_BY_PROVIDER: Record<AiProviderName, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o"],
-  google: ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"],
+  google: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
   qwen: ["qwen-plus", "qwen-turbo", "qwen-max"],
 };
 
