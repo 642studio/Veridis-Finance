@@ -129,7 +129,9 @@ function buildApp() {
 
   app.register(multipart, {
     limits: {
-      files: 1,
+      // Bulk XML upload accepts batches; other routes still enforce their own
+      // single-file rules in the handler.
+      files: 50,
       fields: 10,
       fileSize: multipartFileSizeLimit,
     },

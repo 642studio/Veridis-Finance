@@ -82,6 +82,16 @@ async function ghlRoutes(app) {
     }
   );
 
+  // Import the location's historical CRM invoices (paid ones stamp or queue).
+  app.post(
+    '/integrations/crm/import-history',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    async (request, reply) => {
+      const organizationId = resolveOrganizationId(request);
+      reply.send({ data: await ghlService.importCrmHistory(organizationId) });
+    }
+  );
+
   // Dismiss a stale pending invoice (e.g. old test events showing as "—").
   app.post(
     '/integrations/crm/pending/:id/dismiss',

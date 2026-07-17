@@ -64,30 +64,38 @@ export default function DashboardInvoicesPage() {
     loadInvoices();
   }, [loadInvoices]);
 
-  const handleUpload = async (file: File) => {
+  const handleUpload = async (files: File[]) => {
     const formData = new FormData();
-    formData.append("file", file);
+    for (const file of files) {
+      formData.append("files", file);
+    }
 
     try {
-      const response = await clientApiFetch<ApiEnvelope<Invoice>>(
-        "/api/finance/invoices/upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response = await clientApiFetch<
+        ApiEnvelope<{ received: number; created: number; duplicates: number; errors: number }>
+      >("/api/finance/invoices/upload-bulk", {
+        method: "POST",
+        body: formData,
+      });
 
       await loadInvoices();
 
+      const s = response.data;
       notify.success({
-        title: "Invoice uploaded",
-        description: `UUID ${response.data.uuid_sat} processed successfully.`,
+        title:
+          s.created === 1 && s.received === 1
+            ? "Factura subida"
+            : `${s.created} de ${s.received} facturas importadas`,
+        description:
+          s.duplicates || s.errors
+            ? `${s.duplicates} duplicada(s) omitida(s) · ${s.errors} con error`
+            : "Procesadas correctamente.",
       });
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not upload invoice";
+        error instanceof ApiClientError ? error.message : "No se pudieron subir las facturas";
       notify.error({
-        title: "Invoice upload failed",
+        title: "Error al subir",
         description: message,
       });
       throw error;

@@ -564,6 +564,94 @@ async function listPending(organizationId) {
 }
 
 /**
+ * Import the connected location's EXISTING (historical) CRM invoices.
+ *
+ * Forward-looking invoices arrive via webhook; this backfills the past: paid
+ * invoices not yet linked to a CFDI get stamped right away when the client's
+ * fiscal profile (CSF) exists, or parked in the pending_csf queue otherwise —
+ * reusing the exact same pipeline, dedupe and UI actions as live webhooks.
+ */
+async function importCrmHistory(organizationId) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) {
+    const err = new Error('CRM no conectado');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const pageSize = 100;
+  const maxPages = 5; // hasta 500 facturas por corrida
+  const all = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const q = new URLSearchParams({
+      altId: install.location_id,
+      altType: 'location',
+      limit: String(pageSize),
+      offset: String(page * pageSize),
+    });
+    const data = await apiFetch(install.id, `/invoices/?${q.toString()}`);
+    const list = data.invoices || data.data || [];
+    all.push(...list);
+    if (list.length < pageSize) break;
+  }
+
+  const summary = {
+    found: all.length,
+    stamped: 0,
+    pending_csf: 0,
+    already_linked: 0,
+    already_imported: 0,
+    skipped_unpaid: 0,
+    errors: 0,
+  };
+
+  for (const inv of all) {
+    const ghlInvoiceId = String(inv._id || inv.id || '').trim();
+    if (!ghlInvoiceId) continue;
+
+    const status = String(inv.status || '').toLowerCase();
+    if (!['paid', 'partially_paid'].includes(status)) {
+      summary.skipped_unpaid += 1;
+      continue;
+    }
+
+    const linked = await cfdiService.findByGhlInvoice({
+      organization_id: organizationId,
+      ghl_invoice_id: ghlInvoiceId,
+    });
+    if (linked) {
+      summary.already_linked += 1;
+      continue;
+    }
+
+    const payload = {
+      type: 'InvoicePaid',
+      locationId: install.location_id,
+      webhookId: `import:${ghlInvoiceId}`,
+      data: inv,
+    };
+    const { isNew, row } = await recordWebhook(payload);
+    if (!isNew) {
+      summary.already_imported += 1;
+      continue;
+    }
+
+    try {
+      await markWebhook(row.id, 'processing');
+      await processInvoicePaid(payload);
+      await markWebhook(row.id, 'processed');
+      summary.stamped += 1;
+    } catch (err) {
+      await markWebhook(row.id, err.pendingCsf ? 'pending_csf' : 'error', err.message);
+      if (err.pendingCsf) summary.pending_csf += 1;
+      else summary.errors += 1;
+    }
+  }
+
+  return summary;
+}
+
+/**
  * Dismiss a pending_csf event (e.g. stale test invoices) for the caller's
  * connected location. Scoped so an org can only dismiss its own events.
  */
@@ -625,5 +713,6 @@ module.exports = {
   listPending,
   retryPending,
   dismissPending,
+  importCrmHistory,
   markWebhook,
 };

@@ -77,6 +77,7 @@ export default function CfdiPage() {
   const [pending, setPending] = useState<PendingInvoice[]>([]);
   const [shareUrl, setShareUrl] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [importingHistory, setImportingHistory] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -341,6 +342,36 @@ export default function CfdiPage() {
     }
   };
 
+  const importCrmHistory = async () => {
+    setImportingHistory(true);
+    try {
+      const response = await clientApiFetch<{
+        data: {
+          found: number;
+          stamped: number;
+          pending_csf: number;
+          already_linked: number;
+          already_imported: number;
+          skipped_unpaid: number;
+          errors: number;
+        };
+      }>("/api/crm/import-history", { method: "POST" });
+      const s = response.data;
+      notify.success({
+        title: `Histórico importado: ${s.found} factura(s) encontradas`,
+        description: `${s.stamped} timbradas · ${s.pending_csf} esperando CSF · ${s.already_linked + s.already_imported} ya registradas · ${s.skipped_unpaid} sin pagar (llegarán por webhook al pagarse)`,
+      });
+      load();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo importar el histórico",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setImportingHistory(false);
+    }
+  };
+
   const openCreditNote = (c: Cfdi) => {
     setNcForm({ amount: String(c.total ?? ""), description: "Nota de crédito", relation: "01" });
     setNcFor(c);
@@ -458,7 +489,19 @@ export default function CfdiPage() {
             </CardDescription>
           </div>
           {crm?.connected ? (
-            <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>
+            <span className="flex items-center gap-2">
+              {canWrite ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={importingHistory}
+                  onClick={importCrmHistory}
+                >
+                  {importingHistory ? "Importando…" : "Importar histórico"}
+                </Button>
+              ) : null}
+              <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>
+            </span>
           ) : (
             <Button size="sm" variant="outline" onClick={connectCrm}>
               Conectar 642 CRM

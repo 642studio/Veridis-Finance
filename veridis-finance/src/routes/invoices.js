@@ -2,6 +2,7 @@ const {
   listInvoices,
   createInvoice,
   uploadInvoice,
+  uploadInvoicesBulk,
   updateInvoiceStatus,
 } = require('../controllers/invoicesController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
@@ -24,6 +25,15 @@ async function invoicesRoutes(app) {
       preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])],
     },
     uploadInvoice
+  );
+
+  // Bulk XML upload (up to 50 files per request).
+  app.post(
+    '/invoices/upload-bulk',
+    {
+      preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])],
+    },
+    uploadInvoicesBulk
   );
 
   app.post(
