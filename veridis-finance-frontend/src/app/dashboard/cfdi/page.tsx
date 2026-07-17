@@ -137,6 +137,40 @@ export default function CfdiPage() {
     load();
   }, [load]);
 
+  // Handle the return from the GHL OAuth flow: ?crm=connected (state survived)
+  // or ?crm=claim&location_id=... (state lost — bind the install in-session).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const crm = params.get("crm");
+    if (!crm) return;
+    const locationId = params.get("location_id");
+    window.history.replaceState({}, "", window.location.pathname);
+
+    if (crm === "connected") {
+      notify.success({ title: "642 CRM conectado ✅" });
+      load();
+      return;
+    }
+    if (crm === "claim" && locationId) {
+      clientApiFetch("/api/crm/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ location_id: locationId }),
+      })
+        .then(() => {
+          notify.success({ title: "642 CRM conectado ✅" });
+          load();
+        })
+        .catch((error) => {
+          notify.error({
+            title: "No se pudo vincular el CRM",
+            description: error instanceof ApiClientError ? error.message : "Error",
+          });
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCsfFile = async (file: File) => {
     setCsfBusy(true);
     try {
