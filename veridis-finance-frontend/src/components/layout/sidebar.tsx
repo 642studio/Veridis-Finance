@@ -64,10 +64,12 @@ export function Sidebar({ session }: SidebarProps) {
       <div className="border-t border-border p-3">
         <div className="flex items-center gap-3 rounded-lg bg-muted px-3 py-2.5">
           <span className="grid h-8 w-8 place-items-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-            {(session?.role ?? "V").slice(0, 1).toUpperCase()}
+            {(session?.organization_name ?? session?.role ?? "V").slice(0, 1).toUpperCase()}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-foreground">642 Studio</p>
+            <p className="truncate text-sm font-medium text-foreground">
+              {session?.organization_name?.trim() || "Mi organización"}
+            </p>
             <p className="text-xs capitalize text-muted-foreground">{session?.role ?? "viewer"}</p>
           </div>
         </div>

@@ -54,8 +54,8 @@ export function RegisterForm() {
       });
 
       notify.success({
-        title: "Organization created",
-        description: "Your workspace is ready.",
+        title: "Organización creada",
+        description: "Tu espacio de trabajo está listo.",
       });
       router.replace("/dashboard");
       router.refresh();
@@ -63,9 +63,9 @@ export function RegisterForm() {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : "Unable to create organization";
+          : "No se pudo crear la organización";
       notify.error({
-        title: "Register failed",
+        title: "Error al registrarse",
         description: message,
       });
     } finally {
@@ -76,19 +76,19 @@ export function RegisterForm() {
   return (
     <Card className="w-full max-w-lg">
       <CardHeader>
-        <CardTitle>Create account</CardTitle>
+        <CardTitle>Crear cuenta</CardTitle>
         <CardDescription>
-          Launch a new Veridis Finance organization.
+          Da de alta una nueva organización en Veridis Finance.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={onSubmit}>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="organization_name">Organization Name</Label>
+              <Label htmlFor="organization_name">Nombre de la organización</Label>
               <Input
                 id="organization_name"
-                placeholder="642 Studio"
+                placeholder="Mi Empresa S.A. de C.V."
                 value={organizationName}
                 onChange={(event) => setOrganizationName(event.target.value)}
                 required
@@ -96,10 +96,10 @@ export function RegisterForm() {
             </div>
 
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="organization_slug">Organization Slug</Label>
+              <Label htmlFor="organization_slug">Identificador (slug)</Label>
               <Input
                 id="organization_slug"
-                placeholder="642-studio"
+                placeholder="mi-empresa"
                 value={organizationSlug}
                 onChange={(event) => setOrganizationSlug(event.target.value)}
                 required
@@ -107,10 +107,10 @@ export function RegisterForm() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="owner_name">Owner Name</Label>
+              <Label htmlFor="owner_name">Nombre del titular</Label>
               <Input
                 id="owner_name"
-                placeholder="Founder Name"
+                placeholder="Nombre y apellido"
                 value={ownerName}
                 onChange={(event) => setOwnerName(event.target.value)}
                 required
@@ -118,11 +118,11 @@ export function RegisterForm() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="owner_email">Owner Email</Label>
+              <Label htmlFor="owner_email">Correo del titular</Label>
               <Input
                 id="owner_email"
                 type="email"
-                placeholder="owner@company.com"
+                placeholder="dueño@empresa.com"
                 value={ownerEmail}
                 onChange={(event) => setOwnerEmail(event.target.value)}
                 required
@@ -130,11 +130,11 @@ export function RegisterForm() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
-                placeholder="StrongPassword123!"
+                placeholder="ContraseñaSegura123!"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
@@ -160,13 +160,13 @@ export function RegisterForm() {
           </div>
 
           <Button className="w-full" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Creating account..." : "Create organization"}
+            {isSubmitting ? "Creando cuenta..." : "Crear organización"}
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">
-            Already registered?{" "}
+            ¿Ya tienes cuenta?{" "}
             <Link className="font-medium text-primary hover:underline" href="/login">
-              Sign in
+              Inicia sesión
             </Link>
           </p>
         </form>
