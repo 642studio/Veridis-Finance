@@ -6,7 +6,7 @@ const SUPPORTED_PROVIDER_HINTS = ['openai', 'google', 'qwen'];
 const PROVIDER_NAME_REGEX = /^[a-z0-9_-]{2,40}$/;
 const DEFAULT_MODEL_BY_PROVIDER = Object.freeze({
   openai: 'gpt-4o-mini',
-  google: 'gemini-2.0-flash',
+  google: 'gemini-2.5-flash',
   qwen: 'qwen-plus',
 });
 const DEFAULT_COST_PER_1K_TOKENS_USD = 0.0006;
@@ -16,6 +16,7 @@ const COST_PER_1K_TOKENS_USD = Object.freeze({
     default: 0.0009,
   }),
   google: Object.freeze({
+    'gemini-2.5-flash': 0.00035,
     'gemini-2.0-flash': 0.00035,
     'gemini-1.5-flash': 0.00035,
     default: 0.00045,
@@ -26,20 +27,78 @@ const COST_PER_1K_TOKENS_USD = Object.freeze({
   }),
 });
 
-// Google retired the Gemini 1.0/1.5 series for new API keys — requests to those
-// models return 404, which surfaced as an opaque 502. Map legacy names to the
-// closest current model so an old env/config value keeps working untouched.
+// Google keeps retiring model generations (1.5, then 2.0) — requests to a
+// retired model 404. Two defenses: (1) map known-retired names to a current
+// one; (2) if Google still rejects the model, discover the best available one
+// via the ListModels API at request time (see discoverGoogleModel).
 const RETIRED_GOOGLE_MODELS = Object.freeze({
-  'gemini-1.5-flash': 'gemini-2.0-flash',
-  'gemini-1.5-flash-8b': 'gemini-2.0-flash',
+  'gemini-1.5-flash': 'gemini-2.5-flash',
+  'gemini-1.5-flash-8b': 'gemini-2.5-flash',
   'gemini-1.5-pro': 'gemini-2.5-pro',
-  'gemini-1.0-pro': 'gemini-2.0-flash',
-  'gemini-pro': 'gemini-2.0-flash',
+  'gemini-1.0-pro': 'gemini-2.5-flash',
+  'gemini-pro': 'gemini-2.5-flash',
+  'gemini-2.0-flash': 'gemini-2.5-flash',
+  'gemini-2.0-flash-lite': 'gemini-2.5-flash',
 });
 
 function normalizeGoogleModel(model) {
   const name = String(model || '').trim();
   return RETIRED_GOOGLE_MODELS[name] || name;
+}
+
+/**
+ * Pick the best generally-available Gemini model from a ListModels result.
+ * Prefers the highest version, flash-class (cheap/fast) over pro, and skips
+ * preview/experimental/special-purpose variants.
+ */
+function pickBestGoogleModel(names) {
+  const usable = (names || [])
+    .map((n) => String(n || '').replace(/^models\//, ''))
+    .filter((n) => n.startsWith('gemini-'))
+    .filter((n) => !/preview|exp|image|live|tts|audio|embedding|thinking|vision/i.test(n));
+
+  const score = (n) => {
+    const versionMatch = n.match(/^gemini-(\d+(?:\.\d+)?)/);
+    const version = versionMatch ? Number.parseFloat(versionMatch[1]) : 0;
+    const flashBonus = /flash/.test(n) ? 0.5 : 0;
+    const litePenalty = /lite/.test(n) ? 0.2 : 0;
+    return version + flashBonus - litePenalty;
+  };
+
+  usable.sort((a, b) => score(b) - score(a));
+  return usable[0] || null;
+}
+
+let cachedGoogleModel = { name: null, at: 0 };
+const GOOGLE_MODEL_CACHE_MS = 60 * 60 * 1000;
+
+/** Ask Google which models this key can actually use, cache the best pick. */
+async function discoverGoogleModel(apiKey) {
+  if (cachedGoogleModel.name && Date.now() - cachedGoogleModel.at < GOOGLE_MODEL_CACHE_MS) {
+    return cachedGoogleModel.name;
+  }
+  try {
+    const response = await fetchWithTimeout(
+      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(apiKey)}`,
+      { method: 'GET' }
+    );
+    if (!response.ok) return null;
+    const body = parseJsonObject(await response.text()) || {};
+    const names = (Array.isArray(body.models) ? body.models : [])
+      .filter(
+        (m) =>
+          Array.isArray(m?.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent')
+      )
+      .map((m) => m.name);
+    const best = pickBestGoogleModel(names);
+    if (best) {
+      cachedGoogleModel = { name: best, at: Date.now() };
+    }
+    return best;
+  } catch {
+    return null;
+  }
 }
 
 function badRequest(message) {
@@ -402,41 +461,55 @@ async function requestOpenAiCompatibleJson({
 }
 
 async function requestGoogleJson({ apiKey, model, prompt }) {
-  const resolvedModel = normalizeGoogleModel(safeModelName(model, 'google'));
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    resolvedModel
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const response = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [
+  const callModel = (name) =>
+    fetchWithTimeout(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        name
+      )}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
             {
-              text: prompt,
+              role: 'user',
+              parts: [
+                {
+                  text: prompt,
+                },
+              ],
             },
           ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-      },
-    }),
-  });
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: 'application/json',
+          },
+        }),
+      }
+    );
 
-  const bodyText = await response.text();
+  let resolvedModel = normalizeGoogleModel(safeModelName(model, 'google'));
+  let response = await callModel(resolvedModel);
+  let bodyText = await response.text();
+
+  // Self-healing: if the configured model was retired (404), ask Google which
+  // models this key can use and retry once with the best available one.
+  if (!response.ok && response.status === 404) {
+    const discovered = await discoverGoogleModel(apiKey);
+    if (discovered && discovered !== resolvedModel) {
+      resolvedModel = discovered;
+      response = await callModel(resolvedModel);
+      bodyText = await response.text();
+    }
+  }
 
   if (!response.ok) {
     throw badGateway(
       `AI provider google request failed (${response.status}): ${bodyText.slice(
         0,
-        200
+        400
       )}`
     );
   }
@@ -455,6 +528,8 @@ async function requestGoogleJson({ apiKey, model, prompt }) {
   return {
     parsed,
     usage_tokens: Number(body?.usageMetadata?.totalTokenCount || 0) || 0,
+    // The model that actually served the request (may differ after discovery).
+    model_used: resolvedModel,
   };
 }
 
@@ -965,10 +1040,11 @@ async function classifyTransactionWithAi({
     return null;
   }
 
+  const effectiveModel = response.model_used || credentials.model;
   const usageEvent = await logUsageEvent({
     organizationId,
     provider: credentials.provider,
-    model: credentials.model,
+    model: effectiveModel,
     keySource: credentials.key_source,
     tokensUsed: response.usage_tokens,
     operation: 'classification',
@@ -978,7 +1054,7 @@ async function classifyTransactionWithAi({
   return {
     ...normalized,
     provider: credentials.provider,
-    model: credentials.model,
+    model: effectiveModel,
     key_source: credentials.key_source,
     usage_tokens: usageEvent.tokens_used,
     estimated_cost_usd: usageEvent.estimated_cost_usd,
@@ -1030,10 +1106,11 @@ async function testConnection({
   }
 
   const parsed = normalizeAiResult(response.parsed);
+  const effectiveModel = response.model_used || credentials.model;
   const usageEvent = await logUsageEvent({
     organizationId,
     provider: credentials.provider,
-    model: credentials.model,
+    model: effectiveModel,
     keySource: credentials.key_source,
     tokensUsed: response.usage_tokens,
     operation: 'connection_test',
@@ -1043,7 +1120,7 @@ async function testConnection({
   return {
     ok: Boolean(parsed),
     provider: credentials.provider,
-    model: credentials.model,
+    model: effectiveModel,
     key_source: credentials.key_source,
     usage_tokens: usageEvent.tokens_used,
     estimated_cost_usd: usageEvent.estimated_cost_usd,
@@ -1061,4 +1138,5 @@ module.exports = {
   platformManaged,
   resolveProviderCredentials,
   normalizeGoogleModel,
+  pickBestGoogleModel,
 };
