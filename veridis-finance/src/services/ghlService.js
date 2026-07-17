@@ -563,6 +563,23 @@ async function listPending(organizationId) {
   return rows;
 }
 
+/**
+ * Dismiss a pending_csf event (e.g. stale test invoices) for the caller's
+ * connected location. Scoped so an org can only dismiss its own events.
+ */
+async function dismissPending(organizationId, eventId) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) return null;
+  const { rows } = await pool.query(
+    `UPDATE finance.ghl_webhook_events
+        SET status = 'ignored', error_message = 'dismissed by user'
+      WHERE id = $1 AND status = 'pending_csf' AND location_id = $2
+      RETURNING id`,
+    [eventId, install.location_id]
+  );
+  return rows[0] || null;
+}
+
 /** Re-run stamping for a stored event (after the CSF was uploaded). */
 async function retryPending(eventId) {
   const { rows } = await pool.query(
@@ -607,5 +624,6 @@ module.exports = {
   processInvoicePaid,
   listPending,
   retryPending,
+  dismissPending,
   markWebhook,
 };

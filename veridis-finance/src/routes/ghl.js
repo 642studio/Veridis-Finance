@@ -82,6 +82,18 @@ async function ghlRoutes(app) {
     }
   );
 
+  // Dismiss a stale pending invoice (e.g. old test events showing as "—").
+  app.post(
+    '/integrations/crm/pending/:id/dismiss',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    async (request, reply) => {
+      const organizationId = resolveOrganizationId(request);
+      const dismissed = await ghlService.dismissPending(organizationId, request.params.id);
+      if (!dismissed) return reply.status(404).send({ error: 'Evento pendiente no encontrado' });
+      reply.send({ data: { dismissed: true } });
+    }
+  );
+
   // Retry stamping a pending invoice (after its CSF was uploaded).
   app.post(
     '/integrations/crm/pending/:id/retry',

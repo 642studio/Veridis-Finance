@@ -503,9 +503,30 @@ export default function CfdiPage() {
                       <td className="py-2">{p.invoice_name || "—"}</td>
                       <td className="py-2">{p.total ? formatCurrency(Number(p.total)) : "—"}</td>
                       <td className="py-2 text-right">
-                        <Button size="sm" variant="outline" onClick={() => retryPending(p.id)} disabled={retryingId === p.id}>
-                          {retryingId === p.id ? "Timbrando…" : "Timbrar"}
-                        </Button>
+                        <span className="flex items-center justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => retryPending(p.id)} disabled={retryingId === p.id}>
+                            {retryingId === p.id ? "Timbrando…" : "Timbrar"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={retryingId === p.id}
+                            onClick={async () => {
+                              try {
+                                await clientApiFetch(`/api/crm/pending/${p.id}/dismiss`, { method: "POST" });
+                                notify.success({ title: "Pendiente descartado" });
+                                load();
+                              } catch (error) {
+                                notify.error({
+                                  title: "No se pudo descartar",
+                                  description: error instanceof ApiClientError ? error.message : "Error",
+                                });
+                              }
+                            }}
+                          >
+                            Descartar
+                          </Button>
+                        </span>
                       </td>
                     </tr>
                   ))}
