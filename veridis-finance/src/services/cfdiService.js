@@ -306,6 +306,7 @@ async function issueCreditNote({
   relationType = '01',
   paymentForm,
   receiver: inlineReceiver,
+  expeditionPlace,
   folio,
   source = 'manual',
   source_ref = null,
@@ -335,7 +336,8 @@ async function issueCreditNote({
     relationType,
     // Default the payment form to the original document's, per common practice.
     paymentForm: paymentForm || row.forma_pago || '03',
-    expeditionPlace: issuer?.zip_code,
+    expeditionPlace:
+      expeditionPlace || issuer?.zip_code || process.env.FACTURAMA_EXPEDITION_PLACE,
     folio,
   });
 
@@ -369,7 +371,7 @@ async function issueCreditNote({
  * When the payment settles the remaining balance, the original document is
  * marked paid.
  */
-async function registerPayment({ organization_id, id, payment = {}, receiver: inlineReceiver }) {
+async function registerPayment({ organization_id, id, payment = {}, receiver: inlineReceiver, expeditionPlace }) {
   const row = await getRawById(organization_id, id);
   if (!row) {
     const err = new Error('CFDI not found');
@@ -408,7 +410,8 @@ async function registerPayment({ organization_id, id, payment = {}, receiver: in
     receiver,
     relatedUuid: row.uuid,
     payment: normalizedPayment,
-    expeditionPlace: issuer?.zip_code,
+    expeditionPlace:
+      expeditionPlace || issuer?.zip_code || process.env.FACTURAMA_EXPEDITION_PLACE,
   });
 
   const doc = await insertStampedDoc(organization_id, {
@@ -533,12 +536,23 @@ async function cancel({ organization_id, id, motive = '02', substitution = null 
 
   const issuer = await getIssuer(organization_id);
   const { provider, creds } = resolveCreds(issuer);
-  const acuse = await pac.cancel(doc.pac_document_id, {
-    provider,
-    creds,
-    motive,
-    substitution,
-  });
+  let acuse;
+  try {
+    acuse = await pac.cancel(doc.pac_document_id, {
+      provider,
+      creds,
+      motive,
+      substitution,
+    });
+  } catch (err) {
+    // Surface the PAC's reason instead of a masked 500 — cancellation failures
+    // (plazo vencido, requiere aceptación, sandbox no disponible) are
+    // actionable business errors, not internals.
+    const reason = String(err.message || 'Error del PAC').slice(0, 300);
+    const wrapped = new Error(`No se pudo cancelar en el PAC: ${reason}`);
+    wrapped.statusCode = 400;
+    throw wrapped;
+  }
 
   const { rows } = await pool.query(
     `UPDATE finance.cfdi_documents
