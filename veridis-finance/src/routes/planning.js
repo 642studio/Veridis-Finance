@@ -3,6 +3,7 @@ const {
   listPlans,
   getPlanOverview,
   getPlanResults,
+  getPlanScenarios,
   updatePlanConfig,
   getPlanProducts,
   createProduct,
@@ -56,6 +57,14 @@ async function planningRoutes(app) {
       preHandler: [authenticate, authorize(READ_ROLES)],
     },
     getPlanResults
+  );
+
+  app.get(
+    '/planning/plans/:planId/scenarios',
+    {
+      preHandler: [authenticate, authorize(READ_ROLES)],
+    },
+    getPlanScenarios
   );
 
   app.put(

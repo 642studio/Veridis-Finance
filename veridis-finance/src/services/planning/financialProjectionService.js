@@ -7,6 +7,20 @@ const ALLOWED_VARIABLE_KEYS = new Set([
   'inventory',
 ]);
 
+// Scenario sensitivity factors applied to the deterministic base projection.
+// Optimistic assumes stronger demand and tighter costs; conservative the
+// opposite. Base leaves the model untouched.
+const SCENARIO_FACTORS = Object.freeze({
+  base: { revenue: 1, cost: 1 },
+  optimistic: { revenue: 1.1, cost: 0.95 },
+  conservative: { revenue: 0.9, cost: 1.05 },
+});
+
+function normalizeScenario(value) {
+  const s = String(value || 'base').trim().toLowerCase();
+  return SCENARIO_FACTORS[s] ? s : 'base';
+}
+
 function round2(value) {
   return Number(Number(value || 0).toFixed(2));
 }
@@ -129,10 +143,12 @@ function variableAdjustmentAmount({ variables, key, totalRevenue, revenueByProdu
   return adjustment;
 }
 
-function computeProjection({ plan, products, fixedCosts, variables }) {
+function computeProjection({ plan, products, fixedCosts, variables, scenario }) {
   const years = toYearsRange(plan.start_year, plan.end_year);
   const taxRate = toNumber(plan.tax_rate, 0);
   const inflationRate = toNumber(plan.inflation, 0);
+  const scenarioName = normalizeScenario(scenario ?? plan.scenario);
+  const scenarioFactor = SCENARIO_FACTORS[scenarioName];
 
   const normalizedVariables = (variables || [])
     .map(normalizeVariableRow)
@@ -169,9 +185,10 @@ function computeProjection({ plan, products, fixedCosts, variables }) {
       const cogsPercent = toNumber(product.cogs_percent, 0);
       const cogsYearN = revenueYearN * (cogsPercent / 100);
 
-      totalRevenue += revenueYearN;
-      totalCogs += cogsYearN;
-      revenueByProduct.set(product.id, revenueYearN);
+      // Scenario tilts revenue (and COGS, which is a % of revenue, scales with it).
+      totalRevenue += revenueYearN * scenarioFactor.revenue;
+      totalCogs += cogsYearN * scenarioFactor.revenue;
+      revenueByProduct.set(product.id, revenueYearN * scenarioFactor.revenue);
     }
 
     let fixedCostsYear = 0;
@@ -182,7 +199,8 @@ function computeProjection({ plan, products, fixedCosts, variables }) {
 
       const monthlyAmount = toNumber(fixedCost.monthly_amount, 0);
       const annualFixedCost = monthlyAmount * 12 * growthFactor(inflationRate, yearsPassed);
-      fixedCostsYear += annualFixedCost;
+      // Scenario tilts operating costs (optimistic tighter, conservative looser).
+      fixedCostsYear += annualFixedCost * scenarioFactor.cost;
     }
 
     const grossProfitYear = totalRevenue - totalCogs;
@@ -252,6 +270,7 @@ function computeProjection({ plan, products, fixedCosts, variables }) {
   const totalCashflowAllYears = cashflow.reduce((sum, value) => sum + value, 0);
 
   return {
+    scenario: scenarioName,
     years,
     revenue,
     gross_profit: grossProfit,
@@ -296,6 +315,7 @@ async function fetchPlanInputs({ organization_id, plan_id, client }) {
             id,
             organization_id,
             plan_name,
+            scenario,
             start_year,
             end_year,
             tax_rate,
@@ -397,11 +417,13 @@ async function calculatePlan(planOrOptions, options = {}) {
           organization_id: options.organization_id,
           plan_id: planOrOptions,
           client: options.client,
+          scenario: options.scenario,
         }
       : {
           organization_id: planOrOptions.organization_id,
           plan_id: planOrOptions.plan_id,
           client: planOrOptions.client,
+          scenario: planOrOptions.scenario,
         };
 
   if (!input.organization_id) {
@@ -423,12 +445,39 @@ async function calculatePlan(planOrOptions, options = {}) {
     products: data.products,
     fixedCosts: data.fixed_costs,
     variables: data.variables,
+    scenario: input.scenario,
   });
+}
+
+/**
+ * Compute all three scenarios (base / optimistic / conservative) in one shot so
+ * the UI can show a side-by-side comparison. This is the piece the schema always
+ * promised but the service never delivered.
+ */
+async function calculateScenarios(planOrOptions, options = {}) {
+  const input =
+    typeof planOrOptions === 'string'
+      ? { organization_id: options.organization_id, plan_id: planOrOptions, client: options.client }
+      : planOrOptions;
+
+  const data = await fetchPlanInputs(input);
+  const scenarios = ['base', 'optimistic', 'conservative'].map((scenario) => {
+    const projection = computeProjection({
+      plan: data.plan,
+      products: data.products,
+      fixedCosts: data.fixed_costs,
+      variables: data.variables,
+      scenario,
+    });
+    return { scenario, summary: projection.summary, rows: projection.rows };
+  });
+  return { plan_id: data.plan.id, scenarios };
 }
 
 module.exports = {
   computeProjection,
   fetchPlanInputs,
   calculatePlan,
+  calculateScenarios,
   ALLOWED_VARIABLE_KEYS,
 };

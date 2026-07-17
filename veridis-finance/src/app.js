@@ -23,6 +23,7 @@ const accountsRoutes = require('./routes/accounts');
 const contactsRoutes = require('./routes/contacts');
 const categoriesRoutes = require('./routes/categories');
 const transactionSplitsRoutes = require('./routes/transactionSplits');
+const reconciliationRoutes = require('./routes/reconciliation');
 const logger = require('./logger');
 const pool = require('./db/pool');
 
@@ -169,6 +170,7 @@ function buildApp() {
   app.register(contactsRoutes, { prefix: '/api/finance' });
   app.register(categoriesRoutes, { prefix: '/api/finance' });
   app.register(transactionSplitsRoutes, { prefix: '/api/finance' });
+  app.register(reconciliationRoutes, { prefix: '/api/finance' });
   app.register(planningRoutes, { prefix: '/api' });
 
   // Canonical SaaS endpoints requested for entity modules and transactions.
@@ -179,6 +181,7 @@ function buildApp() {
   app.register(contactsRoutes, { prefix: '/api' });
   app.register(categoriesRoutes, { prefix: '/api' });
   app.register(transactionSplitsRoutes, { prefix: '/api' });
+  app.register(reconciliationRoutes, { prefix: '/api' });
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, 'Request failed');
