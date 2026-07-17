@@ -257,6 +257,67 @@ async function createInvoiceInGhl(organizationId, invoice) {
   });
 }
 
+function ymd(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Build a CRM invoice payload from a Veridis CFDI's receiver + items and create
+ * it in the connected location. Returns the CRM invoice id (or null on failure).
+ */
+async function createInvoiceForCfdi(organizationId, { contactId, receiver, items, currency = 'MXN' }) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install || !contactId) return null;
+
+  const now = new Date();
+  const due = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+  const invItems = (items || []).map((it) => ({
+    name: it.description || 'Concepto',
+    currency,
+    amount: Number(it.unitPrice || 0),
+    qty: Number(it.quantity || 1),
+    taxes:
+      it.ivaRate && Number(it.ivaRate) > 0
+        ? [{ name: 'IVA', rate: Number(it.ivaRate) * 100, calculation: 'exclusive' }]
+        : [],
+  }));
+
+  const created = await createInvoiceInGhl(organizationId, {
+    name: `Factura ${receiver?.name || ''}`.trim(),
+    currency,
+    items: invItems,
+    contactDetails: {
+      id: contactId,
+      name: receiver?.name || undefined,
+    },
+    issueDate: ymd(now),
+    dueDate: ymd(due),
+    liveMode: true,
+  });
+
+  return created?._id || created?.id || created?.invoice?._id || null;
+}
+
+/**
+ * Veridis -> GHL: record a payment against a CRM invoice so the CRM reflects the
+ * reconciliation done in Veridis. Best-effort; returns null if not connected.
+ */
+async function recordInvoicePayment(organizationId, ghlInvoiceId, { amount, mode = 'cash', notes } = {}) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install || !ghlInvoiceId) return null;
+  return apiFetch(install.id, `/invoices/${ghlInvoiceId}/record-payment`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      altId: install.location_id,
+      altType: 'location',
+      mode,
+      amount: Number(amount || 0),
+      notes: notes || 'Conciliado en Veridis Finance',
+    }),
+  });
+}
+
 // --------------------------------------------------------------------------
 // Webhooks
 // --------------------------------------------------------------------------
@@ -353,6 +414,23 @@ async function processInvoicePaid(event) {
   }
   const organizationId = install.organization_id;
   const contact = data.contactDetails || data.contact || {};
+  const ghlInvoiceId = String(data._id || data.id || data.invoiceId || '');
+
+  // Payment sync: if this CRM invoice was originally created in Veridis (we
+  // mirrored it and stored ghl_invoice_id), don't re-stamp — just reconcile it
+  // as paid from the CRM side.
+  const existingLinked = await cfdiService.findByGhlInvoice({
+    organization_id: organizationId,
+    ghl_invoice_id: ghlInvoiceId,
+  });
+  if (existingLinked) {
+    const paid = await cfdiService.markPaid({
+      organization_id: organizationId,
+      id: existingLinked.id,
+      source: 'crm',
+    });
+    return { data: paid || existingLinked, reconciled: true };
+  }
 
   // Resolve the receiver's fiscal profile (from an uploaded CSF) by GHL contact
   // id or email. If none exists, we can't legally stamp — surface a clear error.
@@ -402,6 +480,20 @@ async function processInvoicePaid(event) {
     source: 'ghl',
     source_ref: String(data._id || data.id || data.invoiceId || event.webhookId),
   });
+
+  // The invoice was paid in the CRM (that's what triggered this event), so
+  // reconcile the freshly-stamped CFDI as paid from the CRM side.
+  if (result?.data?.id) {
+    try {
+      await cfdiService.markPaid({
+        organization_id: organizationId,
+        id: result.data.id,
+        source: 'crm',
+      });
+    } catch {
+      // best-effort
+    }
+  }
 
   // Write-back to the CRM: note the stamped CFDI on the contact (two-way).
   const contactId = data.contactId || contact.id;
@@ -477,6 +569,8 @@ module.exports = {
   getContact,
   addContactNote,
   createInvoiceInGhl,
+  createInvoiceForCfdi,
+  recordInvoicePayment,
   verifyWebhookSignature,
   recordWebhook,
   processInvoicePaid,

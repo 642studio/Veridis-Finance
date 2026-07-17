@@ -1,6 +1,7 @@
 const { z } = require('zod');
 
 const cfdiService = require('../services/cfdiService');
+const ghlService = require('../services/ghlService');
 const { resolveOrganizationId } = require('../middleware/auth');
 
 const itemSchema = z.object({
@@ -89,6 +90,64 @@ async function listReceivedCfdi(request, reply) {
   reply.send({ data });
 }
 
+/**
+ * Reconcile a CFDI as paid in Veridis, then mirror the payment to the 642 CRM
+ * (best-effort) so both sides agree. A CFDI is "paid" once marked here OR paid
+ * in the CRM.
+ */
+async function markPaidCfdi(request, reply) {
+  const { id } = idParamsSchema.parse(request.params);
+  const organizationId = resolveOrganizationId(request);
+  const doc = await cfdiService.markPaid({ organization_id: organizationId, id, source: 'veridis' });
+  if (!doc) return reply.status(404).send({ error: 'CFDI not found' });
+
+  let crmSynced = false;
+  if (doc.ghl_invoice_id) {
+    try {
+      await ghlService.recordInvoicePayment(organizationId, doc.ghl_invoice_id, {
+        amount: doc.total,
+      });
+      crmSynced = true;
+    } catch {
+      // best-effort: the CFDI is paid in Veridis regardless of CRM reachability
+    }
+  }
+  reply.send({ data: doc, crmSynced });
+}
+
+/**
+ * Manually mirror an already-stamped CFDI to the 642 CRM as an invoice (retry
+ * when the automatic push on issue failed or the receiver was linked later).
+ */
+async function pushCfdiToCrm(request, reply) {
+  const { id } = idParamsSchema.parse(request.params);
+  const organizationId = resolveOrganizationId(request);
+  const doc = await cfdiService.getById({ organization_id: organizationId, id });
+  if (!doc) return reply.status(404).send({ error: 'CFDI not found' });
+  if (doc.ghl_invoice_id) {
+    return reply.send({ data: doc, alreadyLinked: true });
+  }
+  if (!doc.ghl_contact_id) {
+    return reply.status(409).send({ error: 'CFDI sin contacto del CRM; vincula un receptor con contacto del 642 CRM.' });
+  }
+
+  const ghlInvoiceId = await ghlService.createInvoiceForCfdi(organizationId, {
+    contactId: doc.ghl_contact_id,
+    receiver: { name: doc.receiver_name, rfc: doc.receiver_rfc },
+    items: [{ description: `CFDI ${doc.uuid || ''}`.trim(), quantity: 1, unitPrice: doc.total || 0, ivaRate: 0 }],
+    currency: doc.currency || 'MXN',
+  });
+  if (!ghlInvoiceId) {
+    return reply.status(502).send({ error: 'El 642 CRM no devolvió un invoice' });
+  }
+  const linked = await cfdiService.linkGhlInvoice({
+    organization_id: organizationId,
+    id,
+    ghl_invoice_id: ghlInvoiceId,
+  });
+  reply.send({ data: linked });
+}
+
 module.exports = {
   issueCfdi,
   listCfdi,
@@ -96,4 +155,6 @@ module.exports = {
   getCfdiPdf: makeDownloadHandler('pdf'),
   getCfdiXml: makeDownloadHandler('xml'),
   listReceivedCfdi,
+  markPaidCfdi,
+  pushCfdiToCrm,
 };

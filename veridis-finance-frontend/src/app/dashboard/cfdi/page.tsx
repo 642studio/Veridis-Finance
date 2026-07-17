@@ -40,6 +40,10 @@ interface Cfdi {
   receiver_name: string | null;
   total: number | null;
   metodo_pago: string | null;
+  payment_status?: string;
+  paid_source?: string | null;
+  ghl_invoice_id?: string | null;
+  ghl_contact_id?: string | null;
   created_at: string;
   error_message?: string | null;
 }
@@ -72,6 +76,7 @@ export default function CfdiPage() {
   const [pending, setPending] = useState<PendingInvoice[]>([]);
   const [shareUrl, setShareUrl] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // CSF upload / receiver form
@@ -245,6 +250,44 @@ export default function CfdiPage() {
     }
   };
 
+  const markPaid = async (id: string) => {
+    setPayingId(id);
+    try {
+      const res = await clientApiFetch<{ crmSynced?: boolean }>(
+        `/api/finance/cfdi/${id}/mark-paid`,
+        { method: "POST" }
+      );
+      notify.success({
+        title: "Marcado como pagado ✅",
+        description: res.crmSynced ? "Pago sincronizado con 642 CRM." : undefined,
+      });
+      load();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo marcar",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setPayingId(null);
+    }
+  };
+
+  const pushCrm = async (id: string) => {
+    setPayingId(id);
+    try {
+      await clientApiFetch(`/api/finance/cfdi/${id}/push-crm`, { method: "POST" });
+      notify.success({ title: "Factura creada en 642 CRM ✅" });
+      load();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo enviar al CRM",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setPayingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -393,8 +436,9 @@ export default function CfdiPage() {
                     <th className="py-2">Receptor</th>
                     <th className="py-2">Total</th>
                     <th className="py-2">Estatus</th>
+                    <th className="py-2">Pago</th>
                     <th className="py-2">UUID</th>
-                    <th className="py-2 text-right">Descargar</th>
+                    <th className="py-2 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -416,10 +460,43 @@ export default function CfdiPage() {
                           {c.status === "stamped" ? "timbrado" : c.status}
                         </Badge>
                       </td>
+                      <td className="py-2">
+                        {c.status === "stamped" ? (
+                          c.payment_status === "paid" ? (
+                            <Badge className="bg-emerald-100 text-emerald-700">
+                              pagado{c.paid_source === "crm" ? " (CRM)" : ""}
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-slate-100 text-slate-600">pendiente</Badge>
+                          )
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="py-2 font-mono text-xs">{c.uuid?.slice(0, 18) || "—"}</td>
                       <td className="py-2 text-right">
                         {c.status === "stamped" ? (
-                          <span className="flex justify-end gap-2">
+                          <span className="flex flex-wrap items-center justify-end gap-2">
+                            {canWrite && c.payment_status !== "paid" ? (
+                              <button
+                                type="button"
+                                className="text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50"
+                                onClick={() => markPaid(c.id)}
+                                disabled={payingId === c.id}
+                              >
+                                {payingId === c.id ? "…" : "Marcar pagado"}
+                              </button>
+                            ) : null}
+                            {canWrite && !c.ghl_invoice_id && c.ghl_contact_id ? (
+                              <button
+                                type="button"
+                                className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                                onClick={() => pushCrm(c.id)}
+                                disabled={payingId === c.id}
+                              >
+                                Enviar al CRM
+                              </button>
+                            ) : null}
                             <a className="text-primary hover:underline" href={`/api/finance/cfdi/${c.id}/pdf`}>
                               PDF
                             </a>

@@ -5,6 +5,8 @@ const {
   getCfdiPdf,
   getCfdiXml,
   listReceivedCfdi,
+  markPaidCfdi,
+  pushCfdiToCrm,
 } = require('../controllers/cfdiController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -14,6 +16,20 @@ async function cfdiRoutes(app) {
     '/cfdi/issue',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     issueCfdi
+  );
+
+  // Reconcile a CFDI as paid (syncs the payment to the 642 CRM).
+  app.post(
+    '/cfdi/:id/mark-paid',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    markPaidCfdi
+  );
+
+  // Mirror an issued CFDI to the 642 CRM as an invoice (retry helper).
+  app.post(
+    '/cfdi/:id/push-crm',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    pushCfdiToCrm
   );
 
   // Received invoices (facturas de proveedores) straight from the PAC.

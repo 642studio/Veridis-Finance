@@ -57,6 +57,11 @@ function mapRow(r) {
     pac_document_id: r.pac_document_id,
     source: r.source,
     source_ref: r.source_ref,
+    ghl_invoice_id: r.ghl_invoice_id || null,
+    ghl_contact_id: r.ghl_contact_id || null,
+    payment_status: r.payment_status || 'pending',
+    paid_at: r.paid_at || null,
+    paid_source: r.paid_source || null,
     error_message: r.error_message,
     created_at: r.created_at,
     stamped_at: r.stamped_at,
@@ -82,6 +87,7 @@ async function issueIngreso(input) {
   // Resolve the receiver: either a stored profile (receiver_id) or inline data.
   let receiver = input.receiver;
   let receiverId = input.receiver_id || null;
+  let receiverContactId = input.ghl_contact_id || null;
   if (receiverId) {
     const profile = await receiversService.getById({ organization_id: organizationId, id: receiverId });
     if (!profile) {
@@ -96,6 +102,7 @@ async function issueIngreso(input) {
       use: profile.cfdi_use,
       zip: profile.zip_code,
     };
+    receiverContactId = receiverContactId || profile.ghl_contact_id || null;
   }
   input = { ...input, receiver };
 
@@ -146,8 +153,8 @@ async function issueIngreso(input) {
     `INSERT INTO finance.cfdi_documents
       (organization_id, issuer_id, receiver_id, invoice_id, cfdi_type, status, uuid, folio,
        receiver_rfc, receiver_name, cfdi_use, metodo_pago, forma_pago, currency,
-       total, pac_provider, pac_document_id, source, source_ref, raw, stamped_at)
-     VALUES ($1,$2,$3,$4,'I','stamped',$5,$6,$7,$8,$9,$10,$11,'MXN',$12,$13,$14,$15,$16,$17, now())
+       total, pac_provider, pac_document_id, source, source_ref, ghl_contact_id, raw, stamped_at)
+     VALUES ($1,$2,$3,$4,'I','stamped',$5,$6,$7,$8,$9,$10,$11,'MXN',$12,$13,$14,$15,$16,$17,$18, now())
      RETURNING *`,
     [
       organizationId, issuer?.id || null, receiverId, input.invoice_id || null,
@@ -155,12 +162,78 @@ async function issueIngreso(input) {
       input.receiver.rfc, input.receiver.name, input.receiver.use || 'G03',
       input.paymentMethod || 'PUE', input.paymentForm || '01',
       round(stamped.total ?? 0), provider, stamped.id,
-      input.source || 'api', input.source_ref || null,
+      input.source || 'api', input.source_ref || null, receiverContactId,
       JSON.stringify(stamped.raw || {}),
     ]
   );
 
-  return { data: mapRow(rows[0]) };
+  const doc = mapRow(rows[0]);
+
+  // Veridis -> CRM: when a CFDI is issued *inside* Veridis (not from a CRM
+  // webhook) for a receiver linked to a CRM contact, mirror it as an invoice in
+  // the 642 CRM. Best-effort: never fail the stamping if the CRM call errors.
+  if (input.source !== 'ghl' && receiverContactId && input.pushToCrm !== false) {
+    try {
+      // Lazy require avoids a circular dependency (ghlService requires this).
+      const ghl = require('./ghlService');
+      const ghlInvoiceId = await ghl.createInvoiceForCfdi(organizationId, {
+        contactId: receiverContactId,
+        receiver: input.receiver,
+        items: input.items,
+        currency: 'MXN',
+      });
+      if (ghlInvoiceId) {
+        const linked = await linkGhlInvoice({ organization_id: organizationId, id: doc.id, ghl_invoice_id: ghlInvoiceId });
+        if (linked) return { data: linked };
+      }
+    } catch (err) {
+      // swallow: CRM mirroring is best-effort
+    }
+  }
+
+  return { data: doc };
+}
+
+/** Link a Veridis CFDI to the invoice we created in the CRM. */
+async function linkGhlInvoice({ organization_id, id, ghl_invoice_id }) {
+  const { rows } = await pool.query(
+    `UPDATE finance.cfdi_documents
+        SET ghl_invoice_id = $3
+      WHERE organization_id = $1 AND id = $2
+      RETURNING *`,
+    [organization_id, id, ghl_invoice_id]
+  );
+  return rows[0] ? mapRow(rows[0]) : null;
+}
+
+/**
+ * Mark a CFDI as paid (reconciled). `source` is where the payment was
+ * confirmed: 'veridis' (marked in-app) or 'crm' (paid in the 642 CRM).
+ * Idempotent: an already-paid CFDI is returned unchanged.
+ */
+async function markPaid({ organization_id, id, source = 'veridis' }) {
+  const { rows } = await pool.query(
+    `UPDATE finance.cfdi_documents
+        SET payment_status = 'paid',
+            paid_at = COALESCE(paid_at, now()),
+            paid_source = COALESCE(paid_source, $3)
+      WHERE organization_id = $1 AND id = $2
+      RETURNING *`,
+    [organization_id, id, source]
+  );
+  return rows[0] ? mapRow(rows[0]) : null;
+}
+
+/** Find a CFDI by the CRM invoice id it was mirrored to (for payment sync). */
+async function findByGhlInvoice({ organization_id, ghl_invoice_id }) {
+  if (!ghl_invoice_id) return null;
+  const { rows } = await pool.query(
+    `SELECT * FROM finance.cfdi_documents
+      WHERE organization_id = $1 AND ghl_invoice_id = $2
+      ORDER BY created_at DESC LIMIT 1`,
+    [organization_id, ghl_invoice_id]
+  );
+  return rows[0] ? mapRow(rows[0]) : null;
 }
 
 /** List issued CFDIs from our DB. */
@@ -226,4 +299,7 @@ module.exports = {
   download,
   listReceived,
   getIssuer,
+  linkGhlInvoice,
+  markPaid,
+  findByGhlInvoice,
 };
