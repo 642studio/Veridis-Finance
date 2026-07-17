@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 /**
- * Demo: stamp a test CFDI de Ingreso against the PAC sandbox.
+ * Demo: stamp a test CFDI de Ingreso against the Facturama sandbox.
  *
- * Facturama (default):
  *   FACTURAMA_USER=... FACTURAMA_PASSWORD=... FACTURAMA_ENV=sandbox \
  *     node scripts/timbra-demo.js
  *
- * Facturapi:
- *   PAC_PROVIDER=facturapi FACTURAPI_KEY=sk_test_... node scripts/timbra-demo.js
+ * API Web modality: the issuer (emisor) is taken from the account's Tax Profile
+ * in Facturama, so we do NOT send an Issuer object. The profile's razón social
+ * must match the CSD exactly (UPPERCASE, no régimen de capital) or timbrado
+ * fails with "el nombre del emisor debe pertenecer al nombre asociado al RFC".
  *
- * Uses SAT test receiver data so it stamps without a real customer, and prints
- * the SAT UUID (Folio Fiscal) + PDF/XML links. No database access required.
+ * Receiver uses the SAT sandbox test RFC EKU9003173C9 with its registered CP.
+ * No database access required — this proves the timbrado path end to end.
  */
 
 require('dotenv').config();
@@ -23,25 +24,19 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Timbrando CFDI de prueba (proveedor: ${provider}, sandbox)...\n`);
+  console.log(`Timbrando CFDI de prueba (proveedor: ${provider})...\n`);
 
   const result = await pac.stampIngreso({
     provider,
-    // Issuer = the account's fiscal profile (sandbox).
-    issuer: {
-      rfc: 'SCD2507076C4',
-      name: '642 STUDIO',
-      fiscalRegime: '626',
-    },
-    // SAT/PAC sandbox test receiver.
+    // SAT sandbox test receiver (RFC + CP must match SAT's padrón de pruebas).
     receiver: {
-      rfc: 'URE180429TM6',
-      name: 'UNIVERSIDAD ROBOTICA ESPAÑOLA',
+      rfc: 'EKU9003173C9',
+      name: 'ESCUELA KEMPER URGATE',
       fiscalRegime: '601',
       use: 'G03',
-      zip: '65000',
+      zip: '42501',
     },
-    expeditionPlace: '85800',
+    expeditionPlace: '85800', // issuer CP (must be a Lugar de Expedición in the profile)
     paymentForm: '03', // Transferencia
     paymentMethod: 'PUE',
     items: [
