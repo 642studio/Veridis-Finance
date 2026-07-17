@@ -232,6 +232,9 @@ export interface Invoice {
   total: number;
   status: InvoiceStatus;
   invoice_date: string;
+  /** 'issued' = la emitió tu organización; 'received' = de un proveedor. */
+  direction?: "issued" | "received";
+  emitter_rfc?: string | null;
   paid_at?: string | null;
   payment_method?: string | null;
   payment_reference?: string | null;

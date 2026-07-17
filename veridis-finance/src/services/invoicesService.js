@@ -62,10 +62,11 @@ async function createInvoice(payload) {
         forma_pago,
         metodo_pago,
         taxes,
-        concepts
+        concepts,
+        direction
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-              $11, $12, $13, $14, $15, $16, $17, $18, $19)
+              $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING
         id,
         organization_id,
@@ -80,6 +81,7 @@ async function createInvoice(payload) {
         payment_reference,
         emitter_rfc,
         receiver_rfc,
+        direction,
         updated_at,
         created_at
     `,
@@ -104,6 +106,7 @@ async function createInvoice(payload) {
       payload.metodo_pago || null,
       payload.taxes ? JSON.stringify(payload.taxes) : null,
       payload.concepts ? JSON.stringify(payload.concepts) : null,
+      payload.direction === 'issued' ? 'issued' : 'received',
     ],
   };
 
@@ -151,6 +154,8 @@ async function listInvoices({
         paid_at,
         payment_method,
         payment_reference,
+        emitter_rfc,
+        direction,
         updated_at,
         created_at
       FROM finance.invoices

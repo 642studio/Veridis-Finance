@@ -90,6 +90,7 @@ async function getDiotReport({ organization_id, year, month }) {
         AND date_part('year', invoice_date) = $2
         AND date_part('month', invoice_date) = $3
         AND emitter_rfc IS NOT NULL
+        AND direction = 'received'
       GROUP BY emitter_rfc
       ORDER BY total DESC
     `,

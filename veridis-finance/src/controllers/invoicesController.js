@@ -3,6 +3,15 @@ const { z } = require('zod');
 const invoicesService = require('../services/invoicesService');
 const { parseCfdi40 } = require('../services/cfdiParserService');
 const { resolveOrganizationId } = require('../middleware/auth');
+const { getActiveIssuer } = require('../services/cfdiIssuersService');
+
+/** 'issued' when the XML's emitter RFC is the org's own fiscal RFC. */
+function resolveDirection(parsedEmitterRfc, issuerRfc) {
+  if (!parsedEmitterRfc || !issuerRfc) return 'received';
+  return String(parsedEmitterRfc).trim().toUpperCase() === String(issuerRfc).trim().toUpperCase()
+    ? 'issued'
+    : 'received';
+}
 
 const createInvoiceSchema = z.object({
   organization_id: z.string().uuid().optional(),
@@ -77,6 +86,7 @@ async function uploadInvoicesBulk(request, reply) {
   }
 
   const organizationId = resolveOrganizationId(request);
+  const issuerRfc = (await getActiveIssuer(organizationId).catch(() => null))?.rfc || null;
   const summary = { received: 0, created: 0, duplicates: 0, errors: 0 };
   const details = [];
 
@@ -112,6 +122,7 @@ async function uploadInvoicesBulk(request, reply) {
         metodo_pago: parsed.metodo_pago,
         taxes: parsed.taxes,
         concepts: parsed.concepts,
+        direction: resolveDirection(parsed.emitter_rfc, issuerRfc),
       });
       summary.created += 1;
       details.push({ file: fileName, status: 'created', uuid: created.uuid_sat });
@@ -209,6 +220,10 @@ async function uploadInvoice(request, reply) {
     metodo_pago: parsedInvoice.metodo_pago,
     taxes: parsedInvoice.taxes,
     concepts: parsedInvoice.concepts,
+    direction: resolveDirection(
+      parsedInvoice.emitter_rfc,
+      (await getActiveIssuer(organizationId).catch(() => null))?.rfc || null
+    ),
   });
 
   request.log.info(

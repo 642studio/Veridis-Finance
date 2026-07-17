@@ -226,19 +226,30 @@ export default function DashboardInvoicesPage() {
       },
       {
         key: "status",
-        header: "Status",
+        header: "Estatus",
         render: (row: Invoice) => (
-          <Badge variant={row.status === "paid" ? "success" : "outline"}>{row.status}</Badge>
+          <Badge variant={row.status === "paid" ? "success" : "outline"}>
+            {row.status === "paid" ? "pagada" : "pendiente"}
+          </Badge>
+        ),
+      },
+      {
+        key: "direction",
+        header: "Tipo",
+        render: (row: Invoice) => (
+          <Badge variant={row.direction === "issued" ? "default" : "secondary"}>
+            {row.direction === "issued" ? "Emitida" : "Recibida"}
+          </Badge>
         ),
       },
       {
         key: "emitter",
-        header: "Emitter",
+        header: "Emisor",
         render: (row: Invoice) => row.emitter,
       },
       {
         key: "invoice_date",
-        header: "Date",
+        header: "Fecha",
         render: (row: Invoice) => formatDate(row.invoice_date),
       },
       {
