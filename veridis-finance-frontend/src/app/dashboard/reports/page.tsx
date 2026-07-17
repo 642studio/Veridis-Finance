@@ -30,9 +30,26 @@ function initialDateContext() {
   };
 }
 
-const monthLabelFormatter = new Intl.DateTimeFormat("en-US", {
+const monthLabelFormatter = new Intl.DateTimeFormat("es-MX", {
   month: "short",
 });
+
+interface DiotSupplier {
+  rfc: string;
+  name: string;
+  invoice_count: number;
+  base_total: number;
+  iva_trasladado: number;
+  iva_retenido: number;
+  total: number;
+}
+
+interface DiotReport {
+  year: number;
+  month: number;
+  suppliers: DiotSupplier[];
+  unclassified_count: number;
+}
 
 function buildPeriodsEnding(count: number, month: number, year: number) {
   const periods: Array<{ month: number; year: number; label: string }> = [];
@@ -74,6 +91,7 @@ export default function DashboardReportsPage() {
   const [summary, setSummary] = useState<MonthlySummary | null>(null);
   const [monthlyTrendData, setMonthlyTrendData] = useState<MonthlyIncomeExpenseDatum[]>([]);
   const [cashflowTrendData, setCashflowTrendData] = useState<CashflowLineDatum[]>([]);
+  const [diot, setDiot] = useState<DiotReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadReport = useCallback(async () => {
@@ -81,7 +99,7 @@ export default function DashboardReportsPage() {
     const yearNumber = normalizeYear(year);
 
     if (!monthNumber || !yearNumber) {
-      notify.error({ title: "Validation", description: "Use a valid MM/YYYY period." });
+      notify.error({ title: "Validación", description: "Usa un periodo MM/AAAA válido." });
       return;
     }
 
@@ -124,13 +142,23 @@ export default function DashboardReportsPage() {
           net: Number(monthlySummary.net_profit || 0),
         }))
       );
+      // DIOT (IVA por proveedor) — best-effort: si falla, el resto del reporte vive.
+      try {
+        const diotResponse = await clientApiFetch<ApiEnvelope<DiotReport>>(
+          `/api/finance/reports/diot?month=${String(monthNumber).padStart(2, "0")}&year=${yearNumber}`
+        );
+        setDiot(diotResponse.data);
+      } catch {
+        setDiot(null);
+      }
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not load report";
-      notify.error({ title: "Report failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo cargar el reporte";
+      notify.error({ title: "Error en el reporte", description: message });
       setSummary(null);
       setMonthlyTrendData([]);
       setCashflowTrendData([]);
+      setDiot(null);
     } finally {
       setIsLoading(false);
     }
@@ -150,27 +178,27 @@ export default function DashboardReportsPage() {
     () => [
       {
         key: "category",
-        header: "Category",
+        header: "Categoría",
         render: (row: CategorySummary) => row.category,
       },
       {
         key: "income",
-        header: "Income",
+        header: "Ingresos",
         render: (row: CategorySummary) => formatCurrency(row.total_income),
       },
       {
         key: "expense",
-        header: "Expense",
+        header: "Egresos",
         render: (row: CategorySummary) => formatCurrency(row.total_expense),
       },
       {
         key: "net",
-        header: "Net",
+        header: "Neto",
         render: (row: CategorySummary) => formatCurrency(row.net_profit),
       },
       {
         key: "count",
-        header: "Count",
+        header: "Movimientos",
         render: (row: CategorySummary) => row.transaction_count,
       },
     ],
@@ -194,9 +222,9 @@ export default function DashboardReportsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Monthly report</CardTitle>
+          <CardTitle>Reporte mensual</CardTitle>
           <CardDescription>
-            Select period to get income, expense, net profit and category grouping.
+            Elige el periodo para ver ingresos, egresos, utilidad neta y desglose por categoría.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -208,7 +236,7 @@ export default function DashboardReportsPage() {
             }}
           >
             <div className="space-y-2">
-              <Label htmlFor="month">Month (MM)</Label>
+              <Label htmlFor="month">Mes (MM)</Label>
               <Input
                 id="month"
                 value={month}
@@ -219,7 +247,7 @@ export default function DashboardReportsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="year">Year (YYYY)</Label>
+              <Label htmlFor="year">Año (AAAA)</Label>
               <Input
                 id="year"
                 value={year}
@@ -231,7 +259,7 @@ export default function DashboardReportsPage() {
 
             <div className="flex items-end">
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Loading..." : "Run report"}
+                {isLoading ? "Cargando…" : "Generar reporte"}
               </Button>
             </div>
           </form>
@@ -241,25 +269,25 @@ export default function DashboardReportsPage() {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Income</CardDescription>
+            <CardDescription>Ingresos totales</CardDescription>
             <CardTitle>{formatCurrency(summary?.total_income ?? 0)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Expense</CardDescription>
+            <CardDescription>Egresos totales</CardDescription>
             <CardTitle>{formatCurrency(summary?.total_expense ?? 0)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Net Profit</CardDescription>
+            <CardDescription>Utilidad neta</CardDescription>
             <CardTitle>{formatCurrency(summary?.net_profit ?? 0)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Transactions</CardDescription>
+            <CardDescription>Movimientos</CardDescription>
             <CardTitle>{summary?.transaction_count ?? 0}</CardTitle>
           </CardHeader>
         </Card>
@@ -268,29 +296,87 @@ export default function DashboardReportsPage() {
       <section className="grid gap-6 xl:grid-cols-2">
         <MonthlyIncomeExpenseBarChart
           data={monthlyTrendData}
-          description="Income and expense behavior ending on selected month."
+          description="Comportamiento de ingresos y egresos al mes seleccionado."
         />
         <CategoryPieChart
           data={categoryPieData}
-          description="Category distribution for selected month."
+          description="Distribución por categoría del mes seleccionado."
         />
       </section>
 
       <CashflowLineChart
         data={cashflowTrendData}
-        description="Net cashflow trend ending on selected month."
+        description="Tendencia de flujo neto al mes seleccionado."
       />
 
       <Card>
         <CardHeader>
-          <CardTitle>By category</CardTitle>
+          <CardTitle>Por categoría</CardTitle>
         </CardHeader>
         <CardContent>
           <DataTable
             rows={summary?.by_category ?? []}
             columns={columns}
             getRowId={(row, index) => `${row.category}-${index}`}
-            emptyMessage="No category data for selected period."
+            emptyMessage="Sin datos por categoría en el periodo seleccionado."
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>IVA por proveedor (base DIOT)</CardTitle>
+          <CardDescription>
+            Calculado desde los CFDI recibidos que subiste en el mes seleccionado.
+            {diot && diot.unclassified_count > 0
+              ? ` ${diot.unclassified_count} factura(s) sin datos fiscales estructurados — vuelve a subir su XML para incluirlas.`
+              : ""}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            rows={diot?.suppliers ?? []}
+            columns={[
+              {
+                key: "rfc",
+                header: "RFC proveedor",
+                render: (row: DiotSupplier) => (
+                  <span className="font-mono text-xs">{row.rfc}</span>
+                ),
+              },
+              {
+                key: "name",
+                header: "Proveedor",
+                render: (row: DiotSupplier) => row.name,
+              },
+              {
+                key: "invoices",
+                header: "Facturas",
+                render: (row: DiotSupplier) => row.invoice_count,
+              },
+              {
+                key: "base",
+                header: "Base",
+                render: (row: DiotSupplier) => formatCurrency(row.base_total),
+              },
+              {
+                key: "iva",
+                header: "IVA trasladado",
+                render: (row: DiotSupplier) => formatCurrency(row.iva_trasladado),
+              },
+              {
+                key: "ret",
+                header: "IVA retenido",
+                render: (row: DiotSupplier) => formatCurrency(row.iva_retenido),
+              },
+              {
+                key: "total",
+                header: "Total",
+                render: (row: DiotSupplier) => formatCurrency(row.total),
+              },
+            ]}
+            getRowId={(row) => row.rfc}
+            emptyMessage="Sin CFDI recibidos con datos fiscales en el periodo."
           />
         </CardContent>
       </Card>

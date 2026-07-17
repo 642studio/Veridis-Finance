@@ -100,12 +100,34 @@ function mapAccount(row) {
     due_day: row.due_day,
     balance:
       row.balance === null || row.balance === undefined ? 0 : Number(row.balance),
+    // The stored balance acts as the OPENING balance; the real balance is
+    // computed live from transactions (the audit found the column was never
+    // reconciled, making it dead/misleading data).
+    transactions_net:
+      row.transactions_net === null || row.transactions_net === undefined
+        ? 0
+        : Number(row.transactions_net),
+    current_balance:
+      Number(row.balance ?? 0) + Number(row.transactions_net ?? 0),
     currency: row.currency,
     status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
+
+// Live net of non-deleted, non-void transactions for an account.
+const TRANSACTIONS_NET_LATERAL = `
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(
+          CASE WHEN t.type = 'income' THEN t.amount ELSE -t.amount END
+        ), 0) AS transactions_net
+        FROM finance.transactions t
+        WHERE t.organization_id = a.organization_id
+          AND t.account_id = a.id
+          AND t.deleted_at IS NULL
+          AND t.status <> 'void'
+      ) tx ON true`;
 
 function normalizeAccountPayload(payload) {
   return {
@@ -193,26 +215,28 @@ async function listAccounts({ organization_id, status, type }) {
   const query = {
     text: `
       SELECT
-        id,
-        organization_id,
-        name,
-        type,
-        bank_name,
-        account_number_last4,
-        credit_limit,
-        cut_day,
-        due_day,
-        balance,
-        currency,
-        status,
-        created_at,
-        updated_at
-      FROM finance.accounts
-      WHERE ${conditions.join(' AND ')}
+        a.id,
+        a.organization_id,
+        a.name,
+        a.type,
+        a.bank_name,
+        a.account_number_last4,
+        a.credit_limit,
+        a.cut_day,
+        a.due_day,
+        a.balance,
+        tx.transactions_net,
+        a.currency,
+        a.status,
+        a.created_at,
+        a.updated_at
+      FROM finance.accounts a
+      ${TRANSACTIONS_NET_LATERAL}
+      WHERE ${conditions.map((condition) => `a.${condition}`).join(' AND ')}
       ORDER BY
-        CASE WHEN lower(name) = 'general' THEN 0 ELSE 1 END,
-        lower(name) ASC,
-        created_at ASC
+        CASE WHEN lower(a.name) = 'general' THEN 0 ELSE 1 END,
+        lower(a.name) ASC,
+        a.created_at ASC
     `,
     values,
   };
@@ -225,23 +249,25 @@ async function getAccountById({ organization_id, account_id }) {
   const query = {
     text: `
       SELECT
-        id,
-        organization_id,
-        name,
-        type,
-        bank_name,
-        account_number_last4,
-        credit_limit,
-        cut_day,
-        due_day,
-        balance,
-        currency,
-        status,
-        created_at,
-        updated_at
-      FROM finance.accounts
-      WHERE organization_id = $1
-        AND id = $2
+        a.id,
+        a.organization_id,
+        a.name,
+        a.type,
+        a.bank_name,
+        a.account_number_last4,
+        a.credit_limit,
+        a.cut_day,
+        a.due_day,
+        a.balance,
+        tx.transactions_net,
+        a.currency,
+        a.status,
+        a.created_at,
+        a.updated_at
+      FROM finance.accounts a
+      ${TRANSACTIONS_NET_LATERAL}
+      WHERE a.organization_id = $1
+        AND a.id = $2
       LIMIT 1
     `,
     values: [organization_id, account_id],

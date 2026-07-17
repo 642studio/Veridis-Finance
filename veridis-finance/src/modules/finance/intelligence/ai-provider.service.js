@@ -533,6 +533,73 @@ async function requestGoogleJson({ apiKey, model, prompt }) {
   };
 }
 
+/**
+ * Send a PDF (base64) + prompt to Gemini and get strict JSON back. Used for
+ * scanned/complex documents (e.g. bank statements) where text extraction
+ * fails. Google-only: it relies on Gemini's native PDF ingestion. Returns null
+ * when the platform provider isn't Google or has no key — callers fall back to
+ * their original error. Usage is metered per organization.
+ */
+async function extractPdfJson({ organizationId, pdfBase64, prompt, operation = 'pdf_extraction', db = pool }) {
+  const credentials = await resolveProviderCredentials({ organizationId, db });
+  if (!credentials?.api_key || credentials.provider !== 'google') {
+    return null;
+  }
+  // Gemini inline payload limit ~20MB; skip oversized documents.
+  if (!pdfBase64 || pdfBase64.length > 15 * 1024 * 1024) {
+    return null;
+  }
+
+  const model = normalizeGoogleModel(safeModelName(credentials.model, 'google'));
+  const response = await fetchWithTimeout(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(credentials.api_key)}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
+              { text: prompt },
+            ],
+          },
+        ],
+        generationConfig: { temperature: 0, responseMimeType: 'application/json' },
+      }),
+    },
+    45000
+  );
+
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw badGateway(
+      `AI provider google PDF extraction failed (${response.status}): ${bodyText.slice(0, 300)}`
+    );
+  }
+  const body = parseJsonObject(bodyText) || {};
+  const text = (body?.candidates?.[0]?.content?.parts || [])
+    .map((part) => String(part?.text || ''))
+    .join('\n');
+  const parsed = parseJsonObject(text);
+  if (!parsed) {
+    return null;
+  }
+
+  await logUsageEvent({
+    organizationId,
+    provider: 'google',
+    model,
+    keySource: credentials.key_source,
+    tokensUsed: Number(body?.usageMetadata?.totalTokenCount || 0) || 0,
+    operation,
+    db,
+  });
+
+  return parsed;
+}
+
 function normalizeAiResult(value) {
   const category = String(value?.category || '').trim().slice(0, 120);
   if (!category) {
@@ -1139,4 +1206,5 @@ module.exports = {
   resolveProviderCredentials,
   normalizeGoogleModel,
   pickBestGoogleModel,
+  extractPdfJson,
 };
