@@ -65,6 +65,83 @@ async function listInvoices(request, reply) {
   reply.send({ data: rows });
 }
 
+/**
+ * Bulk XML upload: accepts up to 50 CFDI XML files in one request, parses and
+ * persists each one independently, and reports a per-file summary — duplicates
+ * (same UUID) and malformed files never abort the batch. Ideal for importing a
+ * SAT download of historical received invoices.
+ */
+async function uploadInvoicesBulk(request, reply) {
+  if (!request.isMultipart()) {
+    throw badRequest('Content-Type must be multipart/form-data');
+  }
+
+  const organizationId = resolveOrganizationId(request);
+  const summary = { received: 0, created: 0, duplicates: 0, errors: 0 };
+  const details = [];
+
+  for await (const part of request.parts()) {
+    if (part.type !== 'file') continue;
+    const fileName = part.filename || `archivo-${summary.received + 1}`;
+    const buffer = await part.toBuffer();
+    summary.received += 1;
+
+    try {
+      const isXml =
+        fileName.toLowerCase().endsWith('.xml') ||
+        ['application/xml', 'text/xml'].includes(part.mimetype || '');
+      if (!isXml) {
+        throw badRequest('No es un archivo XML');
+      }
+
+      const parsed = parseCfdi40(buffer.toString('utf8'));
+      const created = await invoicesService.createInvoice({
+        organization_id: organizationId,
+        uuid_sat: parsed.uuid_sat,
+        emitter: parsed.emitter,
+        receiver: parsed.receiver,
+        total: parsed.total,
+        status: 'pending',
+        invoice_date: parsed.invoice_date,
+        emitter_rfc: parsed.emitter_rfc,
+        receiver_rfc: parsed.receiver_rfc,
+        subtotal: parsed.subtotal,
+        currency: parsed.currency,
+        comprobante_type: parsed.comprobante_type,
+        forma_pago: parsed.forma_pago,
+        metodo_pago: parsed.metodo_pago,
+        taxes: parsed.taxes,
+        concepts: parsed.concepts,
+      });
+      summary.created += 1;
+      details.push({ file: fileName, status: 'created', uuid: created.uuid_sat });
+    } catch (error) {
+      if (error?.statusCode === 409) {
+        summary.duplicates += 1;
+        details.push({ file: fileName, status: 'duplicate' });
+      } else {
+        summary.errors += 1;
+        details.push({
+          file: fileName,
+          status: 'error',
+          message: String(error?.message || 'Error').slice(0, 200),
+        });
+      }
+    }
+  }
+
+  if (summary.received === 0) {
+    throw badRequest('No se recibieron archivos XML');
+  }
+
+  request.log.info(
+    { source: 'invoice_bulk_upload', organization_id: organizationId, ...summary },
+    'Bulk invoice XML upload processed'
+  );
+
+  reply.status(201).send({ data: { ...summary, details } });
+}
+
 async function uploadInvoice(request, reply) {
   if (!request.isMultipart()) {
     throw badRequest('Content-Type must be multipart/form-data');
@@ -177,5 +254,6 @@ module.exports = {
   listInvoices,
   createInvoice,
   uploadInvoice,
+  uploadInvoicesBulk,
   updateInvoiceStatus,
 };
