@@ -89,6 +89,11 @@ function upsertInstallFromToken(tok, organizationId) {
                    refresh_token_enc = EXCLUDED.refresh_token_enc,
                    scope = EXCLUDED.scope,
                    token_expires_at = EXCLUDED.token_expires_at,
+                   -- Rebind the location to the org that initiated THIS install
+                   -- (they proved control of the GHL account by authorizing).
+                   -- Without this, a location once linked to org A could never
+                   -- be re-linked to org B — the connect button "did nothing".
+                   organization_id = COALESCE(EXCLUDED.organization_id, finance.ghl_installs.organization_id),
                    is_active = true, updated_at = now()
      RETURNING *`,
     [
@@ -185,6 +190,23 @@ async function apiFetch(installId, path, options = {}) {
 }
 
 /** Active install for a tenant (the connected GHL location). */
+/**
+ * Bind an unclaimed install (OAuth completed without state → organization NULL)
+ * to an organization. Never steals an install already bound to another org.
+ */
+async function claimInstall(organizationId, locationId) {
+  const { rows } = await pool.query(
+    `UPDATE finance.ghl_installs
+        SET organization_id = $1, updated_at = now()
+      WHERE location_id = $2
+        AND organization_id IS NULL
+        AND is_active = true
+      RETURNING *`,
+    [organizationId, locationId]
+  );
+  return rows[0] || null;
+}
+
 async function getInstallForOrg(organizationId) {
   const { rows } = await pool.query(
     `SELECT * FROM finance.ghl_installs
@@ -572,6 +594,7 @@ module.exports = {
   getValidAccessToken,
   apiFetch,
   getInstallForOrg,
+  claimInstall,
   listInvoices,
   listContacts,
   getContact,

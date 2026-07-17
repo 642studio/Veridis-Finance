@@ -104,22 +104,56 @@ async function ghlRoutes(app) {
     const { code, state } = request.query || {};
     if (!code) return reply.status(400).send({ error: 'Missing code' });
 
-    // Prefer the signed state (our "Conectar" button flow). When installing a
-    // DRAFT app via GHL's own Install link, there's no state — fall back to the
-    // configured org so single-tenant testing works.
+    // Prefer the signed state (our "Conectar" button flow): it binds the
+    // install to the org that clicked. GHL sometimes drops state (draft-app
+    // installs) — in that case store the install unbound and let the user
+    // claim it from their session (see /integrations/crm/claim).
     let organizationId = null;
     try {
       if (state) organizationId = jwt.verify(state, process.env.JWT_SECRET).org;
     } catch {
       organizationId = null;
     }
-    if (!organizationId) organizationId = process.env.GHL_FALLBACK_ORG_ID || null;
 
-    await ghlService.exchangeCode(code, organizationId);
-    const redirect = process.env.GHL_POST_INSTALL_REDIRECT;
-    if (redirect) return reply.redirect(redirect);
-    reply.send({ status: 'connected' });
+    const install = await ghlService.exchangeCode(code, organizationId);
+
+    // Send the browser back to the app so the user sees the result instead of
+    // raw JSON. When the org is unknown, the app claims the install in-session.
+    const front =
+      process.env.GHL_POST_INSTALL_REDIRECT ||
+      `${process.env.FRONTEND_URL || 'https://veridis-finance-adrian-yepizs-projects.vercel.app'}/dashboard/cfdi`;
+    const url = new URL(front);
+    if (organizationId) {
+      url.searchParams.set('crm', 'connected');
+    } else {
+      url.searchParams.set('crm', 'claim');
+      if (install?.location_id) url.searchParams.set('location_id', install.location_id);
+    }
+    return reply.redirect(url.toString());
   });
+
+  // Claim an unbound install (OAuth completed without state) for the caller's
+  // org. Only installs with no organization can be claimed — an install bound
+  // to another org can never be taken over from here (rebinding requires
+  // completing OAuth again, which proves control of the GHL account).
+  app.post(
+    '/integrations/crm/claim',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    async (request, reply) => {
+      const organizationId = resolveOrganizationId(request);
+      const locationId = String(request.body?.location_id || '').trim();
+      if (!locationId) return reply.status(400).send({ error: 'location_id is required' });
+
+      const claimed = await ghlService.claimInstall(organizationId, locationId);
+      if (!claimed) {
+        return reply.status(409).send({
+          error:
+            'Esta instalación no está disponible para reclamar. Vuelve a conectar desde el botón "Conectar 642 CRM".',
+        });
+      }
+      reply.send({ data: { connected: true, location_id: claimed.location_id } });
+    }
+  );
 
   // Webhook receiver: verify signature, dedupe, process InvoicePaid.
   app.post('/integrations/crm/webhook', async (request, reply) => {
