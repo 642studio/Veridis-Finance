@@ -9,37 +9,21 @@
 const pool = require('../db/pool');
 const pac = require('./pacService');
 const receiversService = require('./cfdiReceiversService');
+const issuersService = require('./cfdiIssuersService');
 const { round } = require('../lib/money');
 
 /** Load the active issuer record for a tenant (or null). */
 async function getIssuer(organizationId) {
-  const { rows } = await pool.query(
-    `SELECT * FROM finance.cfdi_issuers
-      WHERE organization_id = $1 AND is_active = true
-      ORDER BY created_at ASC LIMIT 1`,
-    [organizationId]
-  );
-  return rows[0] || null;
+  return issuersService.getActiveIssuer(organizationId);
 }
 
 /**
- * Resolve PAC provider + credentials for a tenant.
- * Prefers the issuer record; falls back to env for the bootstrap tenant.
+ * Resolve PAC provider + decrypted credentials for a tenant.
+ * Prefers the per-tenant issuer record; falls back to env for the bootstrap
+ * tenant. Delegated to cfdiIssuersService so encryption lives in one place.
  */
 function resolveCreds(issuer) {
-  const provider = issuer?.pac_provider || process.env.PAC_PROVIDER || 'facturama';
-  if (provider === 'facturama') {
-    return {
-      provider,
-      creds: {
-        user: process.env.FACTURAMA_USER,
-        password: process.env.FACTURAMA_PASSWORD,
-        env: process.env.FACTURAMA_ENV || 'sandbox',
-      },
-    };
-  }
-  // facturapi
-  return { provider, creds: { apiKey: process.env.FACTURAPI_KEY } };
+  return issuersService.resolveCreds(issuer);
 }
 
 function mapRow(r) {

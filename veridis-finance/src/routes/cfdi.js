@@ -7,10 +7,24 @@ const {
   listReceivedCfdi,
   markPaidCfdi,
   pushCfdiToCrm,
+  getIssuer,
+  putIssuer,
 } = require('../controllers/cfdiController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
 async function cfdiRoutes(app) {
+  // Fiscal issuer (emisor) config per tenant. Owner/Admin only — writes PAC creds.
+  app.get(
+    '/cfdi/issuer',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    getIssuer
+  );
+  app.put(
+    '/cfdi/issuer',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    putIssuer
+  );
+
   // Emit (timbrar) a CFDI de Ingreso.
   app.post(
     '/cfdi/issue',
