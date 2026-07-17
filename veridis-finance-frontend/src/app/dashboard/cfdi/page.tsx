@@ -50,6 +50,15 @@ interface CrmStatus {
   installed_at: string | null;
 }
 
+interface PendingInvoice {
+  id: string;
+  invoice_name: string | null;
+  total: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  received_at: string;
+}
+
 const emptyCsf = { rfc: "", name: "", fiscal_regime: "", zip_code: "", cfdi_use: "G03", email: "" };
 const emptyItem = { description: "", quantity: "1", unitPrice: "" };
 
@@ -60,6 +69,9 @@ export default function CfdiPage() {
   const [cfdis, setCfdis] = useState<Cfdi[]>([]);
   const [receivers, setReceivers] = useState<Receiver[]>([]);
   const [crm, setCrm] = useState<CrmStatus | null>(null);
+  const [pending, setPending] = useState<PendingInvoice[]>([]);
+  const [shareUrl, setShareUrl] = useState("");
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // CSF upload / receiver form
@@ -77,14 +89,16 @@ export default function CfdiPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, r, s] = await Promise.all([
+      const [c, r, s, p] = await Promise.all([
         clientApiFetch<{ data: Cfdi[] }>("/api/finance/cfdi"),
         clientApiFetch<{ data: Receiver[] }>("/api/finance/receivers"),
         clientApiFetch<{ data: CrmStatus }>("/api/crm/status").catch(() => ({ data: null })),
+        clientApiFetch<{ data: PendingInvoice[] }>("/api/crm/pending").catch(() => ({ data: [] })),
       ]);
       setCfdis(c.data || []);
       setReceivers(r.data || []);
       setCrm((s as { data: CrmStatus | null }).data);
+      setPending((p as { data: PendingInvoice[] }).data || []);
     } catch (error) {
       notify.error({
         title: "No se pudo cargar",
@@ -195,6 +209,42 @@ export default function CfdiPage() {
     }
   };
 
+  const shareCsfLink = async () => {
+    try {
+      const res = await clientApiFetch<{ data: { url: string } }>(
+        "/api/finance/receivers/csf-link"
+      );
+      setShareUrl(res.data.url);
+      await navigator.clipboard.writeText(res.data.url).catch(() => {});
+      notify.success({
+        title: "Link copiado",
+        description: "Compártelo con tu cliente para que suba su Constancia.",
+      });
+    } catch (error) {
+      notify.error({
+        title: "Error",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    }
+  };
+
+  const retryPending = async (id: string) => {
+    setRetryingId(id);
+    try {
+      await clientApiFetch(`/api/crm/pending/${id}/retry`, { method: "POST" });
+      notify.success({ title: "CFDI timbrado ✅" });
+      load();
+    } catch (error) {
+      notify.error({
+        title: "Aún no se puede timbrar",
+        description:
+          error instanceof ApiClientError ? error.message : "Falta el CSF de este cliente",
+      });
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -205,7 +255,10 @@ export default function CfdiPage() {
           </p>
         </div>
         {canWrite ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={shareCsfLink}>
+              Compartir link CSF
+            </Button>
             <Button variant="outline" onClick={() => setCsfOpen(true)}>
               Subir CSF / Nuevo receptor
             </Button>
@@ -234,6 +287,55 @@ export default function CfdiPage() {
           )}
         </CardHeader>
       </Card>
+
+      {shareUrl ? (
+        <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm">
+          <span className="text-muted-foreground">Link self-service (copiado): </span>
+          <a className="break-all font-mono text-xs text-primary hover:underline" href={shareUrl} target="_blank" rel="noreferrer">
+            {shareUrl}
+          </a>
+        </div>
+      ) : null}
+
+      {/* Pending CSF */}
+      {pending.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Facturas pendientes de CSF ({pending.length})</CardTitle>
+            <CardDescription>
+              Pagadas en 642 CRM — esperan la Constancia del cliente para timbrar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="py-2">Cliente</th>
+                    <th className="py-2">Factura</th>
+                    <th className="py-2">Total</th>
+                    <th className="py-2 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pending.map((p) => (
+                    <tr key={p.id} className="border-t border-border">
+                      <td className="py-2">{p.contact_name || p.contact_email || "—"}</td>
+                      <td className="py-2">{p.invoice_name || "—"}</td>
+                      <td className="py-2">{p.total ? formatCurrency(Number(p.total)) : "—"}</td>
+                      <td className="py-2 text-right">
+                        <Button size="sm" variant="outline" onClick={() => retryPending(p.id)} disabled={retryingId === p.id}>
+                          {retryingId === p.id ? "Timbrando…" : "Timbrar"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Receivers */}
       <Card>
