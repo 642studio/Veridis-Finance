@@ -116,6 +116,123 @@ function buildItem(it) {
   };
 }
 
+/** Normalize a Facturama CFDI response to our provider-agnostic shape. */
+function normalizeStampResult(cfdi, creds, fallbackTotal) {
+  const uuid = cfdi?.Complement?.TaxStamp?.Uuid || null;
+  return {
+    id: cfdi.Id,
+    uuid,
+    folio: cfdi.Folio,
+    total: cfdi.Total ?? fallbackTotal ?? null,
+    status: uuid ? 'stamped' : 'error',
+    xmlUrl: `${baseUrl(creds?.env)}/cfdi/xml/issued/${cfdi.Id}`,
+    pdfUrl: `${baseUrl(creds?.env)}/cfdi/pdf/issued/${cfdi.Id}`,
+    raw: cfdi,
+  };
+}
+
+/**
+ * Build the payload for a CFDI de Egreso (nota de crédito) related to a
+ * previously stamped CFDI. relationType: '01' (nota de crédito) | '03'
+ * (devolución). Pure — unit-tested without network.
+ *
+ * EXPERIMENTAL: shape follows Facturama's API Web docs; validate against the
+ * PAC sandbox before invoicing real clients.
+ */
+function buildEgresoPayload(input) {
+  const items = input.items.map(buildItem);
+  const payload = {
+    CfdiType: 'E',
+    NameId: '2', // 2 = Nota de crédito
+    ExpeditionPlace: input.expeditionPlace || input.receiver.zip,
+    PaymentForm: input.paymentForm || '03',
+    PaymentMethod: 'PUE',
+    Exportation: '01',
+    Receiver: {
+      Rfc: input.receiver.rfc,
+      Name: input.receiver.name,
+      CfdiUse: input.receiver.use || 'G02', // G02 = devoluciones/descuentos
+      FiscalRegime: input.receiver.fiscalRegime || '601',
+      TaxZipCode: input.receiver.zip,
+    },
+    Relations: {
+      Type: input.relationType || '01',
+      Cfdis: [{ Uuid: input.relatedUuid }],
+    },
+    Items: items,
+  };
+  if (input.folio) payload.Folio = String(input.folio);
+  return payload;
+}
+
+/** Stamp a CFDI de Egreso (nota de crédito). */
+async function stampEgreso(input) {
+  const payload = buildEgresoPayload(input);
+  const total = sum(payload.Items.map((i) => i.Total));
+  const cfdi = await request('POST', '/3/cfdis', payload, input.creds);
+  return normalizeStampResult(cfdi, input.creds, Number(round(total)));
+}
+
+/**
+ * Build the payload for a CFDI de Pago (Complemento de Pago 2.0 / REP) for a
+ * PPD invoice. Pure — unit-tested without network.
+ *
+ * EXPERIMENTAL: RelatedDocuments math (parcialidad, saldos) is computed with
+ * decimal.js; validate the exact field names against the PAC sandbox before
+ * production use.
+ */
+function buildPagoPayload(input) {
+  const paid = money(input.payment.amount);
+  const previous = money(input.payment.previousBalance ?? input.payment.amount);
+  const remaining = previous.minus(paid);
+
+  return {
+    CfdiType: 'P',
+    NameId: '14', // Complemento de pago
+    ExpeditionPlace: input.expeditionPlace || input.receiver.zip,
+    Receiver: {
+      Rfc: input.receiver.rfc,
+      Name: input.receiver.name,
+      CfdiUse: 'CP01', // fixed by SAT for REP
+      FiscalRegime: input.receiver.fiscalRegime || '601',
+      TaxZipCode: input.receiver.zip,
+    },
+    Complemento: {
+      Payments: [
+        {
+          Date: input.payment.date,
+          PaymentForm: input.payment.paymentForm || '03',
+          Currency: input.payment.currency || 'MXN',
+          Amount: Number(round(paid)),
+          RelatedDocuments: [
+            {
+              Uuid: input.relatedUuid,
+              Currency: input.payment.currency || 'MXN',
+              PaymentMethod: 'PPD',
+              PartialityNumber: input.payment.partialityNumber || 1,
+              PreviousBalanceAmount: Number(round(previous)),
+              AmountPaid: Number(round(paid)),
+              RemainingBalance: Number(round(remaining)),
+              TaxObject: input.payment.taxObject || '01',
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/** Stamp a CFDI de Pago (REP) for a PPD invoice. */
+async function stampPago(input) {
+  const payload = buildPagoPayload(input);
+  const cfdi = await request('POST', '/3/cfdis', payload, input.creds);
+  return normalizeStampResult(
+    cfdi,
+    input.creds,
+    payload.Complemento.Payments[0].Amount
+  );
+}
+
 /**
  * Stamp a CFDI de Ingreso (API Web).
  * @returns normalized result { id, uuid, folio, total, status, xmlUrl, pdfUrl, raw }
@@ -199,4 +316,15 @@ async function cancel(id, opts = {}, creds) {
   return request('DELETE', path, null, creds);
 }
 
-module.exports = { stampIngreso, getDocument, list, getPdf, getXml, cancel };
+module.exports = {
+  stampIngreso,
+  stampEgreso,
+  stampPago,
+  buildEgresoPayload,
+  buildPagoPayload,
+  getDocument,
+  list,
+  getPdf,
+  getXml,
+  cancel,
+};

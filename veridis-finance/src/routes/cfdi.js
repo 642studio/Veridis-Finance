@@ -8,6 +8,8 @@ const {
   markPaidCfdi,
   pushCfdiToCrm,
   cancelCfdi,
+  creditNoteCfdi,
+  paymentCfdi,
   getIssuer,
   putIssuer,
 } = require('../controllers/cfdiController');
@@ -38,6 +40,20 @@ async function cfdiRoutes(app) {
     '/cfdi/:id/cancel',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
     cancelCfdi
+  );
+
+  // Nota de crédito (CFDI de Egreso) related to a stamped CFDI.
+  app.post(
+    '/cfdi/:id/credit-note',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    creditNoteCfdi
+  );
+
+  // Complemento de Pago 2.0 (REP) for a stamped PPD CFDI.
+  app.post(
+    '/cfdi/:id/payment',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    paymentCfdi
   );
 
   // Reconcile a CFDI as paid (syncs the payment to the 642 CRM).

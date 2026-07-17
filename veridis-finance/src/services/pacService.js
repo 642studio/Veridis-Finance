@@ -32,6 +32,26 @@ function stampIngreso(input = {}) {
   return resolve(input.provider).stampIngreso(input);
 }
 
+function notSupported(what) {
+  const err = new Error(`Provider does not support ${what}`);
+  err.statusCode = 501;
+  return err;
+}
+
+/** Stamp a CFDI de Egreso (nota de crédito). */
+function stampEgreso(input = {}) {
+  const p = resolve(input.provider);
+  if (typeof p.stampEgreso !== 'function') throw notSupported('CFDI de Egreso');
+  return p.stampEgreso(input);
+}
+
+/** Stamp a CFDI de Pago (Complemento de Pago 2.0 / REP). */
+function stampPago(input = {}) {
+  const p = resolve(input.provider);
+  if (typeof p.stampPago !== 'function') throw notSupported('Complemento de Pago');
+  return p.stampPago(input);
+}
+
 function getDocument(id, { provider, creds } = {}) {
   return resolve(provider).getDocument(id, creds);
 }
@@ -59,4 +79,14 @@ function getXml(id, { provider, creds } = {}) {
   return resolve(provider).getXml(id, creds);
 }
 
-module.exports = { stampIngreso, getDocument, cancel, list, getPdf, getXml, resolve };
+module.exports = {
+  stampIngreso,
+  stampEgreso,
+  stampPago,
+  getDocument,
+  cancel,
+  list,
+  getPdf,
+  getXml,
+  resolve,
+};
