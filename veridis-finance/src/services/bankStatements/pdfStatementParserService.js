@@ -124,7 +124,7 @@ async function parseBankStatementPdf({ pdfBuffer, bank, organization_id = null }
   try {
     parsedPdf = await pdfParse(pdfBuffer);
   } catch (error) {
-    throw badRequest('Unable to parse bank statement PDF');
+    throw badRequest('No se pudo leer el PDF del estado de cuenta (¿archivo dañado o protegido con contraseña?)');
   }
 
   const rawText = String(parsedPdf?.text || '').trim();

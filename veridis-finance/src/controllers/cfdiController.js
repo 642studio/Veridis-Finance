@@ -192,6 +192,7 @@ const creditNoteSchema = z.object({
   relation_type: z.enum(['01', '03']).default('01'),
   paymentForm: z.string().min(2).max(2).optional(),
   receiver: receiverInlineSchema.optional(),
+  expeditionPlace: z.string().length(5).optional(),
   folio: z.union([z.string(), z.number()]).optional(),
   source_ref: z.string().max(255).optional(),
 });
@@ -204,6 +205,7 @@ const paymentSchema = z.object({
   previous_balance: z.coerce.number().positive().optional(),
   tax_object: z.enum(['01', '02']).default('01'),
   receiver: receiverInlineSchema.optional(),
+  expeditionPlace: z.string().length(5).optional(),
 });
 
 const payrollSchema = z.object({
@@ -270,6 +272,7 @@ async function creditNoteCfdi(request, reply) {
     relationType: payload.relation_type,
     paymentForm: payload.paymentForm,
     receiver: payload.receiver,
+    expeditionPlace: payload.expeditionPlace,
     folio: payload.folio,
     source_ref: payload.source_ref || null,
   });
@@ -286,6 +289,7 @@ async function paymentCfdi(request, reply) {
     id,
     payment: payload,
     receiver: payload.receiver,
+    expeditionPlace: payload.expeditionPlace,
   });
   reply.status(201).send(result);
 }
