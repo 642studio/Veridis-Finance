@@ -8,6 +8,7 @@ import {
   Landmark,
   LayoutDashboard,
   Receipt,
+  Sparkles,
   Store,
   Users,
   UserSquare2,
@@ -21,73 +22,52 @@ export interface DashboardNavItem {
   icon: LucideIcon;
 }
 
-export const DASHBOARD_NAV_ITEMS: DashboardNavItem[] = [
+export interface DashboardNavGroup {
+  title: string;
+  items: DashboardNavItem[];
+}
+
+export const NAV_GROUPS: DashboardNavGroup[] = [
   {
-    href: "/dashboard",
-    label: "Overview",
-    icon: LayoutDashboard,
+    title: "Operación",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/transactions", label: "Movimientos", icon: Wallet },
+      { href: "/dashboard/accounts", label: "Cuentas", icon: Landmark },
+      { href: "/dashboard/reports", label: "Reportes", icon: BarChart3 },
+      { href: "/dashboard/planning", label: "Planeación", icon: CalendarRange },
+    ],
   },
   {
-    href: "/dashboard/transactions",
-    label: "Transactions",
-    icon: Wallet,
+    title: "Fiscal",
+    items: [
+      { href: "/dashboard/cfdi", label: "CFDI", icon: FileText },
+      { href: "/dashboard/invoices", label: "Facturas", icon: Receipt },
+    ],
   },
   {
-    href: "/dashboard/invoices",
-    label: "Invoices",
-    icon: Receipt,
+    title: "Directorio",
+    items: [
+      { href: "/dashboard/clients", label: "Clientes", icon: UserSquare2 },
+      { href: "/dashboard/vendors", label: "Proveedores", icon: Store },
+      { href: "/dashboard/contacts", label: "Contactos", icon: BookUser },
+      { href: "/dashboard/members", label: "Equipo", icon: Users },
+      { href: "/dashboard/categories", label: "Categorías", icon: BadgeCheck },
+    ],
   },
   {
-    href: "/dashboard/cfdi",
-    label: "CFDI",
-    icon: FileText,
-  },
-  {
-    href: "/dashboard/reports",
-    label: "Reports",
-    icon: BarChart3,
-  },
-  {
-    href: "/dashboard/planning",
-    label: "Planning",
-    icon: CalendarRange,
-  },
-  {
-    href: "/dashboard/clients",
-    label: "Clients",
-    icon: UserSquare2,
-  },
-  {
-    href: "/dashboard/vendors",
-    label: "Vendors",
-    icon: Store,
-  },
-  {
-    href: "/dashboard/members",
-    label: "Members",
-    icon: Users,
-  },
-  {
-    href: "/dashboard/accounts",
-    label: "Accounts",
-    icon: Landmark,
-  },
-  {
-    href: "/dashboard/contacts",
-    label: "Contacts",
-    icon: BookUser,
-  },
-  {
-    href: "/dashboard/categories",
-    label: "Categories",
-    icon: BadgeCheck,
-  },
-  {
-    href: "/dashboard/settings",
-    label: "Settings",
-    icon: Building2,
+    title: "Configuración",
+    items: [
+      { href: "/dashboard/settings", label: "Configuración", icon: Building2 },
+      { href: "/dashboard/settings/ai", label: "Asistente IA", icon: Sparkles },
+    ],
   },
 ];
+
+// Flat list (used by the mobile nav and title resolver).
+export const DASHBOARD_NAV_ITEMS: DashboardNavItem[] = NAV_GROUPS.flatMap(
+  (group) => group.items
+);
 
 export function pageTitleFromPath(pathname: string) {
   const sorted = [...DASHBOARD_NAV_ITEMS].sort(
