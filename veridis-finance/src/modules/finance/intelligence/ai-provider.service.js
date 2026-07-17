@@ -6,7 +6,7 @@ const SUPPORTED_PROVIDER_HINTS = ['openai', 'google', 'qwen'];
 const PROVIDER_NAME_REGEX = /^[a-z0-9_-]{2,40}$/;
 const DEFAULT_MODEL_BY_PROVIDER = Object.freeze({
   openai: 'gpt-4o-mini',
-  google: 'gemini-1.5-flash',
+  google: 'gemini-2.0-flash',
   qwen: 'qwen-plus',
 });
 const DEFAULT_COST_PER_1K_TOKENS_USD = 0.0006;
@@ -16,6 +16,7 @@ const COST_PER_1K_TOKENS_USD = Object.freeze({
     default: 0.0009,
   }),
   google: Object.freeze({
+    'gemini-2.0-flash': 0.00035,
     'gemini-1.5-flash': 0.00035,
     default: 0.00045,
   }),
@@ -24,6 +25,22 @@ const COST_PER_1K_TOKENS_USD = Object.freeze({
     default: 0.00055,
   }),
 });
+
+// Google retired the Gemini 1.0/1.5 series for new API keys — requests to those
+// models return 404, which surfaced as an opaque 502. Map legacy names to the
+// closest current model so an old env/config value keeps working untouched.
+const RETIRED_GOOGLE_MODELS = Object.freeze({
+  'gemini-1.5-flash': 'gemini-2.0-flash',
+  'gemini-1.5-flash-8b': 'gemini-2.0-flash',
+  'gemini-1.5-pro': 'gemini-2.5-pro',
+  'gemini-1.0-pro': 'gemini-2.0-flash',
+  'gemini-pro': 'gemini-2.0-flash',
+});
+
+function normalizeGoogleModel(model) {
+  const name = String(model || '').trim();
+  return RETIRED_GOOGLE_MODELS[name] || name;
+}
 
 function badRequest(message) {
   const error = new Error(message);
@@ -385,7 +402,7 @@ async function requestOpenAiCompatibleJson({
 }
 
 async function requestGoogleJson({ apiKey, model, prompt }) {
-  const resolvedModel = safeModelName(model, 'google');
+  const resolvedModel = normalizeGoogleModel(safeModelName(model, 'google'));
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     resolvedModel
   )}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -549,9 +566,14 @@ function resolveSystemProviderCredentials(preferredProvider) {
       continue;
     }
 
+    let model = modelByProviderFromEnv(provider) || safeModelName('', provider);
+    if (provider === 'google') {
+      model = normalizeGoogleModel(model);
+    }
+
     return {
       provider,
-      model: modelByProviderFromEnv(provider) || safeModelName('', provider),
+      model,
       api_key: apiKey,
       key_source: 'system',
     };
@@ -985,12 +1007,27 @@ async function testConnection({
     'This is a health check.',
   ].join('\n');
 
-  const response = await requestProviderJson({
-    provider: credentials.provider,
-    apiKey: credentials.api_key,
-    model: credentials.model,
-    prompt: probePrompt,
-  });
+  let response;
+  try {
+    response = await requestProviderJson({
+      provider: credentials.provider,
+      apiKey: credentials.api_key,
+      model: credentials.model,
+      prompt: probePrompt,
+    });
+  } catch (error) {
+    // Diagnostic endpoint: surface the provider's error (truncated) instead of
+    // an opaque masked 502, so a bad key / disabled API / retired model is
+    // actionable from the UI.
+    return {
+      ok: false,
+      provider: credentials.provider,
+      model: credentials.model,
+      key_source: credentials.key_source,
+      error: String(error.message || 'AI provider request failed').slice(0, 300),
+      checked_at: new Date().toISOString(),
+    };
+  }
 
   const parsed = normalizeAiResult(response.parsed);
   const usageEvent = await logUsageEvent({
@@ -1023,4 +1060,5 @@ module.exports = {
   getMonthlyUsageStats,
   platformManaged,
   resolveProviderCredentials,
+  normalizeGoogleModel,
 };
