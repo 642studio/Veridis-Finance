@@ -30,7 +30,14 @@ const itemSchema = z.object({
   unit: z.string().max(120).optional(),
   quantity: z.coerce.number().positive().default(1),
   unitPrice: z.coerce.number().nonnegative(),
+  // IVA: rate (0 = tasa 0%) OR ivaExempt (exento) OR noTaxObject (no objeto).
   ivaRate: z.coerce.number().min(0).max(1).optional(),
+  ivaExempt: z.coerce.boolean().optional(),
+  noTaxObject: z.coerce.boolean().optional(),
+  // Other taxes (honorarios/arrendamiento need retenciones; IEPS for some goods).
+  iepsRate: z.coerce.number().min(0).max(1).optional(),
+  retIvaRate: z.coerce.number().min(0).max(1).optional(),
+  retIsrRate: z.coerce.number().min(0).max(1).optional(),
 });
 
 const issueSchema = z.object({
@@ -167,6 +174,25 @@ async function pushCfdiToCrm(request, reply) {
   reply.send({ data: linked });
 }
 
+const cancelSchema = z.object({
+  motive: z.enum(['01', '02', '03', '04']).default('02'),
+  substitution: z.string().uuid().optional(),
+});
+
+/** Cancel a stamped CFDI at the PAC (with motivo/sustitución + acuse). */
+async function cancelCfdi(request, reply) {
+  const { id } = idParamsSchema.parse(request.params);
+  const { motive, substitution } = cancelSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const result = await cfdiService.cancel({
+    organization_id: organizationId,
+    id,
+    motive,
+    substitution: substitution || null,
+  });
+  reply.send(result);
+}
+
 /** Get the tenant's configured fiscal issuer (no secrets returned). */
 async function getIssuer(request, reply) {
   const organizationId = resolveOrganizationId(request);
@@ -191,6 +217,7 @@ module.exports = {
   listReceivedCfdi,
   markPaidCfdi,
   pushCfdiToCrm,
+  cancelCfdi,
   getIssuer,
   putIssuer,
 };

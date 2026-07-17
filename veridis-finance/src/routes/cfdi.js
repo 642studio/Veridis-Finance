@@ -7,6 +7,7 @@ const {
   listReceivedCfdi,
   markPaidCfdi,
   pushCfdiToCrm,
+  cancelCfdi,
   getIssuer,
   putIssuer,
 } = require('../controllers/cfdiController');
@@ -30,6 +31,13 @@ async function cfdiRoutes(app) {
     '/cfdi/issue',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     issueCfdi
+  );
+
+  // Cancel a stamped CFDI (motivo + sustitución + acuse). Owner/Admin only.
+  app.post(
+    '/cfdi/:id/cancel',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    cancelCfdi
   );
 
   // Reconcile a CFDI as paid (syncs the payment to the 642 CRM).
