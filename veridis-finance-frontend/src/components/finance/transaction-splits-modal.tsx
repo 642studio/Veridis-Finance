@@ -290,29 +290,29 @@ export function TransactionSplitsModal({
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => (!next ? closeModal() : undefined)}>
-        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto border-slate-700 bg-slate-950 text-slate-100">
+        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle>Transaction Splits</DialogTitle>
-            <DialogDescription className="text-slate-300">
+            <DialogDescription className="text-muted-foreground">
               Transaction {transaction.id.slice(0, 8)}... | Amount {formatCurrency(transaction.amount)}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Transaction amount</p>
-              <p className="mt-1 text-base font-semibold text-slate-100">
+            <div className="rounded-xl border border-border bg-muted/70 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Transaction amount</p>
+              <p className="mt-1 text-base font-semibold text-foreground">
                 {formatCurrency(transaction.amount)}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Split total</p>
-              <p className="mt-1 text-base font-semibold text-slate-100">
+            <div className="rounded-xl border border-border bg-muted/70 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Split total</p>
+              <p className="mt-1 text-base font-semibold text-foreground">
                 {formatCurrency(splitTotal)}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Remaining</p>
+            <div className="rounded-xl border border-border bg-muted/70 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Remaining</p>
               <p
                 className={`mt-1 text-base font-semibold ${
                   remainingAmount < 0 ? "text-red-400" : "text-emerald-400"
@@ -323,8 +323,8 @@ export function TransactionSplitsModal({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-            <h4 className="mb-3 text-sm font-semibold text-slate-100">
+          <div className="rounded-xl border border-border bg-muted/50 p-4">
+            <h4 className="mb-3 text-sm font-semibold text-foreground">
               {editingSplitId ? "Edit split" : "Add split"}
             </h4>
 
@@ -333,7 +333,7 @@ export function TransactionSplitsModal({
                 <Label htmlFor="split_category">Category</Label>
                 <select
                   id="split_category"
-                  className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100"
+                  className="h-10 w-full rounded-xl border border-border bg-muted px-3 text-sm text-foreground"
                   value={categoryId}
                   onChange={(event) => {
                     setCategoryId(event.target.value);
@@ -353,7 +353,7 @@ export function TransactionSplitsModal({
                 <Label htmlFor="split_subcategory">Subcategory</Label>
                 <select
                   id="split_subcategory"
-                  className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100"
+                  className="h-10 w-full rounded-xl border border-border bg-muted px-3 text-sm text-foreground"
                   value={subcategoryId}
                   onChange={(event) => setSubcategoryId(event.target.value)}
                   disabled={!categoryId}
@@ -399,7 +399,7 @@ export function TransactionSplitsModal({
           </div>
 
           {isLoading ? (
-            <p className="text-sm text-slate-400">Loading splits...</p>
+            <p className="text-sm text-muted-foreground">Loading splits...</p>
           ) : (
             <Table>
               <TableHeader>
@@ -413,7 +413,7 @@ export function TransactionSplitsModal({
               <TableBody>
                 {splits.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-slate-400">
+                    <TableCell colSpan={4} className="text-center text-muted-foreground">
                       No splits yet.
                     </TableCell>
                   </TableRow>

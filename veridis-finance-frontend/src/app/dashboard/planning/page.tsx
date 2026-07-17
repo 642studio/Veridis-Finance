@@ -886,7 +886,7 @@ export default function DashboardPlanningPage() {
   };
 
   return (
-    <div className="min-h-screen space-y-6 rounded-2xl bg-slate-950/45 p-6 text-white shadow-[inset_0_0_0_1px_rgba(51,65,85,0.45)]">
+    <div className="min-h-screen space-y-6 rounded-2xl bg-card/45 p-6 text-foreground">
       <Card>
         <CardHeader>
           <CardTitle>Financial Planning Engine</CardTitle>
@@ -1035,10 +1035,10 @@ export default function DashboardPlanningPage() {
           </section>
 
           <section className="grid gap-6 xl:grid-cols-2">
-            <Card className="border-slate-800/80 bg-slate-950/65 text-slate-100">
+            <Card className="border-border/80 bg-card/65 text-foreground">
               <CardHeader>
                 <CardTitle>Revenue and Net Profit</CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-muted-foreground">
                   Deterministic yearly projection computed in backend.
                 </CardDescription>
               </CardHeader>
@@ -1072,10 +1072,10 @@ export default function DashboardPlanningPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-slate-800/80 bg-slate-950/65 text-slate-100">
+            <Card className="border-border/80 bg-card/65 text-foreground">
               <CardHeader>
                 <CardTitle>Margin % by Year</CardTitle>
-                <CardDescription className="text-slate-400">Net margin trend over selected range.</CardDescription>
+                <CardDescription className="text-muted-foreground">Net margin trend over selected range.</CardDescription>
               </CardHeader>
               <CardContent className="h-80">
                 {chartData.length === 0 ? (

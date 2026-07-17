@@ -49,14 +49,14 @@ export function ConfirmModal({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (!next ? onCancel() : undefined)}>
-      <DialogContent className="max-w-md border-slate-700 bg-slate-950 text-slate-100">
+      <DialogContent className="max-w-md border-border bg-card text-foreground">
         <DialogHeader>
-          <DialogTitle className="text-slate-100">{title}</DialogTitle>
-          <DialogDescription className="text-slate-300">{description}</DialogDescription>
+          <DialogTitle className="text-foreground">{title}</DialogTitle>
+          <DialogDescription className="text-muted-foreground">{description}</DialogDescription>
         </DialogHeader>
 
         {shouldShowRemember ? (
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input
               type="checkbox"
               checked={rememberChoice}

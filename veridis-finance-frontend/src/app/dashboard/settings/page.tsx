@@ -794,10 +794,10 @@ export default function DashboardSettingsPage() {
           }
         }}
       >
-        <DialogContent className="max-w-md border-slate-700 bg-slate-950 text-slate-100">
+        <DialogContent className="max-w-md border-border bg-card text-foreground">
           <DialogHeader>
-            <DialogTitle className="text-slate-100">Delete Account?</DialogTitle>
-            <DialogDescription className="text-slate-300">
+            <DialogTitle className="text-foreground">Delete Account?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               This action cannot be undone. Enter your password to continue.
             </DialogDescription>
           </DialogHeader>

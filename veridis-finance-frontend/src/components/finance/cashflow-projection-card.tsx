@@ -120,11 +120,11 @@ function StatBlock({
       ? "text-emerald-200"
       : emphasize === "negative"
         ? "text-rose-200"
-        : "text-slate-100";
+        : "text-foreground";
 
   return (
-    <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
+    <div className="rounded-xl border border-border/70 bg-card/50 p-4">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={`mt-2 text-lg font-semibold ${valueClassName}`}>{value}</p>
     </div>
   );
@@ -162,12 +162,12 @@ export function CashflowProjectionCard({
   );
 
   return (
-    <Card className="border-slate-800/90 bg-slate-950/70 text-slate-100">
+    <Card className="border-border/90 bg-card/70 text-foreground">
       <CardHeader className="pb-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle className="text-slate-100">Cashflow Projection</CardTitle>
-            <CardDescription className="text-slate-400">
+            <CardTitle className="text-foreground">Cashflow Projection</CardTitle>
+            <CardDescription className="text-muted-foreground">
               Rule-based forecast based on recent transactions and pending invoices.
               The 30-day endpoints are computed by the backend; the daily curve
               between them is an interpolated estimate.
@@ -211,7 +211,7 @@ export function CashflowProjectionCard({
           </div>
         ) : null}
 
-        <div className="h-64 rounded-xl border border-slate-800/80 bg-slate-950/50 p-3">
+        <div className="h-64 rounded-xl border border-border/80 bg-card/50 p-3">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
               <CartesianGrid

@@ -14,7 +14,12 @@ import {
 import { formatCurrency } from "@/lib/format";
 
 import { ChartShell } from "./chart-shell";
-import { chartTheme } from "./chart-theme";
+import {
+  chartTheme,
+  legendWrapperStyle,
+  tooltipContentStyle,
+  tooltipLabelStyle,
+} from "./chart-theme";
 
 export interface CashflowLineDatum {
   label: string;
@@ -38,8 +43,8 @@ const compactFormatter = new Intl.NumberFormat("es-MX", {
 
 export function CashflowLineChart({
   data,
-  title = "Cashflow Trend",
-  description = "Cashflow trend for income, expense and net result.",
+  title = "Flujo de efectivo",
+  description = "Ingresos, gastos y resultado neto.",
 }: CashflowLineChartProps) {
   const hasData = data.some(
     (item) =>
@@ -53,7 +58,7 @@ export function CashflowLineChart({
     return (
       <ChartShell title={title} description={description} contentClassName="h-96">
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          No data available
+          No hay datos
         </div>
       </ChartShell>
     );
@@ -77,32 +82,25 @@ export function CashflowLineChart({
             tickLine={false}
           />
           <Tooltip
-            contentStyle={{
-              background: chartTheme.tooltipBackground,
-              border: `1px solid ${chartTheme.tooltipBorder}`,
-              borderRadius: "12px",
-              color: "#e2e8f0",
-            }}
+            contentStyle={tooltipContentStyle}
+            labelStyle={tooltipLabelStyle}
             formatter={(value, name, item) => {
               const dataKey = String(
                 (item as { dataKey?: string } | undefined)?.dataKey || name || ""
               ).toLowerCase();
-
               const label = dataKey.includes("net")
-                ? "Net Profit"
+                ? "Utilidad neta"
                 : dataKey.includes("income")
-                  ? "Income"
-                  : "Expense";
-
+                  ? "Ingresos"
+                  : "Gastos";
               return [formatCurrency(Number(value)), label];
             }}
-            labelStyle={{ color: "#cbd5e1", fontWeight: 600 }}
           />
-          <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
+          <Legend wrapperStyle={legendWrapperStyle} />
           <Line
             type="monotone"
             dataKey="income"
-            name="Income"
+            name="Ingresos"
             stroke={chartTheme.income}
             strokeWidth={2}
             dot={false}
@@ -110,7 +108,7 @@ export function CashflowLineChart({
           <Line
             type="monotone"
             dataKey="expense"
-            name="Expense"
+            name="Gastos"
             stroke={chartTheme.expense}
             strokeWidth={2}
             dot={false}
@@ -118,7 +116,7 @@ export function CashflowLineChart({
           <Line
             type="monotone"
             dataKey="net"
-            name="Net"
+            name="Neto"
             stroke={chartTheme.net}
             strokeWidth={3}
             dot={{ r: 2.5, fill: chartTheme.net, strokeWidth: 0 }}

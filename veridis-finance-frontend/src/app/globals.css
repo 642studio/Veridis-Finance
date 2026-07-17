@@ -37,6 +37,21 @@
   --ring: 3 74% 52%;
 
   --radius: 0.75rem;
+
+  /* Charts (theme-aware) */
+  --chart-income: 158 74% 36%;
+  --chart-expense: 4 78% 57%;
+  --chart-net: 217 85% 54%;
+  --chart-axis: 20 8% 52%;
+  --chart-grid: 24 13% 91%;
+  --chart-1: 3 74% 52%;
+  --chart-2: 217 85% 55%;
+  --chart-3: 158 74% 38%;
+  --chart-4: 38 92% 50%;
+  --chart-5: 262 72% 60%;
+  --chart-6: 330 75% 58%;
+  --chart-7: 190 85% 40%;
+  --chart-8: 25 88% 55%;
 }
 
 .dark {
@@ -64,6 +79,20 @@
   --border: 20 8% 22%;
   --input: 20 8% 22%;
   --ring: 6 92% 64%;
+
+  --chart-income: 158 64% 52%;
+  --chart-expense: 4 86% 68%;
+  --chart-net: 213 90% 68%;
+  --chart-axis: 24 8% 58%;
+  --chart-grid: 20 8% 22%;
+  --chart-1: 6 90% 64%;
+  --chart-2: 213 90% 68%;
+  --chart-3: 158 64% 52%;
+  --chart-4: 40 92% 58%;
+  --chart-5: 262 82% 72%;
+  --chart-6: 330 80% 70%;
+  --chart-7: 190 80% 55%;
+  --chart-8: 25 90% 62%;
 }
 
 * {

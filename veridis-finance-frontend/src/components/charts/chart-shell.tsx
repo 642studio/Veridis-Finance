@@ -19,12 +19,10 @@ export function ChartShell({
   contentClassName,
 }: ChartShellProps) {
   return (
-    <Card className={cn("border-slate-800/80 bg-slate-950/65 text-slate-100", className)}>
+    <Card className={className}>
       <CardHeader>
-        <CardTitle className="text-slate-100">{title}</CardTitle>
-        {description ? (
-          <CardDescription className="text-slate-400">{description}</CardDescription>
-        ) : null}
+        <CardTitle className="text-base">{title}</CardTitle>
+        {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
       <CardContent className={cn("h-80", contentClassName)}>{children}</CardContent>
     </Card>

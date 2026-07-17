@@ -14,7 +14,12 @@ import {
 import { formatCurrency } from "@/lib/format";
 
 import { ChartShell } from "./chart-shell";
-import { chartTheme } from "./chart-theme";
+import {
+  chartTheme,
+  legendWrapperStyle,
+  tooltipContentStyle,
+  tooltipLabelStyle,
+} from "./chart-theme";
 
 export interface MonthlyIncomeExpenseDatum {
   label: string;
@@ -37,8 +42,8 @@ const compactFormatter = new Intl.NumberFormat("es-MX", {
 
 export function MonthlyIncomeExpenseBarChart({
   data,
-  title = "Monthly Income vs Expense",
-  description = "Monthly performance across recent periods.",
+  title = "Ingresos vs Gastos",
+  description = "Comportamiento de los últimos meses.",
 }: MonthlyIncomeExpenseBarChartProps) {
   const hasData = data.some(
     (item) => Math.abs(Number(item.income || 0)) + Math.abs(Number(item.expense || 0)) > 0
@@ -48,7 +53,7 @@ export function MonthlyIncomeExpenseBarChart({
     return (
       <ChartShell title={title} description={description}>
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          No data available
+          No hay datos
         </div>
       </ChartShell>
     );
@@ -72,32 +77,27 @@ export function MonthlyIncomeExpenseBarChart({
             tickLine={false}
           />
           <Tooltip
-            cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
-            contentStyle={{
-              background: chartTheme.tooltipBackground,
-              border: `1px solid ${chartTheme.tooltipBorder}`,
-              borderRadius: "12px",
-              color: "#e2e8f0",
-            }}
+            cursor={{ fill: chartTheme.cursor }}
+            contentStyle={tooltipContentStyle}
+            labelStyle={tooltipLabelStyle}
             formatter={(value, name) => [
               formatCurrency(Number(value)),
-              name === "income" ? "Income" : "Expense",
+              name === "income" ? "Ingresos" : "Gastos",
             ]}
-            labelStyle={{ color: "#cbd5e1", fontWeight: 600 }}
           />
-          <Legend wrapperStyle={{ color: "#cbd5e1", fontSize: 12 }} />
+          <Legend wrapperStyle={legendWrapperStyle} />
           <Bar
             dataKey="income"
-            name="Income"
+            name="Ingresos"
             fill={chartTheme.income}
-            radius={[8, 8, 0, 0]}
+            radius={[6, 6, 0, 0]}
             maxBarSize={28}
           />
           <Bar
             dataKey="expense"
-            name="Expense"
+            name="Gastos"
             fill={chartTheme.expense}
-            radius={[8, 8, 0, 0]}
+            radius={[6, 6, 0, 0]}
             maxBarSize={28}
           />
         </BarChart>

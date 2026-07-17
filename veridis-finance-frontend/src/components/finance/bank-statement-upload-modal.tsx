@@ -1384,12 +1384,12 @@ export function BankStatementUploadModal({
             }
           }}
         >
-          <DialogContent className="max-w-xl border-slate-700 bg-slate-950 text-slate-100">
+          <DialogContent className="max-w-xl border-border bg-card text-foreground">
             <DialogHeader>
-              <DialogTitle className="text-slate-100">
+              <DialogTitle className="text-foreground">
                 {descriptionViewer?.concept || "Transaction detail"}
               </DialogTitle>
-              <DialogDescription className="text-slate-300">
+              <DialogDescription className="text-muted-foreground">
                 Date:{" "}
                 {descriptionViewer?.transaction_date
                   ? formatDate(descriptionViewer.transaction_date)
@@ -1397,7 +1397,7 @@ export function BankStatementUploadModal({
                 | Folio: {descriptionViewer?.folio || "-"}
               </DialogDescription>
             </DialogHeader>
-            <div className="max-h-[55vh] overflow-auto rounded-xl border border-border/70 bg-slate-900/50 p-3 text-sm text-slate-100">
+            <div className="max-h-[55vh] overflow-auto rounded-xl border border-border/70 bg-muted/50 p-3 text-sm text-foreground">
               {descriptionViewer?.raw_description || "-"}
             </div>
           </DialogContent>
