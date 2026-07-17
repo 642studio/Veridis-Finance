@@ -1,4 +1,5 @@
 const pool = require('../db/pool');
+const { money, round } = require('../lib/money');
 const {
   assertCategoryExists,
   assertSubcategoryExists,
@@ -17,13 +18,20 @@ function conflict(message) {
   return error;
 }
 
+// Parse an amount with decimal precision (never JS floats). Returns a canonical
+// 2-decimal string suitable for a NUMERIC column, or null if not a positive
+// amount.
 function toAmount(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  let d;
+  try {
+    d = money(value);
+  } catch {
     return null;
   }
-
-  return Number(parsed.toFixed(2));
+  if (!d.isFinite() || d.lessThanOrEqualTo(0)) {
+    return null;
+  }
+  return round(d, 2);
 }
 
 function mapSplit(row) {
@@ -45,9 +53,12 @@ function mapSplit(row) {
   };
 }
 
-async function getScopedTransaction({ organization_id, transaction_id, client }) {
+async function getScopedTransaction({ organization_id, transaction_id, client, lock = false }) {
   const db = client || pool;
 
+  // When called inside a write transaction we take a row lock (FOR UPDATE) so
+  // two concurrent split writes can't both read the same "remaining capacity"
+  // and over-assign past the transaction amount.
   const query = {
     text: `
       SELECT
@@ -59,6 +70,7 @@ async function getScopedTransaction({ organization_id, transaction_id, client })
       WHERE organization_id = $1
         AND id = $2
       LIMIT 1
+      ${lock ? 'FOR UPDATE' : ''}
     `,
     values: [organization_id, transaction_id],
   };
@@ -71,7 +83,8 @@ async function getScopedTransaction({ organization_id, transaction_id, client })
 
   return {
     id: transaction.id,
-    amount: Number(transaction.amount),
+    // Keep as a string; all money math goes through decimal.js, never floats.
+    amount: String(transaction.amount),
   };
 }
 
@@ -174,7 +187,8 @@ async function totalSplitAmount({
   };
 
   const { rows } = await db.query(query);
-  return Number(rows[0]?.total || 0);
+  // Return a decimal string; callers do money math on it, never float.
+  return String(rows[0]?.total ?? '0');
 }
 
 async function ensureSplitCapacity({
@@ -189,6 +203,8 @@ async function ensureSplitCapacity({
     organization_id,
     transaction_id,
     client: db,
+    // Lock the transaction row when we're inside a write transaction.
+    lock: Boolean(client),
   });
   const assigned = await totalSplitAmount({
     organization_id,
@@ -197,10 +213,11 @@ async function ensureSplitCapacity({
     client: db,
   });
 
-  const capacity = Number(transaction.amount) - Number(assigned);
-  if (next_amount - capacity > 0.009) {
+  const capacity = money(transaction.amount).minus(money(assigned));
+  // next_amount must not exceed remaining capacity (sub-cent tolerance).
+  if (money(next_amount).minus(capacity).greaterThan('0.001')) {
     throw conflict(
-      `Split amount exceeds transaction amount. Remaining capacity: ${capacity.toFixed(2)}`
+      `Split amount exceeds transaction amount. Remaining capacity: ${round(capacity, 2)}`
     );
   }
 }

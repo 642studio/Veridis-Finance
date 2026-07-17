@@ -1,7 +1,18 @@
 const pool = require('../db/pool');
+const { money, round } = require('../lib/money');
 
 function toAmount(value) {
   return Number.parseFloat(value || '0');
+}
+
+// Canonical 2-decimal string for grouping keys, computed with decimal.js so
+// "1234.5" and "1234.50" never split a recurring series into two groups.
+function amountKey(value) {
+  try {
+    return round(money(value), 2);
+  } catch {
+    return '0.00';
+  }
 }
 
 function clamp(value, min, max) {
@@ -206,7 +217,7 @@ async function listRecurringCandidates({
       continue;
     }
 
-    const key = `${row.type}|${amount.toFixed(2)}|${normalizedDescription}`;
+    const key = `${row.type}|${amountKey(row.amount)}|${normalizedDescription}`;
     if (!groups.has(key)) {
       groups.set(key, {
         key,
