@@ -10,6 +10,7 @@ const {
   cancelCfdi,
   creditNoteCfdi,
   paymentCfdi,
+  payrollCfdi,
   getIssuer,
   putIssuer,
 } = require('../controllers/cfdiController');
@@ -54,6 +55,13 @@ async function cfdiRoutes(app) {
     '/cfdi/:id/payment',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     paymentCfdi
+  );
+
+  // CFDI de Nómina 1.2 (recibo de nómina). Owner/Admin only.
+  app.post(
+    '/cfdi/payroll',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    payrollCfdi
   );
 
   // Reconcile a CFDI as paid (syncs the payment to the 642 CRM).

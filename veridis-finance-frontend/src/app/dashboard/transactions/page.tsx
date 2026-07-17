@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { History, Pencil, Trash2 } from "lucide-react";
+import { History, Link2, Pencil, Trash2 } from "lucide-react";
 
 import {
   ConfirmModal,
@@ -16,6 +16,7 @@ import {
 } from "@/components/finance/transaction-form";
 import { BankStatementUploadModal } from "@/components/finance/bank-statement-upload-modal";
 import { TransactionSplitsModal } from "@/components/finance/transaction-splits-modal";
+import { ReconciliationModal } from "@/components/finance/reconciliation-modal";
 import {
   TransactionEditModal,
   type UpdateTransactionPayload,
@@ -184,6 +185,9 @@ export default function DashboardTransactionsPage() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [splitTransaction, setSplitTransaction] = useState<Transaction | null>(null);
   const [isSplitsOpen, setIsSplitsOpen] = useState(false);
+
+  const [reconcileTransaction, setReconcileTransaction] = useState<Transaction | null>(null);
+  const [isReconcileOpen, setIsReconcileOpen] = useState(false);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [historyTransaction, setHistoryTransaction] = useState<Transaction | null>(
@@ -1602,6 +1606,17 @@ export default function DashboardTransactionsPage() {
                             size="sm"
                             variant="ghost"
                             onClick={() => {
+                              setReconcileTransaction(transaction);
+                              setIsReconcileOpen(true);
+                            }}
+                          >
+                            <Link2 className="mr-1 h-3.5 w-3.5" />
+                            Conciliar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
                               void openHistory(transaction);
                             }}
                           >
@@ -1726,6 +1741,24 @@ export default function DashboardTransactionsPage() {
         onChanged={async () => {
           await loadTransactions();
           emitFinanceDataRefresh("transaction_split_update");
+        }}
+      />
+
+      <ReconciliationModal
+        open={isReconcileOpen}
+        transactionId={reconcileTransaction?.id ?? null}
+        transactionLabel={
+          reconcileTransaction
+            ? `${reconcileTransaction.description || reconcileTransaction.category} · ${formatCurrency(reconcileTransaction.amount)}`
+            : undefined
+        }
+        onClose={() => {
+          setIsReconcileOpen(false);
+          setReconcileTransaction(null);
+        }}
+        onReconciled={() => {
+          void loadTransactions();
+          emitFinanceDataRefresh("transaction_reconciled");
         }}
       />
 

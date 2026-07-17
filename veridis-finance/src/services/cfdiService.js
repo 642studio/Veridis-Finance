@@ -442,6 +442,70 @@ async function registerPayment({ organization_id, id, payment = {}, receiver: in
 }
 
 /**
+ * Issue a CFDI de Nómina 1.2 (recibo de nómina) for an employee.
+ *
+ * EXPERIMENTAL: validate against the PAC sandbox before running real payroll.
+ * When member_id is given, the employee name/RFC default from the members
+ * module; inline employee fields always win.
+ */
+async function issuePayroll({ organization_id, member_id, employee = {}, payroll, perceptions, deductions }) {
+  let resolvedEmployee = { ...employee };
+  if (member_id) {
+    const { rows } = await pool.query(
+      `SELECT full_name, rfc FROM finance.members WHERE organization_id = $1 AND id = $2`,
+      [organization_id, member_id]
+    );
+    const member = rows[0];
+    if (!member) {
+      const err = new Error('Member not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    resolvedEmployee = {
+      name: member.full_name,
+      rfc: member.rfc,
+      ...resolvedEmployee,
+    };
+  }
+  if (!resolvedEmployee.rfc || !resolvedEmployee.name || !resolvedEmployee.zip) {
+    const err = new Error('employee requiere rfc, name y zip (código postal del empleado)');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const issuer = await getIssuer(organization_id);
+  const { provider, creds } = resolveCreds(issuer);
+
+  const stamped = await pac.stampNomina({
+    provider,
+    creds,
+    employee: resolvedEmployee,
+    payroll,
+    perceptions,
+    deductions,
+    expeditionPlace: issuer?.zip_code,
+  });
+
+  const doc = await insertStampedDoc(organization_id, {
+    cfdi_type: 'N',
+    issuer_id: issuer?.id || null,
+    uuid: stamped.uuid,
+    folio: stamped.folio,
+    receiver_rfc: resolvedEmployee.rfc,
+    receiver_name: resolvedEmployee.name,
+    cfdi_use: 'CN01',
+    metodo_pago: null,
+    forma_pago: '99',
+    total: stamped.total,
+    pac_provider: provider,
+    pac_document_id: stamped.id,
+    source: 'manual',
+    raw: { ...stamped.raw, member_id: member_id || null },
+  });
+  return { data: doc };
+}
+
+/**
  * Cancel a stamped CFDI at the PAC and persist the outcome.
  * motive: '01' (con sustitución, requires substitution UUID) | '02' (default) |
  * '03' | '04'. The PAC acuse (acknowledgement) is stored on the raw column.
@@ -547,6 +611,7 @@ module.exports = {
   issueIngreso,
   issueCreditNote,
   registerPayment,
+  issuePayroll,
   cancel,
   listIssued,
   getById,

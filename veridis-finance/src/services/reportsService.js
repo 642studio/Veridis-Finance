@@ -68,6 +68,64 @@ async function getMonthlyReport({ organization_id, year, month }) {
   };
 }
 
+/**
+ * DIOT groundwork: monthly IVA by supplier RFC, from uploaded received CFDIs.
+ * Aggregates the structured tax fields persisted since migration 007 —
+ * invoices uploaded before it lack RFC/taxes and are reported under
+ * `unclassified_count` so the accountant knows the coverage.
+ */
+async function getDiotReport({ organization_id, year, month }) {
+  const { rows } = await pool.query(
+    `
+      SELECT
+        emitter_rfc,
+        max(emitter) AS emitter_name,
+        count(*)::int AS invoice_count,
+        COALESCE(SUM(subtotal), 0) AS base_total,
+        COALESCE(SUM((taxes->>'total_trasladados')::numeric), 0) AS iva_trasladado,
+        COALESCE(SUM((taxes->>'total_retenidos')::numeric), 0) AS iva_retenido,
+        COALESCE(SUM(total), 0) AS total
+      FROM finance.invoices
+      WHERE organization_id = $1
+        AND date_part('year', invoice_date) = $2
+        AND date_part('month', invoice_date) = $3
+        AND emitter_rfc IS NOT NULL
+      GROUP BY emitter_rfc
+      ORDER BY total DESC
+    `,
+    [organization_id, year, month]
+  );
+
+  const { rows: missing } = await pool.query(
+    `
+      SELECT count(*)::int AS unclassified_count
+      FROM finance.invoices
+      WHERE organization_id = $1
+        AND date_part('year', invoice_date) = $2
+        AND date_part('month', invoice_date) = $3
+        AND emitter_rfc IS NULL
+    `,
+    [organization_id, year, month]
+  );
+
+  return {
+    year,
+    month,
+    suppliers: rows.map((row) => ({
+      rfc: row.emitter_rfc,
+      name: row.emitter_name,
+      invoice_count: row.invoice_count,
+      base_total: Number(row.base_total),
+      iva_trasladado: Number(row.iva_trasladado),
+      iva_retenido: Number(row.iva_retenido),
+      total: Number(row.total),
+    })),
+    // Invoices uploaded before the structured parser; re-upload to include them.
+    unclassified_count: missing[0]?.unclassified_count || 0,
+  };
+}
+
 module.exports = {
   getMonthlyReport,
+  getDiotReport,
 };

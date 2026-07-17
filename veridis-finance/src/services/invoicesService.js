@@ -53,9 +53,19 @@ async function createInvoice(payload) {
         invoice_date,
         paid_at,
         payment_method,
-        payment_reference
+        payment_reference,
+        emitter_rfc,
+        receiver_rfc,
+        subtotal,
+        currency,
+        comprobante_type,
+        forma_pago,
+        metodo_pago,
+        taxes,
+        concepts
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+              $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING
         id,
         organization_id,
@@ -68,6 +78,8 @@ async function createInvoice(payload) {
         paid_at,
         payment_method,
         payment_reference,
+        emitter_rfc,
+        receiver_rfc,
         updated_at,
         created_at
     `,
@@ -82,6 +94,16 @@ async function createInvoice(payload) {
       payload.status === 'paid' ? new Date() : null,
       null,
       null,
+      // Structured fiscal fields from the enriched CFDI parser (DIOT et al).
+      payload.emitter_rfc || null,
+      payload.receiver_rfc || null,
+      payload.subtotal ?? null,
+      payload.currency || null,
+      payload.comprobante_type || null,
+      payload.forma_pago || null,
+      payload.metodo_pago || null,
+      payload.taxes ? JSON.stringify(payload.taxes) : null,
+      payload.concepts ? JSON.stringify(payload.concepts) : null,
     ],
   };
 

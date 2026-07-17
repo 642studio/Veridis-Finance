@@ -1,4 +1,4 @@
-const { getMonthlyReport } = require('../controllers/reportsController');
+const { getMonthlyReport, getDiotReport } = require('../controllers/reportsController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
 async function reportsRoutes(app) {
@@ -11,6 +11,18 @@ async function reportsRoutes(app) {
       ],
     },
     getMonthlyReport
+  );
+
+  // IVA mensual por proveedor (base para DIOT), desde CFDIs recibidos subidos.
+  app.get(
+    '/report/diot',
+    {
+      preHandler: [
+        authenticate,
+        authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER]),
+      ],
+    },
+    getDiotReport
   );
 }
 
