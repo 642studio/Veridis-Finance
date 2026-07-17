@@ -341,6 +341,9 @@ export interface AiProviderConfig {
   key_configured: boolean;
   api_key_masked: string | null;
   system_key_available: boolean;
+  /** True when AI is platform-managed (single Veridis key, no BYOK). */
+  managed?: boolean;
+  key_source?: string;
 }
 
 export interface AiConnectionTestResult {

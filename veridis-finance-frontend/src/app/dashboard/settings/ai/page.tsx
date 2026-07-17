@@ -29,6 +29,12 @@ const MODELS_BY_PROVIDER: Record<AiProviderName, string[]> = {
   qwen: ["qwen-plus", "qwen-turbo", "qwen-max"],
 };
 
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  google: "Google Gemini",
+  qwen: "Qwen",
+};
+
 function currentMonthYear() {
   const now = new Date();
   return {
@@ -50,12 +56,16 @@ export default function DashboardAiSettingsPage() {
   const notify = useNotify();
   const [{ month, year }] = useState(currentMonthYear);
 
+  // Platform-managed state (default product mode: one Veridis key for all).
+  const [managedConfig, setManagedConfig] = useState<AiProviderConfig | null>(null);
+  const [isManaged, setIsManaged] = useState<boolean | null>(null);
+
+  // Legacy BYOK state (only rendered when the backend runs AI_PROVIDER_MODE=byok).
   const [provider, setProvider] = useState<AiProviderName>("openai");
   const [model, setModel] = useState(MODELS_BY_PROVIDER.openai[0]);
   const [apiKey, setApiKey] = useState("");
   const [useSystemKey, setUseSystemKey] = useState(false);
   const [active, setActive] = useState(true);
-
   const [savedMaskedKey, setSavedMaskedKey] = useState<string | null>(null);
   const [systemKeyAvailable, setSystemKeyAvailable] = useState(false);
 
@@ -69,21 +79,30 @@ export default function DashboardAiSettingsPage() {
   const modelOptions = useMemo(() => MODELS_BY_PROVIDER[provider], [provider]);
 
   const loadConfig = useCallback(
-    async (nextProvider: AiProviderName) => {
+    async (nextProvider?: AiProviderName) => {
       setIsLoadingConfig(true);
       try {
+        const suffix = nextProvider ? `?provider=${nextProvider}` : "";
         const response = await clientApiFetch<ApiEnvelope<AiProviderConfig>>(
-          `/api/finance/intelligence/ai-provider?provider=${nextProvider}`
+          `/api/finance/intelligence/ai-provider${suffix}`
         );
 
         const config = response.data;
+
+        if (config?.managed) {
+          setIsManaged(true);
+          setManagedConfig(config);
+          return;
+        }
+
+        setIsManaged(false);
         if (config) {
-          setModel(config.model || MODELS_BY_PROVIDER[nextProvider][0]);
+          setModel(config.model || MODELS_BY_PROVIDER[nextProvider || "openai"][0]);
           setUseSystemKey(Boolean(config.use_system_key));
           setActive(Boolean(config.active));
           setSavedMaskedKey(config.api_key_masked || null);
           setSystemKeyAvailable(Boolean(config.system_key_available));
-        } else {
+        } else if (nextProvider) {
           setModel(MODELS_BY_PROVIDER[nextProvider][0]);
           setUseSystemKey(false);
           setActive(true);
@@ -94,8 +113,8 @@ export default function DashboardAiSettingsPage() {
         const message =
           error instanceof ApiClientError
             ? error.message
-            : "Could not load provider configuration";
-        notify.error({ title: "Load failed", description: message });
+            : "No se pudo cargar la configuración de IA";
+        notify.error({ title: "Error al cargar", description: message });
       } finally {
         setIsLoadingConfig(false);
       }
@@ -114,16 +133,23 @@ export default function DashboardAiSettingsPage() {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : "Could not load usage statistics";
-      notify.error({ title: "Stats failed", description: message });
+          : "No se pudieron cargar las estadísticas de uso";
+      notify.error({ title: "Error de estadísticas", description: message });
     } finally {
       setIsLoadingUsage(false);
     }
   }, [month, notify, year]);
 
   useEffect(() => {
-    loadConfig(provider);
-  }, [loadConfig, provider]);
+    // First load without a provider param: the backend tells us whether AI is
+    // platform-managed. In legacy BYOK mode, provider changes re-load config.
+    if (isManaged === false) {
+      loadConfig(provider);
+    } else {
+      loadConfig();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadConfig, provider, isManaged === false]);
 
   useEffect(() => {
     loadUsageStats();
@@ -132,8 +158,8 @@ export default function DashboardAiSettingsPage() {
   const saveConfig = async () => {
     if (!useSystemKey && !apiKey.trim() && !savedMaskedKey) {
       notify.error({
-        title: "API key required",
-        description: "Provide an organization API key or enable system key mode.",
+        title: "Falta la API key",
+        description: "Proporciona una API key o habilita la key del sistema.",
       });
       return;
     }
@@ -168,14 +194,14 @@ export default function DashboardAiSettingsPage() {
       setApiKey("");
 
       notify.success({
-        title: "AI provider saved",
-        description: "Configuration stored securely.",
+        title: "Proveedor de IA guardado",
+        description: "Configuración almacenada de forma segura.",
       });
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not save provider config";
+        error instanceof ApiClientError ? error.message : "No se pudo guardar la configuración";
       notify.error({
-        title: "Save failed",
+        title: "Error al guardar",
         description: message,
       });
     } finally {
@@ -193,22 +219,22 @@ export default function DashboardAiSettingsPage() {
           headers: {
             "content-type": "application/json",
           },
-          body: JSON.stringify({ provider }),
+          body: JSON.stringify(isManaged ? {} : { provider }),
         }
       );
 
       const result = response.data;
       notify.success({
-        title: "Connection OK",
-        description: `${result.provider} (${result.model}) via ${result.key_source} key.`,
+        title: "Conexión correcta",
+        description: `${result.provider} (${result.model}) respondió correctamente.`,
       });
 
       await loadUsageStats();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not test AI provider";
+        error instanceof ApiClientError ? error.message : "No se pudo probar la IA";
       notify.error({
-        title: "Connection failed",
+        title: "Falló la conexión",
         description: message,
       });
     } finally {
@@ -216,140 +242,193 @@ export default function DashboardAiSettingsPage() {
     }
   };
 
+  const managedProviderLabel = managedConfig
+    ? PROVIDER_LABELS[managedConfig.provider] || managedConfig.provider
+    : "";
+
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>AI Provider</CardTitle>
-          <CardDescription>
-            Configure your tenant AI classification provider. Stored keys are encrypted and never returned in plain text.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ai_provider">Provider</Label>
-              <select
-                id="ai_provider"
-                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
-                value={provider}
-                onChange={(event) => {
-                  const nextProvider = event.target.value as AiProviderName;
-                  setProvider(nextProvider);
-                  setModel(MODELS_BY_PROVIDER[nextProvider][0]);
-                  setApiKey("");
-                }}
-                disabled={isLoadingConfig || isSaving || isTesting}
-              >
-                {PROVIDERS.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+      {isManaged === null || isLoadingConfig ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Inteligencia artificial</CardTitle>
+            <CardDescription>Cargando configuración…</CardDescription>
+          </CardHeader>
+        </Card>
+      ) : isManaged ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Inteligencia artificial incluida</CardTitle>
+            <CardDescription>
+              La clasificación automática con IA está incluida en tu plan y la administra
+              Veridis. No necesitas configurar ninguna API key.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-muted/30 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Motor</p>
+                <p className="mt-1 text-sm font-medium text-foreground">
+                  {managedProviderLabel}
+                  {managedConfig?.model ? ` · ${managedConfig.model}` : ""}
+                </p>
+              </div>
+              <Badge variant={managedConfig?.key_configured ? "success" : "outline"}>
+                {managedConfig?.key_configured ? "Activa" : "Pendiente de activación"}
+              </Badge>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="ai_model">Model</Label>
-              <select
-                id="ai_model"
-                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
-                value={model}
-                onChange={(event) => setModel(event.target.value)}
-                disabled={isLoadingConfig || isSaving || isTesting}
-              >
-                {modelOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+            {!managedConfig?.key_configured ? (
+              <p className="text-sm text-muted-foreground">
+                El servicio de IA aún no está activado en la plataforma. Mientras tanto, la
+                clasificación funciona con reglas aprendidas.
+              </p>
+            ) : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="ai_api_key">Organization API key</Label>
-            <Input
-              id="ai_api_key"
-              type="password"
-              autoComplete="new-password"
-              placeholder="Paste new key to rotate"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              disabled={isLoadingConfig || isSaving || isTesting || useSystemKey}
-            />
-            <p className="text-xs text-muted-foreground">
-              Stored key preview: {savedMaskedKey || "No key stored"}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-muted/30 p-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={useSystemKey}
-                onChange={(event) => setUseSystemKey(event.target.checked)}
-                disabled={isLoadingConfig || isSaving || isTesting}
-              />
-              Use system key instead of organization key
-            </label>
-            <Badge variant={systemKeyAvailable ? "success" : "outline"}>
-              {systemKeyAvailable ? "System key available" : "System key not configured"}
-            </Badge>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={(event) => setActive(event.target.checked)}
-                disabled={isLoadingConfig || isSaving || isTesting}
-              />
-              Active
-            </label>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={saveConfig} disabled={isSaving || isTesting || isLoadingConfig}>
-              {isSaving ? "Saving..." : "Save Configuration"}
-            </Button>
             <Button
               variant="secondary"
               onClick={testConnection}
-              disabled={isTesting || isSaving || isLoadingConfig}
+              disabled={isTesting || !managedConfig?.key_configured}
             >
-              {isTesting ? "Testing..." : "Test Connection"}
+              {isTesting ? "Probando…" : "Probar IA"}
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Proveedor de IA</CardTitle>
+            <CardDescription>
+              Configura el proveedor de clasificación de tu organización. Las keys se guardan
+              cifradas y nunca se devuelven en texto plano.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="ai_provider">Proveedor</Label>
+                <select
+                  id="ai_provider"
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
+                  value={provider}
+                  onChange={(event) => {
+                    const nextProvider = event.target.value as AiProviderName;
+                    setProvider(nextProvider);
+                    setModel(MODELS_BY_PROVIDER[nextProvider][0]);
+                    setApiKey("");
+                  }}
+                  disabled={isLoadingConfig || isSaving || isTesting}
+                >
+                  {PROVIDERS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="ai_model">Modelo</Label>
+                <select
+                  id="ai_model"
+                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                  disabled={isLoadingConfig || isSaving || isTesting}
+                >
+                  {modelOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai_api_key">API key de la organización</Label>
+              <Input
+                id="ai_api_key"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Pega una key nueva para rotarla"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                disabled={isLoadingConfig || isSaving || isTesting || useSystemKey}
+              />
+              <p className="text-xs text-muted-foreground">
+                Key almacenada: {savedMaskedKey || "Sin key guardada"}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-muted/30 p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={useSystemKey}
+                  onChange={(event) => setUseSystemKey(event.target.checked)}
+                  disabled={isLoadingConfig || isSaving || isTesting}
+                />
+                Usar la key del sistema en vez de la de la organización
+              </label>
+              <Badge variant={systemKeyAvailable ? "success" : "outline"}>
+                {systemKeyAvailable ? "Key del sistema disponible" : "Key del sistema no configurada"}
+              </Badge>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={(event) => setActive(event.target.checked)}
+                  disabled={isLoadingConfig || isSaving || isTesting}
+                />
+                Activo
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={saveConfig} disabled={isSaving || isTesting || isLoadingConfig}>
+                {isSaving ? "Guardando…" : "Guardar configuración"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={testConnection}
+                disabled={isTesting || isSaving || isLoadingConfig}
+              >
+                {isTesting ? "Probando…" : "Probar conexión"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
-          <CardTitle>AI Usage This Month</CardTitle>
+          <CardTitle>Uso de IA este mes</CardTitle>
           <CardDescription>
-            Token consumption and estimated spend for {String(month).padStart(2, "0")}/{year}.
+            Tokens consumidos y costo estimado de {String(month).padStart(2, "0")}/{year}.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingUsage ? (
-            <p className="text-sm text-muted-foreground">Loading usage statistics...</p>
+            <p className="text-sm text-muted-foreground">Cargando estadísticas de uso…</p>
           ) : (
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Monthly Tokens</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Tokens del mes</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {usageStats?.monthly_tokens_used?.toLocaleString("en-US") || 0}
+                  {usageStats?.monthly_tokens_used?.toLocaleString("es-MX") || 0}
                 </p>
               </div>
               <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimated Cost</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Costo estimado</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   {formatUsd(usageStats?.estimated_cost_usd || 0)}
                 </p>
               </div>
               <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Requests</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Solicitudes</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {usageStats?.total_requests?.toLocaleString("en-US") || 0}
+                  {usageStats?.total_requests?.toLocaleString("es-MX") || 0}
                 </p>
               </div>
             </div>
