@@ -59,6 +59,7 @@ export const NAV_GROUPS: DashboardNavGroup[] = [
     title: "Configuración",
     items: [
       { href: "/dashboard/settings", label: "Configuración", icon: Building2 },
+      { href: "/dashboard/settings/facturacion", label: "Emisor fiscal", icon: FileText },
       { href: "/dashboard/settings/ai", label: "Asistente IA", icon: Sparkles },
     ],
   },

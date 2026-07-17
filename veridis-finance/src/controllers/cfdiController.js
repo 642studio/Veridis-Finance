@@ -179,6 +179,65 @@ const cancelSchema = z.object({
   substitution: z.string().uuid().optional(),
 });
 
+const receiverInlineSchema = z.object({
+  rfc: z.string().trim().regex(RFC_REGEX, 'RFC inválido'),
+  name: z.string().min(1).max(255),
+  fiscalRegime: z.string().min(3).max(4),
+  use: z.string().min(3).max(4).optional(),
+  zip: z.string().length(5),
+});
+
+const creditNoteSchema = z.object({
+  items: z.array(itemSchema).min(1),
+  relation_type: z.enum(['01', '03']).default('01'),
+  paymentForm: z.string().min(2).max(2).optional(),
+  receiver: receiverInlineSchema.optional(),
+  folio: z.union([z.string(), z.number()]).optional(),
+  source_ref: z.string().max(255).optional(),
+});
+
+const paymentSchema = z.object({
+  amount: z.coerce.number().positive().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha YYYY-MM-DD').optional(),
+  payment_form: z.string().min(2).max(2).default('03'),
+  partiality_number: z.coerce.number().int().min(1).max(999).default(1),
+  previous_balance: z.coerce.number().positive().optional(),
+  tax_object: z.enum(['01', '02']).default('01'),
+  receiver: receiverInlineSchema.optional(),
+});
+
+/** Issue a nota de crédito (CFDI de Egreso) related to a stamped CFDI. */
+async function creditNoteCfdi(request, reply) {
+  const { id } = idParamsSchema.parse(request.params);
+  const payload = creditNoteSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const result = await cfdiService.issueCreditNote({
+    organization_id: organizationId,
+    id,
+    items: payload.items,
+    relationType: payload.relation_type,
+    paymentForm: payload.paymentForm,
+    receiver: payload.receiver,
+    folio: payload.folio,
+    source_ref: payload.source_ref || null,
+  });
+  reply.status(201).send(result);
+}
+
+/** Issue a Complemento de Pago 2.0 (REP) for a stamped PPD CFDI. */
+async function paymentCfdi(request, reply) {
+  const { id } = idParamsSchema.parse(request.params);
+  const payload = paymentSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const result = await cfdiService.registerPayment({
+    organization_id: organizationId,
+    id,
+    payment: payload,
+    receiver: payload.receiver,
+  });
+  reply.status(201).send(result);
+}
+
 /** Cancel a stamped CFDI at the PAC (with motivo/sustitución + acuse). */
 async function cancelCfdi(request, reply) {
   const { id } = idParamsSchema.parse(request.params);
@@ -218,6 +277,8 @@ module.exports = {
   markPaidCfdi,
   pushCfdiToCrm,
   cancelCfdi,
+  creditNoteCfdi,
+  paymentCfdi,
   getIssuer,
   putIssuer,
 };

@@ -220,6 +220,227 @@ async function findByGhlInvoice({ organization_id, ghl_invoice_id }) {
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
+async function getRawById(organization_id, id) {
+  const { rows } = await pool.query(
+    `SELECT * FROM finance.cfdi_documents WHERE organization_id = $1 AND id = $2`,
+    [organization_id, id]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Resolve the full fiscal receiver (rfc, name, régimen, uso, CP) for a stamped
+ * document: an inline override wins, then the stored receiver profile, else
+ * 409 — CFDI 4.0 needs régimen+CP and the document row alone doesn't carry them.
+ */
+async function resolveReceiverForDoc(organizationId, row, inlineReceiver) {
+  if (inlineReceiver) return inlineReceiver;
+  if (row.receiver_id) {
+    const profile = await receiversService.getById({
+      organization_id: organizationId,
+      id: row.receiver_id,
+    });
+    if (profile) {
+      return {
+        rfc: profile.rfc,
+        name: profile.name,
+        fiscalRegime: profile.fiscal_regime,
+        use: profile.cfdi_use,
+        zip: profile.zip_code,
+      };
+    }
+  }
+  const err = new Error(
+    'El CFDI no tiene un perfil de receptor con datos fiscales completos; envía receiver con rfc, name, fiscalRegime y zip'
+  );
+  err.statusCode = 409;
+  throw err;
+}
+
+/** Persist a stamped E/P document row (shared by credit notes and REPs). */
+async function insertStampedDoc(organizationId, params) {
+  const { rows } = await pool.query(
+    `INSERT INTO finance.cfdi_documents
+      (organization_id, issuer_id, receiver_id, invoice_id, cfdi_type, status, uuid, folio,
+       receiver_rfc, receiver_name, cfdi_use, metodo_pago, forma_pago, currency,
+       total, pac_provider, pac_document_id, source, source_ref, ghl_contact_id, raw, stamped_at)
+     VALUES ($1,$2,$3,$4,$5,'stamped',$6,$7,$8,$9,$10,$11,$12,'MXN',$13,$14,$15,$16,$17,$18,$19, now())
+     RETURNING *`,
+    [
+      organizationId,
+      params.issuer_id || null,
+      params.receiver_id || null,
+      params.invoice_id || null,
+      params.cfdi_type,
+      params.uuid,
+      String(params.folio ?? ''),
+      params.receiver_rfc,
+      params.receiver_name,
+      params.cfdi_use || null,
+      params.metodo_pago || null,
+      params.forma_pago || null,
+      round(params.total ?? 0),
+      params.pac_provider,
+      params.pac_document_id,
+      params.source || 'manual',
+      params.source_ref || null,
+      params.ghl_contact_id || null,
+      JSON.stringify(params.raw || {}),
+    ]
+  );
+  return mapRow(rows[0]);
+}
+
+/**
+ * Issue a CFDI de Egreso (nota de crédito) related to a stamped CFDI.
+ *
+ * EXPERIMENTAL: the payload follows Facturama's documented shape but has not
+ * been validated against the PAC sandbox yet (needs sandbox credentials).
+ *
+ * relationType: '01' nota de crédito | '03' devolución.
+ */
+async function issueCreditNote({
+  organization_id,
+  id,
+  items,
+  relationType = '01',
+  paymentForm,
+  receiver: inlineReceiver,
+  folio,
+  source = 'manual',
+  source_ref = null,
+}) {
+  const row = await getRawById(organization_id, id);
+  if (!row) {
+    const err = new Error('CFDI not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (row.status !== 'stamped' || !row.uuid) {
+    const err = new Error('Solo se puede emitir una nota de crédito sobre un CFDI timbrado');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const receiver = await resolveReceiverForDoc(organization_id, row, inlineReceiver);
+  const issuer = await getIssuer(organization_id);
+  const { provider, creds } = resolveCreds(issuer);
+
+  const stamped = await pac.stampEgreso({
+    provider,
+    creds,
+    receiver: { ...receiver, use: 'G02' },
+    items,
+    relatedUuid: row.uuid,
+    relationType,
+    // Default the payment form to the original document's, per common practice.
+    paymentForm: paymentForm || row.forma_pago || '03',
+    expeditionPlace: issuer?.zip_code,
+    folio,
+  });
+
+  const doc = await insertStampedDoc(organization_id, {
+    cfdi_type: 'E',
+    issuer_id: issuer?.id || null,
+    receiver_id: row.receiver_id,
+    invoice_id: row.invoice_id,
+    uuid: stamped.uuid,
+    folio: stamped.folio,
+    receiver_rfc: receiver.rfc,
+    receiver_name: receiver.name,
+    cfdi_use: 'G02',
+    metodo_pago: 'PUE',
+    forma_pago: paymentForm || row.forma_pago || '03',
+    total: stamped.total,
+    pac_provider: provider,
+    pac_document_id: stamped.id,
+    source,
+    source_ref,
+    ghl_contact_id: row.ghl_contact_id,
+    raw: { ...stamped.raw, related_uuid: row.uuid, relation_type: relationType },
+  });
+  return { data: doc };
+}
+
+/**
+ * Issue a CFDI de Pago (Complemento de Pago 2.0 / REP) for a stamped PPD CFDI.
+ *
+ * EXPERIMENTAL: validate against the PAC sandbox before production use.
+ * When the payment settles the remaining balance, the original document is
+ * marked paid.
+ */
+async function registerPayment({ organization_id, id, payment = {}, receiver: inlineReceiver }) {
+  const row = await getRawById(organization_id, id);
+  if (!row) {
+    const err = new Error('CFDI not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (row.status !== 'stamped' || !row.uuid) {
+    const err = new Error('Solo se puede registrar un pago sobre un CFDI timbrado');
+    err.statusCode = 409;
+    throw err;
+  }
+  if (row.metodo_pago !== 'PPD') {
+    const err = new Error('El Complemento de Pago aplica solo a CFDIs con método de pago PPD');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const receiver = await resolveReceiverForDoc(organization_id, row, inlineReceiver);
+  const issuer = await getIssuer(organization_id);
+  const { provider, creds } = resolveCreds(issuer);
+
+  const total = Number(row.total || 0);
+  const normalizedPayment = {
+    date: payment.date || new Date().toISOString().slice(0, 10),
+    paymentForm: payment.payment_form || '03',
+    amount: payment.amount ?? total,
+    previousBalance: payment.previous_balance ?? total,
+    partialityNumber: payment.partiality_number || 1,
+    currency: 'MXN',
+    taxObject: payment.tax_object || '01',
+  };
+
+  const stamped = await pac.stampPago({
+    provider,
+    creds,
+    receiver,
+    relatedUuid: row.uuid,
+    payment: normalizedPayment,
+    expeditionPlace: issuer?.zip_code,
+  });
+
+  const doc = await insertStampedDoc(organization_id, {
+    cfdi_type: 'P',
+    issuer_id: issuer?.id || null,
+    receiver_id: row.receiver_id,
+    invoice_id: row.invoice_id,
+    uuid: stamped.uuid,
+    folio: stamped.folio,
+    receiver_rfc: receiver.rfc,
+    receiver_name: receiver.name,
+    cfdi_use: 'CP01',
+    metodo_pago: null,
+    forma_pago: normalizedPayment.paymentForm,
+    total: normalizedPayment.amount,
+    pac_provider: provider,
+    pac_document_id: stamped.id,
+    source: 'manual',
+    raw: { ...stamped.raw, related_uuid: row.uuid, payment: normalizedPayment },
+  });
+
+  // Settled in full → reconcile the original as paid.
+  const remaining =
+    Number(normalizedPayment.previousBalance) - Number(normalizedPayment.amount);
+  let original = null;
+  if (remaining <= 0.009) {
+    original = await markPaid({ organization_id, id, source: 'veridis' });
+  }
+
+  return { data: doc, original_paid: Boolean(original) };
+}
+
 /**
  * Cancel a stamped CFDI at the PAC and persist the outcome.
  * motive: '01' (con sustitución, requires substitution UUID) | '02' (default) |
@@ -324,6 +545,8 @@ async function listReceived({ organization_id }) {
 
 module.exports = {
   issueIngreso,
+  issueCreditNote,
+  registerPayment,
   cancel,
   listIssued,
   getById,
