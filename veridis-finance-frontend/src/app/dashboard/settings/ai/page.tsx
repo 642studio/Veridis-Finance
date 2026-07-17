@@ -278,20 +278,11 @@ export default function DashboardAiSettingsPage() {
               </Badge>
             </div>
 
-            {!managedConfig?.key_configured ? (
-              <p className="text-sm text-muted-foreground">
-                El servicio de IA aún no está activado en la plataforma. Mientras tanto, la
-                clasificación funciona con reglas aprendidas.
-              </p>
-            ) : null}
-
-            <Button
-              variant="secondary"
-              onClick={testConnection}
-              disabled={isTesting || !managedConfig?.key_configured}
-            >
-              {isTesting ? "Probando…" : "Probar IA"}
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              {managedConfig?.key_configured
+                ? "La IA clasifica tus transacciones automáticamente: no hay nada que configurar."
+                : "La clasificación funciona con reglas aprendidas mientras se activa el motor de IA."}
+            </p>
           </CardContent>
         </Card>
       ) : (
