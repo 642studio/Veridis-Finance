@@ -570,3 +570,13 @@ Root Directory `veridis-finance`; every merge to `main` auto-deploys the API.
 Serverless deploys do not run a start command, so apply schema changes with
 `npm run db:migrate` against the production database when a release includes
 new migrations.
+
+### Platform AI env vars (production)
+
+Set on the `veridis-finance-api` project (Production environment):
+
+```
+AI_SYSTEM_PROVIDER=google
+AI_SYSTEM_GOOGLE_API_KEY=<Google AI Studio key>
+AI_SYSTEM_GOOGLE_MODEL=gemini-1.5-flash
+```
