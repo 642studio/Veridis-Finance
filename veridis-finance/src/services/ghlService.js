@@ -19,7 +19,8 @@ const receiversService = require('./cfdiReceiversService');
 
 const API_BASE = 'https://services.leadconnectorhq.com';
 const TOKEN_URL = `${API_BASE}/oauth/token`;
-const MARKETPLACE_AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation';
+// v2 chooselocation carries the app version context GHL needs.
+const MARKETPLACE_AUTH = 'https://marketplace.leadconnectorhq.com/v2/oauth/chooselocation';
 const API_VERSION = '2021-07-28';
 
 // GHL's published Ed25519 webhook public key (override via env if it rotates).
@@ -46,6 +47,9 @@ function buildInstallUrl(state) {
     redirect_uri: process.env.GHL_REDIRECT_URI || '',
     scope: process.env.GHL_SCOPES || DEFAULT_SCOPES.join(' '),
   });
+  // The app version id (from the app's Install Link). Required so the draft/
+  // published app resolves — without it GHL returns noAppVersionIdFound.
+  if (process.env.GHL_VERSION_ID) params.set('version_id', process.env.GHL_VERSION_ID);
   if (state) params.set('state', state);
   return `${MARKETPLACE_AUTH}?${params.toString()}`;
 }
