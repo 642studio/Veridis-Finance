@@ -52,6 +52,13 @@ function stampPago(input = {}) {
   return p.stampPago(input);
 }
 
+/** Stamp a CFDI de Nómina 1.2. */
+function stampNomina(input = {}) {
+  const p = resolve(input.provider);
+  if (typeof p.stampNomina !== 'function') throw notSupported('CFDI de Nómina');
+  return p.stampNomina(input);
+}
+
 function getDocument(id, { provider, creds } = {}) {
   return resolve(provider).getDocument(id, creds);
 }
@@ -83,6 +90,7 @@ module.exports = {
   stampIngreso,
   stampEgreso,
   stampPago,
+  stampNomina,
   getDocument,
   cancel,
   list,

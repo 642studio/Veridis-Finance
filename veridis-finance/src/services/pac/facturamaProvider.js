@@ -234,6 +234,95 @@ async function stampPago(input) {
 }
 
 /**
+ * Build the payload for a CFDI de Nómina 1.2 (recibo de nómina).
+ * Pure — unit-tested without network.
+ *
+ * EXPERIMENTAL: shape follows Facturama's API Web payroll docs; validate
+ * against the PAC sandbox before running a real payroll.
+ *
+ * @param {object} input
+ * @param {object} input.employee  { rfc, name, curp?, socialSecurityNumber?,
+ *   employeeNumber?, position?, dailySalary?, baseSalary?, fiscalRegime?, zip }
+ * @param {object} input.payroll   { paymentDate, initialPaymentDate,
+ *   finalPaymentDate, daysPaid }
+ * @param {Array}  input.perceptions [{ code, description, taxedAmount, exemptedAmount }]
+ * @param {Array}  input.deductions  [{ code, description, amount }]
+ */
+function buildNominaPayload(input) {
+  const perceptions = (input.perceptions || []).map((p) => ({
+    PerceptionType: p.perceptionType || p.code || '001',
+    Code: p.code || '001',
+    Description: p.description || 'Sueldo',
+    TaxedAmount: Number(round(money(p.taxedAmount ?? 0), 2)),
+    ExemptedAmount: Number(round(money(p.exemptedAmount ?? 0), 2)),
+  }));
+  const deductions = (input.deductions || []).map((d) => ({
+    DeduccionType: d.deductionType || d.code || '002',
+    Code: d.code || '002',
+    Description: d.description || 'ISR',
+    Amount: Number(round(money(d.amount ?? 0), 2)),
+  }));
+
+  const totalPerceptions = sum(
+    perceptions.map((p) => money(p.TaxedAmount).plus(p.ExemptedAmount))
+  );
+  const totalDeductions = sum(deductions.map((d) => d.Amount));
+  const net = totalPerceptions.minus(totalDeductions);
+
+  return {
+    CfdiType: 'N',
+    NameId: '15', // Nómina
+    ExpeditionPlace: input.expeditionPlace || input.employee.zip,
+    PaymentForm: '99',
+    PaymentMethod: 'PUE',
+    Receiver: {
+      Rfc: input.employee.rfc,
+      Name: input.employee.name,
+      CfdiUse: 'CN01', // fixed by SAT for nómina 4.0
+      FiscalRegime: input.employee.fiscalRegime || '605', // sueldos y salarios
+      TaxZipCode: input.employee.zip,
+    },
+    Complemento: {
+      Payroll: {
+        Type: input.payroll.type || 'O', // O = ordinaria, E = extraordinaria
+        PaymentDate: input.payroll.paymentDate,
+        InitialPaymentDate: input.payroll.initialPaymentDate,
+        FinalPaymentDate: input.payroll.finalPaymentDate,
+        DaysPaid: Number(input.payroll.daysPaid),
+        Employee: {
+          Curp: input.employee.curp || null,
+          SocialSecurityNumber: input.employee.socialSecurityNumber || null,
+          EmployeeNumber: input.employee.employeeNumber || null,
+          Position: input.employee.position || null,
+          ContractType: input.employee.contractType || '01',
+          RegimeType: input.employee.regimeType || '02',
+          TypeOfJourney: input.employee.typeOfJourney || '01',
+          FrequencyPayment: input.employee.frequencyPayment || '04',
+          DailySalary: Number(round(money(input.employee.dailySalary ?? 0), 2)),
+          BaseSalary: Number(round(money(input.employee.baseSalary ?? 0), 2)),
+        },
+        Perceptions: { Details: perceptions },
+        Deductions: { Details: deductions },
+      },
+    },
+    // Informative — Facturama recomputes totals from the complement.
+    _computed: {
+      total_perceptions: Number(round(totalPerceptions, 2)),
+      total_deductions: Number(round(totalDeductions, 2)),
+      net_pay: Number(round(net, 2)),
+    },
+  };
+}
+
+/** Stamp a CFDI de Nómina. */
+async function stampNomina(input) {
+  const payload = buildNominaPayload(input);
+  const { _computed, ...body } = payload;
+  const cfdi = await request('POST', '/3/cfdis', body, input.creds);
+  return normalizeStampResult(cfdi, input.creds, _computed.net_pay);
+}
+
+/**
  * Stamp a CFDI de Ingreso (API Web).
  * @returns normalized result { id, uuid, folio, total, status, xmlUrl, pdfUrl, raw }
  */
@@ -320,8 +409,10 @@ module.exports = {
   stampIngreso,
   stampEgreso,
   stampPago,
+  stampNomina,
   buildEgresoPayload,
   buildPagoPayload,
+  buildNominaPayload,
   getDocument,
   list,
   getPdf,

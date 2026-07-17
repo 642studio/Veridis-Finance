@@ -26,6 +26,20 @@ async function getMonthlyReport(request, reply) {
   reply.send({ data: report });
 }
 
+/** Monthly IVA by supplier RFC (DIOT groundwork) from uploaded CFDIs. */
+async function getDiotReport(request, reply) {
+  const query = monthReportQuerySchema.parse(request.query);
+  const organizationId = resolveOrganizationId(request);
+  const report = await reportsService.getDiotReport({
+    organization_id: organizationId,
+    month: query.month,
+    year: query.year,
+  });
+
+  reply.send({ data: report });
+}
+
 module.exports = {
   getMonthlyReport,
+  getDiotReport,
 };

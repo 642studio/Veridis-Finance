@@ -24,6 +24,7 @@ const contactsRoutes = require('./routes/contacts');
 const categoriesRoutes = require('./routes/categories');
 const transactionSplitsRoutes = require('./routes/transactionSplits');
 const reconciliationRoutes = require('./routes/reconciliation');
+const cronRoutes = require('./routes/cron');
 const logger = require('./logger');
 const pool = require('./db/pool');
 
@@ -160,6 +161,7 @@ function buildApp() {
   app.register(cfdiReceiversRoutes, { prefix: '/api/finance' });
   app.register(ghlRoutes);
   app.register(publicCsfRoutes);
+  app.register(cronRoutes);
   app.register(bankStatementsRoutes, { prefix: '/api/finance' });
   app.register(intelligenceRoutes, { prefix: '/api/finance' });
   app.register(aiProvidersRoutes, { prefix: '/api/finance' });

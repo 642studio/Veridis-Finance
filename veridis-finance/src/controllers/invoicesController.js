@@ -122,6 +122,16 @@ async function uploadInvoice(request, reply) {
     total: parsedInvoice.total,
     status: 'pending',
     invoice_date: parsedInvoice.invoice_date,
+    // Structured fiscal fields (DIOT, reconciliation, supplier ledgers).
+    emitter_rfc: parsedInvoice.emitter_rfc,
+    receiver_rfc: parsedInvoice.receiver_rfc,
+    subtotal: parsedInvoice.subtotal,
+    currency: parsedInvoice.currency,
+    comprobante_type: parsedInvoice.comprobante_type,
+    forma_pago: parsedInvoice.forma_pago,
+    metodo_pago: parsedInvoice.metodo_pago,
+    taxes: parsedInvoice.taxes,
+    concepts: parsedInvoice.concepts,
   });
 
   request.log.info(

@@ -206,6 +206,58 @@ const paymentSchema = z.object({
   receiver: receiverInlineSchema.optional(),
 });
 
+const payrollSchema = z.object({
+  member_id: z.string().uuid().optional(),
+  employee: z.object({
+    rfc: z.string().trim().regex(RFC_REGEX, 'RFC inválido').optional(),
+    name: z.string().min(1).max(255).optional(),
+    zip: z.string().length(5),
+    curp: z.string().length(18).optional(),
+    socialSecurityNumber: z.string().max(20).optional(),
+    employeeNumber: z.string().max(30).optional(),
+    position: z.string().max(120).optional(),
+    dailySalary: z.coerce.number().nonnegative().optional(),
+    baseSalary: z.coerce.number().nonnegative().optional(),
+    contractType: z.string().max(3).optional(),
+    frequencyPayment: z.string().max(3).optional(),
+  }),
+  payroll: z.object({
+    type: z.enum(['O', 'E']).default('O'),
+    paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    initialPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    finalPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    daysPaid: z.coerce.number().positive().max(31),
+  }),
+  perceptions: z.array(z.object({
+    code: z.string().max(10).optional(),
+    perceptionType: z.string().max(10).optional(),
+    description: z.string().max(255).optional(),
+    taxedAmount: z.coerce.number().nonnegative().default(0),
+    exemptedAmount: z.coerce.number().nonnegative().default(0),
+  })).min(1),
+  deductions: z.array(z.object({
+    code: z.string().max(10).optional(),
+    deductionType: z.string().max(10).optional(),
+    description: z.string().max(255).optional(),
+    amount: z.coerce.number().nonnegative().default(0),
+  })).default([]),
+});
+
+/** Issue a CFDI de Nómina 1.2 for an employee (member or inline). */
+async function payrollCfdi(request, reply) {
+  const payload = payrollSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const result = await cfdiService.issuePayroll({
+    organization_id: organizationId,
+    member_id: payload.member_id,
+    employee: payload.employee,
+    payroll: payload.payroll,
+    perceptions: payload.perceptions,
+    deductions: payload.deductions,
+  });
+  reply.status(201).send(result);
+}
+
 /** Issue a nota de crédito (CFDI de Egreso) related to a stamped CFDI. */
 async function creditNoteCfdi(request, reply) {
   const { id } = idParamsSchema.parse(request.params);
@@ -279,6 +331,7 @@ module.exports = {
   cancelCfdi,
   creditNoteCfdi,
   paymentCfdi,
+  payrollCfdi,
   getIssuer,
   putIssuer,
 };
