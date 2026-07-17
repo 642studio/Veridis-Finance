@@ -213,6 +213,50 @@ async function listContacts(organizationId, { limit = 20 } = {}) {
   return { connected: true, contacts: data.contacts || [] };
 }
 
+/** Read a single GHL contact. */
+async function getContact(organizationId, contactId) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) return null;
+  const data = await apiFetch(install.id, `/contacts/${contactId}`);
+  return data.contact || data;
+}
+
+/**
+ * Write-back: add a note to a GHL contact (e.g. the stamped CFDI UUID + links).
+ * Makes the CRM aware that the invoice was fiscally stamped.
+ */
+async function addContactNote(organizationId, contactId, body) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install || !contactId) return null;
+  return apiFetch(install.id, `/contacts/${contactId}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body, userId: install.location_id }),
+  });
+}
+
+/**
+ * Veridis -> GHL: create an invoice in the CRM from a Veridis-issued document.
+ * Kept minimal; the caller passes GHL-shaped items and contact details.
+ */
+async function createInvoiceInGhl(organizationId, invoice) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) {
+    const err = new Error('CRM not connected');
+    err.statusCode = 409;
+    throw err;
+  }
+  return apiFetch(install.id, '/invoices/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      altId: install.location_id,
+      altType: 'location',
+      ...invoice,
+    }),
+  });
+}
+
 // --------------------------------------------------------------------------
 // Webhooks
 // --------------------------------------------------------------------------
@@ -337,14 +381,19 @@ async function processInvoicePaid(event) {
   }
 
   if (!receiverProfile) {
+    // Not a failure — the client just hasn't given us their CSF yet. Flag it so
+    // the invoice shows as "pending CSF" and can be completed (in-app upload or
+    // the client's self-service link) then retried.
     const err = new Error(
-      'No fiscal profile for this contact — upload the client CSF (RFC/CP) first'
+      'Falta la Constancia (CSF) de este cliente para poder timbrar'
     );
+    err.pendingCsf = true;
+    err.contactId = data.contactId || contact.id || null;
     err.statusCode = 422;
     throw err;
   }
 
-  return cfdiService.issueIngreso({
+  const result = await cfdiService.issueIngreso({
     organization_id: organizationId,
     receiver_id: receiverProfile.id,
     items: mapItems(data),
@@ -353,6 +402,60 @@ async function processInvoicePaid(event) {
     source: 'ghl',
     source_ref: String(data._id || data.id || data.invoiceId || event.webhookId),
   });
+
+  // Write-back to the CRM: note the stamped CFDI on the contact (two-way).
+  const contactId = data.contactId || contact.id;
+  if (contactId && result?.data?.uuid) {
+    try {
+      const base = process.env.APP_PUBLIC_URL || 'https://veridis-finance-api.vercel.app';
+      await addContactNote(
+        organizationId,
+        contactId,
+        `✅ CFDI timbrado por Veridis\nUUID: ${result.data.uuid}\nTotal: $${result.data.total} MXN\nPDF: ${base}/api/finance/cfdi/${result.data.id}/pdf`
+      );
+    } catch {
+      // Write-back is best-effort; never fail the stamping because of it.
+    }
+  }
+
+  return result;
+}
+
+/** Invoices paid in the CRM that couldn't be stamped yet (missing CSF). */
+async function listPending(organizationId) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) return [];
+  const { rows } = await pool.query(
+    `SELECT id,
+            payload->'data'->>'name' AS invoice_name,
+            payload->'data'->>'total' AS total,
+            payload->'data'->'contactDetails'->>'name' AS contact_name,
+            payload->'data'->'contactDetails'->>'email' AS contact_email,
+            COALESCE(payload->'data'->>'contactId', payload->'data'->'contactDetails'->>'id') AS contact_id,
+            error_message, received_at
+       FROM finance.ghl_webhook_events
+      WHERE status = 'pending_csf' AND location_id = $1
+      ORDER BY received_at DESC LIMIT 100`,
+    [install.location_id]
+  );
+  return rows;
+}
+
+/** Re-run stamping for a stored event (after the CSF was uploaded). */
+async function retryPending(eventId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM finance.ghl_webhook_events WHERE id = $1`,
+    [eventId]
+  );
+  const ev = rows[0];
+  if (!ev) {
+    const err = new Error('Pending event not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  const result = await processInvoicePaid(ev.payload);
+  await markWebhook(eventId, 'processed');
+  return result;
 }
 
 async function markWebhook(id, status, errorMessage) {
@@ -371,8 +474,13 @@ module.exports = {
   getInstallForOrg,
   listInvoices,
   listContacts,
+  getContact,
+  addContactNote,
+  createInvoiceInGhl,
   verifyWebhookSignature,
   recordWebhook,
   processInvoicePaid,
+  listPending,
+  retryPending,
   markWebhook,
 };

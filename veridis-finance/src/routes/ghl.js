@@ -72,6 +72,33 @@ async function ghlRoutes(app) {
     }
   );
 
+  // Invoices paid in the CRM that are waiting on the client's CSF.
+  app.get(
+    '/integrations/crm/pending',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    async (request, reply) => {
+      const organizationId = resolveOrganizationId(request);
+      reply.send({ data: await ghlService.listPending(organizationId) });
+    }
+  );
+
+  // Retry stamping a pending invoice (after its CSF was uploaded).
+  app.post(
+    '/integrations/crm/pending/:id/retry',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    async (request, reply) => {
+      resolveOrganizationId(request);
+      try {
+        const result = await ghlService.retryPending(request.params.id);
+        reply.send(result);
+      } catch (err) {
+        reply
+          .status(err.pendingCsf ? 422 : err.statusCode || 500)
+          .send({ error: err.message });
+      }
+    }
+  );
+
   // OAuth callback (GHL redirects the user's browser here).
   app.get('/integrations/crm/oauth/callback', async (request, reply) => {
     const { code, state } = request.query || {};
@@ -115,7 +142,11 @@ async function ghlRoutes(app) {
         await ghlService.processInvoicePaid(event);
         await ghlService.markWebhook(row.id, 'processed');
       } catch (err) {
-        await ghlService.markWebhook(row.id, 'error', err.message);
+        await ghlService.markWebhook(
+          row.id,
+          err.pendingCsf ? 'pending_csf' : 'error',
+          err.message
+        );
       }
     } else if (isNew && row) {
       await ghlService.markWebhook(row.id, 'ignored');

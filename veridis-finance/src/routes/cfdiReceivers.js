@@ -3,10 +3,18 @@ const {
   createReceiver,
   listReceivers,
   getReceiver,
+  csfLink,
 } = require('../controllers/cfdiReceiversController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
 async function cfdiReceiversRoutes(app) {
+  // Self-service CSF upload link for a tenant to share with their clients.
+  app.get(
+    '/receivers/csf-link',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    csfLink
+  );
+
   // Upload a client's Constancia de Situación Fiscal -> prefilled fiscal data.
   app.post(
     '/receivers/preview-csf',

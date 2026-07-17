@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const jwt = require('jsonwebtoken');
 
 const receiversService = require('../services/cfdiReceiversService');
 const { resolveOrganizationId } = require('../middleware/auth');
@@ -61,4 +62,17 @@ async function getReceiver(request, reply) {
   reply.send({ data });
 }
 
-module.exports = { previewCsf, createReceiver, listReceivers, getReceiver };
+/** Generate a self-service link a client can use to upload their own CSF. */
+async function csfLink(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  const token = jwt.sign(
+    { org: organizationId, purpose: 'csf' },
+    process.env.JWT_SECRET,
+    { expiresIn: '180d' }
+  );
+  const base =
+    process.env.FRONTEND_URL || 'https://veridis-finance-adrian-yepizs-projects.vercel.app';
+  reply.send({ data: { url: `${base}/subir-csf/${token}` } });
+}
+
+module.exports = { previewCsf, createReceiver, listReceivers, getReceiver, csfLink };
