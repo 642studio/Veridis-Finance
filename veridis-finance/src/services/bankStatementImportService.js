@@ -385,6 +385,7 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
     const vendorNameById = new Map();
     const contactNameById = new Map();
     let insertedCount = 0;
+    const insertedRows = [];
     let skippedDuplicates = 0;
     let skippedInvalid = 0;
 
@@ -650,6 +651,7 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
             $1, $2, $3, $4, $5, $6::text[], $7, $8,
             $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
           )
+          RETURNING id, type, amount, transaction_date, description
         `,
         values: [
           organizationId,
@@ -674,7 +676,10 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
         ],
       };
 
-      await client.query(insertTransactionQuery);
+      const insertedResult = await client.query(insertTransactionQuery);
+      if (insertedResult.rows[0]) {
+        insertedRows.push(insertedResult.rows[0]);
+      }
       insertedCount += 1;
     }
 
@@ -692,11 +697,42 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
 
     await client.query('COMMIT');
 
+    // AI-assisted reconciliation: after the import commits, cross every new
+    // income movement against pending invoices and surface strong matches so
+    // the user reconciles them in one click. Best-effort — suggestions never
+    // fail the import.
+    let reconciliationSuggestions = [];
+    try {
+      const reconciliationService = require('./reconciliationService');
+      const incomeRows = insertedRows.filter((row) => row.type === 'income').slice(0, 50);
+      for (const row of incomeRows) {
+        const { candidates } = await reconciliationService.findInvoiceCandidates({
+          organization_id: organizationId,
+          transaction_id: row.id,
+          limit: 1,
+        });
+        const best = candidates[0];
+        if (best && best.match.score >= 0.8) {
+          reconciliationSuggestions.push({
+            transaction_id: row.id,
+            transaction_description: row.description,
+            amount: Number(row.amount),
+            invoice_id: best.invoice_id,
+            invoice_label: best.receiver || best.emitter,
+            score: best.match.score,
+          });
+        }
+      }
+    } catch {
+      reconciliationSuggestions = [];
+    }
+
     return {
       import_id: importId,
       inserted_count: insertedCount,
       skipped_duplicates: skippedDuplicates,
       skipped_invalid: skippedInvalid,
+      reconciliation_suggestions: reconciliationSuggestions,
       already_confirmed: false,
     };
   } catch (error) {

@@ -435,12 +435,23 @@ export interface BankStatementUploadData {
   status: BankStatementStatus;
 }
 
+export interface ReconciliationSuggestion {
+  transaction_id: string;
+  transaction_description: string | null;
+  amount: number;
+  invoice_id: string;
+  invoice_label: string | null;
+  score: number;
+}
+
 export interface BankStatementConfirmData {
   import_id: string;
   inserted_count: number;
   skipped_duplicates: number;
   skipped_invalid: number;
   already_confirmed: boolean;
+  /** Strong invoice matches found for the newly imported income movements. */
+  reconciliation_suggestions?: ReconciliationSuggestion[];
 }
 
 export interface FinancialPlan {

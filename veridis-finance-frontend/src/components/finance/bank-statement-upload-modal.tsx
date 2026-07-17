@@ -444,6 +444,7 @@ export function BankStatementUploadModal({
       let skippedDuplicates = 0;
       let skippedInvalid = 0;
       let importsConfirmed = 0;
+      let reconciliationSuggestions = 0;
       const failedImports: string[] = [];
 
       for (const [importId, rows] of Array.from(rowsByImportId.entries())) {
@@ -479,6 +480,9 @@ export function BankStatementUploadModal({
           insertedCount += Number(response.data.inserted_count || 0);
           skippedDuplicates += Number(response.data.skipped_duplicates || 0);
           skippedInvalid += Number(response.data.skipped_invalid || 0);
+          reconciliationSuggestions += Array.isArray(response.data.reconciliation_suggestions)
+            ? response.data.reconciliation_suggestions.length
+            : 0;
           importsConfirmed += 1;
         } catch {
           failedImports.push(importId);
@@ -516,9 +520,16 @@ export function BankStatementUploadModal({
         });
       } else {
         notify.success({
-          title: "Imports confirmed",
-          description: `${insertedCount} inserted, ${skippedDuplicates} duplicates, ${skippedInvalid} invalid.`,
+          title: "Importación confirmada",
+          description: `${insertedCount} movimientos registrados · ${skippedDuplicates} duplicados omitidos${skippedInvalid ? ` · ${skippedInvalid} inválidos` : ""}.`,
         });
+        if (reconciliationSuggestions > 0) {
+          notify.info({
+            title: `🔗 ${reconciliationSuggestions} movimiento(s) coinciden con facturas pendientes`,
+            description:
+              'Ve a Movimientos y usa el botón "Conciliar" para confirmarlos en un clic.',
+          });
+        }
         closeModal();
       }
     } catch (error) {
