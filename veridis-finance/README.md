@@ -567,9 +567,11 @@ docker compose exec app npm run seed
 
 The `veridis-finance-api` Vercel project is Git-connected to this repo with
 Root Directory `veridis-finance`; every merge to `main` auto-deploys the API.
-Serverless deploys do not run a start command, so apply schema changes with
-`npm run db:migrate` against the production database when a release includes
-new migrations.
+`vercel.json` sets `buildCommand: npm run db:migrate`, so schema migrations run
+automatically on every deploy (idempotent, tracked in
+`finance.schema_migrations`) — the serverless equivalent of Railway's
+migrate-then-start command. A failed migration fails the build and keeps the
+previous deployment live.
 
 ### Platform AI env vars (production)
 
