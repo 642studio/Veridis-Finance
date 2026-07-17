@@ -40,4 +40,23 @@ function cancel(id, { provider, creds, ...opts } = {}) {
   return resolve(provider).cancel(id, opts, creds);
 }
 
-module.exports = { stampIngreso, getDocument, cancel, resolve };
+/** List issued or received CFDIs. type: 'issued' | 'received'. */
+function list(type, { provider, creds } = {}) {
+  const p = resolve(provider);
+  if (typeof p.list !== 'function') {
+    const err = new Error(`Provider does not support listing CFDIs`);
+    err.statusCode = 501;
+    throw err;
+  }
+  return p.list(type, creds);
+}
+
+function getPdf(id, { provider, creds } = {}) {
+  return resolve(provider).getPdf(id, creds);
+}
+
+function getXml(id, { provider, creds } = {}) {
+  return resolve(provider).getXml(id, creds);
+}
+
+module.exports = { stampIngreso, getDocument, cancel, list, getPdf, getXml, resolve };

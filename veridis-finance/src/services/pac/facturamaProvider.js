@@ -154,6 +154,24 @@ async function getDocument(id, creds) {
   return request('GET', `/cfdi/${id}`, null, creds);
 }
 
+/** List CFDIs the account has issued or received. type: 'issued' | 'received'. */
+async function list(type = 'received', creds) {
+  const rows = await request('GET', `/cfdi?type=${type}`, null, creds);
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** Retrieve the stamped PDF as base64. */
+async function getPdf(id, creds) {
+  const r = await request('GET', `/cfdi/pdf/issued/${id}`, null, creds);
+  return { contentBase64: r.Content, contentType: r.ContentType || 'application/pdf' };
+}
+
+/** Retrieve the stamped XML as base64. */
+async function getXml(id, creds) {
+  const r = await request('GET', `/cfdi/xml/issued/${id}`, null, creds);
+  return { contentBase64: r.Content, contentType: r.ContentType || 'application/xml' };
+}
+
 /** Cancel a stamped CFDI. motive: 01|02|03|04 */
 async function cancel(id, opts = {}, creds) {
   const motive = opts.motive || '02';
@@ -162,4 +180,4 @@ async function cancel(id, opts = {}, creds) {
   return request('DELETE', path, null, creds);
 }
 
-module.exports = { stampIngreso, getDocument, cancel };
+module.exports = { stampIngreso, getDocument, list, getPdf, getXml, cancel };
