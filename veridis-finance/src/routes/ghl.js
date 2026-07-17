@@ -77,12 +77,16 @@ async function ghlRoutes(app) {
     const { code, state } = request.query || {};
     if (!code) return reply.status(400).send({ error: 'Missing code' });
 
+    // Prefer the signed state (our "Conectar" button flow). When installing a
+    // DRAFT app via GHL's own Install link, there's no state — fall back to the
+    // configured org so single-tenant testing works.
     let organizationId = null;
     try {
       if (state) organizationId = jwt.verify(state, process.env.JWT_SECRET).org;
     } catch {
-      return reply.status(400).send({ error: 'Invalid state' });
+      organizationId = null;
     }
+    if (!organizationId) organizationId = process.env.GHL_FALLBACK_ORG_ID || null;
 
     await ghlService.exchangeCode(code, organizationId);
     const redirect = process.env.GHL_POST_INSTALL_REDIRECT;
