@@ -9,8 +9,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "db:migrate": "node scripts/apply-schema.js",
-    "db:setup": "node scripts/apply-schema.js && node scripts/seed.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:setup": "node scripts/migrate.js && node scripts/seed.js",
     "seed": "node scripts/seed.js",
     "test": "node --test \"test/**/*.test.js\"",
     "smoke:phase1": "node scripts/smoke-phase1.js"
