@@ -480,12 +480,8 @@ export function BankStatementUploadModal({
           insertedCount += Number(response.data.inserted_count || 0);
           skippedDuplicates += Number(response.data.skipped_duplicates || 0);
           skippedInvalid += Number(response.data.skipped_invalid || 0);
-          reconciliationSuggestions += Array.isArray(
-            (response.data as { reconciliation_suggestions?: unknown[] })
-              .reconciliation_suggestions
-          )
-            ? (response.data as { reconciliation_suggestions: unknown[] })
-                .reconciliation_suggestions.length
+          reconciliationSuggestions += Array.isArray(response.data.reconciliation_suggestions)
+            ? response.data.reconciliation_suggestions.length
             : 0;
           importsConfirmed += 1;
         } catch {
