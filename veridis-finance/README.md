@@ -562,3 +562,11 @@ docker compose exec app npm run seed
 - `finance.organizations` includes Stripe placeholders (`stripe_customer_id`, `stripe_subscription_id`).
 - Tenant slug/subdomain fields support future tenant-host routing.
 - API key table and middleware are separated for future webhooks/integration expansion.
+
+## Deployment (Vercel backend)
+
+The `veridis-finance-api` Vercel project is Git-connected to this repo with
+Root Directory `veridis-finance`; every merge to `main` auto-deploys the API.
+Serverless deploys do not run a start command, so apply schema changes with
+`npm run db:migrate` against the production database when a release includes
+new migrations.
