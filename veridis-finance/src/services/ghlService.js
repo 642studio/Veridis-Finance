@@ -14,6 +14,8 @@
 const crypto = require('node:crypto');
 const pool = require('../db/pool');
 const { encrypt, decrypt } = require('../lib/crypto');
+const invoicesService = require('./invoicesService');
+const issuersService = require('./cfdiIssuersService');
 
 // GHL OAuth access tokens are stored encrypted at rest (like the refresh token).
 // Tolerate legacy plaintext rows written before this change: ciphertext always
@@ -523,6 +525,15 @@ async function processInvoicePaid(event) {
     } catch {
       // best-effort
     }
+    // Remove the pre-fiscal CRM placeholder now that a real CFDI mirror exists.
+    try {
+      await pool.query(
+        `DELETE FROM finance.invoices WHERE organization_id = $1 AND uuid_sat = $2`,
+        [organizationId, `crm:${ghlInvoiceId}`]
+      );
+    } catch {
+      // best-effort
+    }
   }
 
   // Write-back to the CRM: note the stamped CFDI on the contact (two-way).
@@ -652,6 +663,67 @@ async function importCrmHistory(organizationId) {
 }
 
 /**
+ * Mirror the location's CRM invoices (paid in the CRM, whether stamped yet or
+ * not) into finance.invoices as issued receivables, so they're visible in the
+ * ledger and reconcilable against bank income BEFORE the fiscal CFDI exists.
+ * Pre-fiscal placeholders use a synthetic uuid_sat 'crm:<ghlInvoiceId>'; once a
+ * pending invoice is stamped, its placeholder is removed (see processInvoicePaid).
+ */
+async function syncCrmToLedger(organizationId) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) return { found: 0, created: 0, updated: 0 };
+  const issuer = await issuersService.getActiveIssuer(organizationId);
+  const emitter = `${issuer?.rfc || ''} - ${issuer?.legal_name || 'Mi empresa'}`.trim();
+
+  const { rows } = await pool.query(
+    `SELECT id, payload, received_at
+       FROM finance.ghl_webhook_events
+      WHERE location_id = $1
+        AND event_type = 'InvoicePaid'
+        AND status IN ('pending_csf', 'processed', 'received')
+      ORDER BY received_at DESC
+      LIMIT 500`,
+    [install.location_id]
+  );
+
+  const summary = { found: rows.length, created: 0, updated: 0 };
+  for (const row of rows) {
+    const data = row.payload?.data || row.payload || {};
+    const ghlInvoiceId = String(data._id || data.id || data.invoiceId || row.id);
+    const total = Number(data.total || data.amountDue || data.amount || 0);
+    if (!(total > 0)) continue;
+    const clientName =
+      data.contactDetails?.name || data.name || data.invoiceName || 'Cliente CRM';
+
+    // Skip if already stamped (a real CFDI mirror exists for this CRM invoice).
+    const linked = await pool.query(
+      `SELECT 1 FROM finance.cfdi_documents
+        WHERE organization_id = $1 AND ghl_invoice_id = $2 AND status = 'stamped' LIMIT 1`,
+      [organizationId, ghlInvoiceId]
+    );
+    if (linked.rows.length > 0) continue;
+
+    const result = await invoicesService.upsertFromCfdi({
+      organization_id: organizationId,
+      uuid_sat: `crm:${ghlInvoiceId}`,
+      emitter,
+      receiver: clientName,
+      emitter_rfc: issuer?.rfc || null,
+      receiver_rfc: null,
+      total,
+      invoice_date: row.received_at || new Date(),
+      status: 'pending', // reconcilable against bank income until settled
+      currency: 'MXN',
+      direction: 'issued',
+      source: 'crm',
+    });
+    if (result?.inserted) summary.created += 1;
+    else summary.updated += 1;
+  }
+  return summary;
+}
+
+/**
  * Dismiss a pending_csf event (e.g. stale test invoices) for the caller's
  * connected location. Scoped so an org can only dismiss its own events.
  */
@@ -714,5 +786,6 @@ module.exports = {
   retryPending,
   dismissPending,
   importCrmHistory,
+  syncCrmToLedger,
   markWebhook,
 };

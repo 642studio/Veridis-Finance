@@ -379,13 +379,16 @@ export default function CfdiPage() {
       const response = await clientApiFetch<{
         data: {
           issued: { found: number; created: number; updated: number };
+          crm?: { found: number; created: number; updated: number; error?: string | null };
           received: { found: number; created: number; updated: number; error?: string | null };
         };
       }>("/api/finance/cfdi/sync-invoices", { method: "POST" });
-      const { issued, received } = response.data;
+      const { issued, crm, received } = response.data;
+      const crmCreated = crm?.created ?? 0;
+      const crmFound = crm?.found ?? 0;
       notify.success({
         title: "Facturas sincronizadas",
-        description: `Emitidas: ${issued.created} nuevas al libro (${issued.found} CFDI). Recibidas del PAC: ${received.error ? "sin conexión al PAC" : `${received.created} nuevas`}.`,
+        description: `Ventas del CRM: ${crmCreated} nuevas al libro (${crmFound} en total). CFDI emitidos: ${issued.created}. Recibidas del PAC: ${received.error ? "configura tu emisor fiscal" : `${received.created} nuevas`}.`,
       });
       load();
     } catch (error) {
