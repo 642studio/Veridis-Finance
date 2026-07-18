@@ -890,10 +890,18 @@ async function matchPendingToExistingCfdi(organizationId) {
         WHERE id = $1`,
       [event.id, `Cubierta por CFDI ${best.inv.uuid_sat}`]
     );
+    // LINK (never delete): the CRM receipt stays in the ledger, marked as
+    // covered by its fiscal CFDI. The SAT row remains the fiscal receivable
+    // (bank reconciliation targets it), so no double-counting in aging.
     await pool.query(
-      `DELETE FROM finance.invoices
+      `UPDATE finance.invoices
+          SET status = 'paid'::finance.invoice_status,
+              paid_at = COALESCE(paid_at, now()),
+              payment_method = 'cubierta_por_cfdi',
+              payment_reference = $3,
+              updated_at = now()
         WHERE organization_id = $1 AND uuid_sat = $2`,
-      [organizationId, `crm:${ghlInvoiceId}`]
+      [organizationId, `crm:${ghlInvoiceId}`, `cfdi:${best.inv.uuid_sat}`]
     );
     matched += 1;
   }
