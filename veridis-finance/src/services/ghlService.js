@@ -659,6 +659,14 @@ async function importCrmHistory(organizationId) {
     }
   }
 
+  // Bring the paid-but-unstamped invoices into the reconcilable ledger too, so
+  // they show in Facturas immediately without a separate sync click.
+  try {
+    summary.ledger = await syncCrmToLedger(organizationId);
+  } catch {
+    // best-effort
+  }
+
   return summary;
 }
 
@@ -686,14 +694,32 @@ async function syncCrmToLedger(organizationId) {
     [install.location_id]
   );
 
-  const summary = { found: rows.length, created: 0, updated: 0 };
+  const parseAmount = (value) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (value == null) return 0;
+    // GHL sometimes sends amounts as strings like "5,015.00" or "$5,015".
+    const n = Number(String(value).replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const summary = { found: rows.length, created: 0, updated: 0, skipped: 0 };
   for (const row of rows) {
     const data = row.payload?.data || row.payload || {};
-    const ghlInvoiceId = String(data._id || data.id || data.invoiceId || row.id);
-    const total = Number(data.total || data.amountDue || data.amount || 0);
-    if (!(total > 0)) continue;
+    const ghlInvoiceId = String(data._id || data.id || data.invoiceId || data.invoiceNumber || row.id);
+    const total = parseAmount(
+      data.total ?? data.amountDue ?? data.amount ?? data.invoiceTotal ?? data.amountPaid ?? data.totalAmount
+    );
+    if (!(total > 0)) {
+      summary.skipped += 1;
+      continue;
+    }
     const clientName =
-      data.contactDetails?.name || data.name || data.invoiceName || 'Cliente CRM';
+      data.contactDetails?.name ||
+      data.contact?.name ||
+      data.name ||
+      data.invoiceName ||
+      data.title ||
+      'Cliente CRM';
 
     // Skip if already stamped (a real CFDI mirror exists for this CRM invoice).
     const linked = await pool.query(
