@@ -706,8 +706,19 @@ async function recalculatePlan(request, reply) {
   reply.send({ data });
 }
 
+/** Downloadable XLSX template matching exactly what the importer expects. */
+async function downloadPlanningTemplate(request, reply) {
+  const { buildPlanningTemplate } = require('../services/planning/planningTemplateService');
+  const buffer = buildPlanningTemplate();
+  reply
+    .header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    .header('content-disposition', 'attachment; filename="plantilla-planeacion.xlsx"')
+    .send(buffer);
+}
+
 module.exports = {
   importPlanningWorkbook,
+  downloadPlanningTemplate,
   listPlans,
   getPlanOverview,
   getPlanResults,

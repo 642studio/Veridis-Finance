@@ -44,6 +44,7 @@ export const NAV_GROUPS: DashboardNavGroup[] = [
     items: [
       { href: "/dashboard/cfdi", label: "CFDI", icon: FileText },
       { href: "/dashboard/invoices", label: "Facturas", icon: Receipt },
+      { href: "/dashboard/nomina", label: "Nómina", icon: Users },
       { href: "/dashboard/sat", label: "Descarga SAT", icon: CloudDownload },
     ],
   },
