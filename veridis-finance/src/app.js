@@ -139,6 +139,21 @@ function buildApp() {
     throwFileSizeLimit: true,
   });
 
+  // Tolerate body-less POST/PATCH/DELETE calls. Several actions ("sincronizar",
+  // "verificar", "marcar pagada", …) are proxied as POSTs with no body; some
+  // upstream fetches still send Content-Length: 0 with no Content-Type, which
+  // Fastify otherwise rejects with 415 "Unsupported Media Type: undefined".
+  // This fallback (only used when no specific parser — json/multipart — matches)
+  // treats an empty body as {} so those actions work. JSON and multipart keep
+  // their own dedicated parsers untouched.
+  app.addContentTypeParser('*', { parseAs: 'buffer' }, (request, body, done) => {
+    if (!body || body.length === 0) {
+      done(null, {});
+      return;
+    }
+    done(null, body);
+  });
+
   app.get('/health', async () => {
     let dbStatus = 'unknown';
     try {

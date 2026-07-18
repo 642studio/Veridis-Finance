@@ -1,5 +1,6 @@
 const pool = require('../db/pool');
 const ghlService = require('../services/ghlService');
+const satDownloadService = require('../services/satDownloadService');
 
 /**
  * Scheduled maintenance (Vercel Cron). vercel.json schedules a daily GET to
@@ -42,11 +43,52 @@ async function cronRoutes(app) {
       }
     }
 
+    // SAT Descarga Masiva backstop: advance any request the user opened but left
+    // (the page auto-verifies while open; this catches the rest). The SAT is
+    // async, so a request accepted minutes/hours ago may now be ready to import.
+    const { rows: satRows } = await pool.query(
+      `SELECT id, organization_id FROM finance.sat_download_requests
+        WHERE status IN ('accepted','in_progress','downloading')
+          AND sat_request_id IS NOT NULL
+        ORDER BY created_at ASC
+        LIMIT 25`
+    );
+    let satChecked = 0;
+    let satCompleted = 0;
+    for (const row of satRows) {
+      if (!row.id || !row.organization_id) continue;
+      try {
+        const updated = await satDownloadService.checkRequest(row.organization_id, row.id);
+        satChecked += 1;
+        if (updated?.status === 'completed') satCompleted += 1;
+      } catch (err) {
+        request.log.warn(
+          { request_id: row.id, err: err.message },
+          'cron: SAT verifica failed'
+        );
+      }
+    }
+
     request.log.info(
-      { source: 'cron_daily', found: rows.length, retried, still_pending: stillPending },
+      {
+        source: 'cron_daily',
+        found: rows.length,
+        retried,
+        still_pending: stillPending,
+        sat_checked: satChecked,
+        sat_completed: satCompleted,
+      },
       'cron: daily maintenance done'
     );
-    reply.send({ data: { found: rows.length, retried, still_pending: stillPending } });
+    reply.send({
+      data: {
+        found: rows.length,
+        retried,
+        still_pending: stillPending,
+        sat_checked: satChecked,
+        sat_completed: satCompleted,
+      },
+    });
   });
 }
 
