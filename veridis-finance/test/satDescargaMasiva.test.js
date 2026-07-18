@@ -8,6 +8,22 @@ const { XMLParser } = require('fast-xml-parser');
 const fiel = require('../src/services/sat/fiel');
 const soap = require('../src/services/sat/soap');
 const { readZipEntries } = require('../src/services/sat/zip');
+const { extractFault } = require('../src/services/satDownloadService');
+
+// ---------------------------------------------------------------------------
+// Diagnostics — never surface a naked "HTTP 500"
+// ---------------------------------------------------------------------------
+
+test('extractFault prefers a SOAP faultstring', () => {
+  const parsed = { Envelope: { Body: { Fault: { faultstring: 'Firma no válida' } } } };
+  assert.equal(extractFault(parsed, '<xml/>', 500), 'Firma no válida');
+});
+
+test('extractFault falls back to a cleaned body snippet', () => {
+  const msg = extractFault({}, '<html><body>Internal Server Error</body></html>', 500);
+  assert.match(msg, /HTTP 500/);
+  assert.match(msg, /Internal Server Error/);
+});
 
 // ---------------------------------------------------------------------------
 // Pure FIEL helpers

@@ -156,6 +156,27 @@ function firstDeep(obj, key) {
   return undefined;
 }
 
+/**
+ * Best-effort extraction of a human-readable reason from a SAT SOAP response.
+ * SAT errors surface as SOAP faults (faultstring / Reason / Text) or, on a bad
+ * signature, as a bare HTTP 500 with an HTML/text body. We return whatever is
+ * most informative so the UI stops showing a naked "HTTP 500".
+ */
+function extractFault(parsed, body, status) {
+  const candidates = ['faultstring', 'Text', 'Reason', 'Mensaje', 'ExceptionMessage', 'Message'];
+  for (const key of candidates) {
+    const val = firstDeep(parsed, key);
+    if (val && typeof val === 'string' && val.trim()) return val.trim();
+  }
+  // Fall back to a cleaned snippet of the raw body (strip tags/whitespace).
+  const snippet = String(body || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (snippet) return `HTTP ${status}: ${snippet.slice(0, 240)}`;
+  return `HTTP ${status}`;
+}
+
 /** Authenticate and return a bearer token (valid ~5 min). */
 async function authenticate(fiel, env = 'production') {
   const envelope = soap.buildAuthEnvelope(fiel);
@@ -166,9 +187,8 @@ async function authenticate(fiel, env = 'production') {
   );
   const parsed = xml.parse(body);
   const token = firstDeep(parsed, 'AutenticaResult');
-  if (!token) {
-    const fault = firstDeep(parsed, 'faultstring') || `HTTP ${status}`;
-    const err = new Error(`SAT rechazó la autenticación: ${String(fault).slice(0, 200)}`);
+  if (!token || !String(token).trim()) {
+    const err = new Error(`Autenticación SAT falló — ${extractFault(parsed, body, status)}`);
     err.statusCode = 502;
     throw err;
   }
@@ -214,13 +234,13 @@ async function createRequest(organizationId, opts, env = 'production') {
     const result = firstDeep(parsed, 'SolicitaDescargaResult') || {};
     const idSolicitud = result['@_IdSolicitud'];
     const cod = result['@_CodEstatus'];
-    const mensaje = result['@_Mensaje'] || (idSolicitud ? 'Solicitud aceptada' : `HTTP ${status}`);
 
     if (!idSolicitud) {
+      const mensaje = result['@_Mensaje'] || extractFault(parsed, body, status);
       return updateRequest(req.id, {
         status: 'failed',
         sat_status_code: cod || null,
-        sat_message: String(mensaje).slice(0, 400),
+        sat_message: `Solicitud rechazada — ${String(mensaje)}`.slice(0, 400),
       });
     }
     return updateRequest(req.id, {
@@ -482,4 +502,5 @@ module.exports = {
   // exported for tests
   importMetadata,
   importPackage,
+  extractFault,
 };

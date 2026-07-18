@@ -23,6 +23,36 @@ import { ApiClientError, clientApiFetch } from "@/lib/api-client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import type { ApiEnvelope, Invoice } from "@/types/finance";
 
+/** Etiqueta legible del origen de la factura. */
+const SOURCE_META: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "success" }> = {
+  crm: { label: "CRM", variant: "secondary" },
+  sat_download: { label: "SAT", variant: "success" },
+  issued_cfdi: { label: "CFDI", variant: "default" },
+  pac_received: { label: "PAC", variant: "default" },
+  upload: { label: "XML", variant: "outline" },
+  manual: { label: "Manual", variant: "outline" },
+};
+
+function sourceMeta(source?: string | null) {
+  return SOURCE_META[source || "manual"] || SOURCE_META.manual;
+}
+
+/**
+ * Referencia legible en vez del UUID crudo. Los folios internos del CRM llegan
+ * como "crm:xxxx" — mostramos algo corto y humano, no el hash completo.
+ */
+function readableRef(row: Invoice): string {
+  const uuid = row.uuid_sat || "";
+  if (uuid.startsWith("crm:")) return `Venta CRM · ${uuid.slice(4, 12)}`;
+  if (uuid.length >= 12) return `…${uuid.slice(-12)}`;
+  return uuid || "—";
+}
+
+/** La contraparte útil: cliente si la emití, proveedor si la recibí. */
+function counterparty(row: Invoice): string {
+  return row.direction === "issued" ? row.receiver : row.emitter;
+}
+
 export default function DashboardInvoicesPage() {
   const notify = useNotify();
   const { canWrite } = useSession();
@@ -30,12 +60,11 @@ export default function DashboardInvoicesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [markPaidInvoice, setMarkPaidInvoice] = useState<Invoice | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
+  const [paymentMethod, setPaymentMethod] = useState("transferencia");
   const [paymentReference, setPaymentReference] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createForm, setCreateForm] = useState({
-    uuid_sat: "",
     emitter: "",
     receiver: "",
     total: "",
@@ -52,8 +81,8 @@ export default function DashboardInvoicesPage() {
       setInvoices(response.data || []);
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not load invoices";
-      notify.error({ title: "Load failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudieron cargar las facturas";
+      notify.error({ title: "Error al cargar", description: message });
       setInvoices([]);
     } finally {
       setIsLoading(false);
@@ -94,54 +123,42 @@ export default function DashboardInvoicesPage() {
     } catch (error) {
       const message =
         error instanceof ApiClientError ? error.message : "No se pudieron subir las facturas";
-      notify.error({
-        title: "Error al subir",
-        description: message,
-      });
+      notify.error({ title: "Error al subir", description: message });
       throw error;
     }
   };
 
   const resetCreateForm = useCallback(() => {
-    setCreateForm({
-      uuid_sat: "",
-      emitter: "",
-      receiver: "",
-      total: "",
-      invoice_date: "",
-      status: "pending",
-    });
+    setCreateForm({ emitter: "", receiver: "", total: "", invoice_date: "", status: "pending" });
   }, []);
 
   const handleCreateInvoice = useCallback(async () => {
     const total = Number.parseFloat(createForm.total);
-    if (!createForm.uuid_sat.trim()) {
-      notify.error({ title: "Missing UUID", description: "UUID (SAT) is required." });
-      return;
-    }
     if (!createForm.emitter.trim() || !createForm.receiver.trim()) {
       notify.error({
-        title: "Missing data",
-        description: "Emitter and receiver are required.",
+        title: "Faltan datos",
+        description: "Emisor y receptor son obligatorios.",
       });
       return;
     }
     if (!Number.isFinite(total) || total <= 0) {
-      notify.error({ title: "Invalid total", description: "Total must be greater than 0." });
+      notify.error({ title: "Total inválido", description: "El total debe ser mayor a 0." });
       return;
     }
     if (!createForm.invoice_date) {
-      notify.error({ title: "Missing date", description: "Invoice date is required." });
+      notify.error({ title: "Falta la fecha", description: "La fecha de la factura es obligatoria." });
       return;
     }
 
     setIsCreating(true);
     try {
+      // UUID sintético para el registro manual (NO es un folio fiscal del SAT).
+      const syntheticUuid = `manual:${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
       await clientApiFetch<ApiEnvelope<Invoice>>("/api/finance/invoices", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          uuid_sat: createForm.uuid_sat.trim(),
+          uuid_sat: syntheticUuid,
           emitter: createForm.emitter.trim(),
           receiver: createForm.receiver.trim(),
           total,
@@ -154,13 +171,13 @@ export default function DashboardInvoicesPage() {
       setIsCreateOpen(false);
       resetCreateForm();
       notify.success({
-        title: "Invoice created",
-        description: "Manual invoice added successfully.",
+        title: "Registro agregado",
+        description: "Se anotó en tu libro (no genera ningún CFDI ante el SAT).",
       });
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not create invoice";
-      notify.error({ title: "Create failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo agregar el registro";
+      notify.error({ title: "Error al guardar", description: message });
     } finally {
       setIsCreating(false);
     }
@@ -178,9 +195,7 @@ export default function DashboardInvoicesPage() {
           `/api/finance/invoices/${invoice.id}/status`,
           {
             method: "PATCH",
-            headers: {
-              "content-type": "application/json",
-            },
+            headers: { "content-type": "application/json" },
             body: JSON.stringify({
               status,
               payment_method: options?.payment_method || null,
@@ -192,19 +207,14 @@ export default function DashboardInvoicesPage() {
         await loadInvoices();
 
         notify.success({
-          title: "Invoice updated",
+          title: "Factura actualizada",
           description:
-            status === "paid"
-              ? "Invoice marked as paid."
-              : "Invoice reopened as pending.",
+            status === "paid" ? "Marcada como pagada." : "Reabierta como pendiente.",
         });
       } catch (error) {
         const message =
-          error instanceof ApiClientError ? error.message : "Could not update invoice";
-        notify.error({
-          title: "Update failed",
-          description: message,
-        });
+          error instanceof ApiClientError ? error.message : "No se pudo actualizar la factura";
+        notify.error({ title: "Error al actualizar", description: message });
       } finally {
         setStatusUpdatingId(null);
       }
@@ -215,9 +225,36 @@ export default function DashboardInvoicesPage() {
   const columns = useMemo(
     () => [
       {
-        key: "uuid_sat",
-        header: "UUID",
-        render: (row: Invoice) => row.uuid_sat,
+        key: "reference",
+        header: "Referencia",
+        render: (row: Invoice) => {
+          const meta = sourceMeta(row.source);
+          return (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Badge variant={meta.variant}>{meta.label}</Badge>
+                <Badge variant={row.direction === "issued" ? "default" : "secondary"}>
+                  {row.direction === "issued" ? "Emitida" : "Recibida"}
+                </Badge>
+              </div>
+              <span className="text-xs text-muted-foreground">{readableRef(row)}</span>
+            </div>
+          );
+        },
+      },
+      {
+        key: "counterparty",
+        header: "Cliente / Proveedor",
+        render: (row: Invoice) => (
+          <div className="flex flex-col">
+            <span className="font-medium">{counterparty(row) || "—"}</span>
+            <span className="text-xs text-muted-foreground">
+              {row.direction === "issued"
+                ? row.receiver_rfc || ""
+                : row.emitter_rfc || ""}
+            </span>
+          </div>
+        ),
       },
       {
         key: "total",
@@ -229,23 +266,9 @@ export default function DashboardInvoicesPage() {
         header: "Estatus",
         render: (row: Invoice) => (
           <Badge variant={row.status === "paid" ? "success" : "outline"}>
-            {row.status === "paid" ? "pagada" : "pendiente"}
+            {row.status === "paid" ? "Conciliada / pagada" : "Pendiente"}
           </Badge>
         ),
-      },
-      {
-        key: "direction",
-        header: "Tipo",
-        render: (row: Invoice) => (
-          <Badge variant={row.direction === "issued" ? "default" : "secondary"}>
-            {row.direction === "issued" ? "Emitida" : "Recibida"}
-          </Badge>
-        ),
-      },
-      {
-        key: "emitter",
-        header: "Emisor",
-        render: (row: Invoice) => row.emitter,
       },
       {
         key: "invoice_date",
@@ -253,8 +276,35 @@ export default function DashboardInvoicesPage() {
         render: (row: Invoice) => formatDate(row.invoice_date),
       },
       {
+        key: "comprobante",
+        header: "Comprobante",
+        render: (row: Invoice) =>
+          row.cfdi_document_id ? (
+            <div className="flex items-center gap-2">
+              <a
+                className="text-xs font-medium text-primary underline"
+                href={`/api/finance/cfdi/${row.cfdi_document_id}/pdf`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                PDF
+              </a>
+              <a
+                className="text-xs font-medium text-primary underline"
+                href={`/api/finance/cfdi/${row.cfdi_document_id}/xml`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                XML
+              </a>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">Sin CFDI</span>
+          ),
+      },
+      {
         key: "actions",
-        header: "Actions",
+        header: "Acciones",
         render: (row: Invoice) =>
           !canWrite ? (
             <span className="text-xs text-muted-foreground">—</span>
@@ -264,12 +314,12 @@ export default function DashboardInvoicesPage() {
               variant="outline"
               onClick={() => {
                 setMarkPaidInvoice(row);
-                setPaymentMethod("bank_transfer");
+                setPaymentMethod("transferencia");
                 setPaymentReference("");
               }}
               disabled={statusUpdatingId === row.id}
             >
-              Mark as paid
+              Marcar pagada
             </Button>
           ) : (
             <Button
@@ -280,7 +330,7 @@ export default function DashboardInvoicesPage() {
               }}
               disabled={statusUpdatingId === row.id}
             >
-              Reopen
+              Reabrir
             </Button>
           ),
       },
@@ -293,24 +343,28 @@ export default function DashboardInvoicesPage() {
       {canWrite ? <InvoiceUploadForm onUpload={handleUpload} /> : null}
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>Uploaded invoices</CardTitle>
-          <div className="flex items-center gap-2">
-            <CardDescription className="hidden md:block">
-              Live query mode from backend.
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Libro de facturas</CardTitle>
+            <CardDescription>
+              Todas tus facturas para conciliar: del CRM, del SAT (Descarga Masiva), XML subidos y
+              CFDI timbrados. Este libro <strong>no emite</strong> comprobantes fiscales.
             </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
             {canWrite ? (
               <Button
+                variant="outline"
                 onClick={() => {
                   resetCreateForm();
                   setIsCreateOpen(true);
                 }}
               >
-                New invoice
+                Registro manual
               </Button>
             ) : null}
             <Button variant="outline" onClick={loadInvoices} disabled={isLoading}>
-              {isLoading ? "Refreshing..." : "Refresh"}
+              {isLoading ? "Actualizando…" : "Actualizar"}
             </Button>
           </div>
         </CardHeader>
@@ -319,7 +373,7 @@ export default function DashboardInvoicesPage() {
             rows={invoices}
             columns={columns}
             getRowId={(row) => row.id}
-            emptyMessage={isLoading ? "Loading invoices..." : "No invoices yet."}
+            emptyMessage={isLoading ? "Cargando facturas…" : "Aún no hay facturas."}
           />
         </CardContent>
       </Card>
@@ -335,46 +389,36 @@ export default function DashboardInvoicesPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New invoice (manual)</DialogTitle>
+            <DialogTitle>Registro manual</DialogTitle>
             <DialogDescription>
-              Register an invoice manually. For SAT CFDI 4.0 XML files, use the
-              upload form instead.
+              Anota una factura en tu libro para conciliar. <strong>No genera ningún CFDI ante el
+              SAT</strong> — es sólo un apunte contable. Para timbrar usa la sección CFDI; para
+              importar XML del SAT usa la carga de arriba.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="create_uuid_sat">UUID (SAT)</Label>
-              <Input
-                id="create_uuid_sat"
-                value={createForm.uuid_sat}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, uuid_sat: event.target.value }))
-                }
-                placeholder="A1B2C3D4-E5F6-4789-8ABC-DEF012345678"
-              />
-            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="create_emitter">Emitter</Label>
+                <Label htmlFor="create_emitter">Emisor (quién factura)</Label>
                 <Input
                   id="create_emitter"
                   value={createForm.emitter}
                   onChange={(event) =>
                     setCreateForm((prev) => ({ ...prev, emitter: event.target.value }))
                   }
-                  placeholder="RFC / name"
+                  placeholder="Nombre o RFC"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="create_receiver">Receiver</Label>
+                <Label htmlFor="create_receiver">Receptor (a quién)</Label>
                 <Input
                   id="create_receiver"
                   value={createForm.receiver}
                   onChange={(event) =>
                     setCreateForm((prev) => ({ ...prev, receiver: event.target.value }))
                   }
-                  placeholder="RFC / name"
+                  placeholder="Nombre o RFC"
                 />
               </div>
             </div>
@@ -394,7 +438,7 @@ export default function DashboardInvoicesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="create_invoice_date">Invoice date</Label>
+                <Label htmlFor="create_invoice_date">Fecha</Label>
                 <Input
                   id="create_invoice_date"
                   type="date"
@@ -406,7 +450,7 @@ export default function DashboardInvoicesPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create_status">Status</Label>
+              <Label htmlFor="create_status">Estatus</Label>
               <select
                 id="create_status"
                 className="flex h-10 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -418,8 +462,8 @@ export default function DashboardInvoicesPage() {
                   }))
                 }
               >
-                <option value="pending">pending</option>
-                <option value="paid">paid</option>
+                <option value="pending">Pendiente</option>
+                <option value="paid">Pagada</option>
               </select>
             </div>
           </div>
@@ -433,10 +477,10 @@ export default function DashboardInvoicesPage() {
               }}
               disabled={isCreating}
             >
-              Cancel
+              Cancelar
             </Button>
             <Button onClick={handleCreateInvoice} disabled={isCreating}>
-              {isCreating ? "Saving..." : "Create invoice"}
+              {isCreating ? "Guardando…" : "Agregar al libro"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -452,29 +496,29 @@ export default function DashboardInvoicesPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mark invoice as paid</DialogTitle>
+            <DialogTitle>Marcar factura como pagada</DialogTitle>
             <DialogDescription>
-              Add optional payment method/reference for traceability.
+              Agrega método y referencia de pago (opcional) para tu trazabilidad.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label htmlFor="invoice_payment_method">Payment method</Label>
+              <Label htmlFor="invoice_payment_method">Método de pago</Label>
               <Input
                 id="invoice_payment_method"
                 value={paymentMethod}
                 onChange={(event) => setPaymentMethod(event.target.value)}
-                placeholder="bank_transfer"
+                placeholder="transferencia"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="invoice_payment_reference">Payment reference</Label>
+              <Label htmlFor="invoice_payment_reference">Referencia de pago</Label>
               <Input
                 id="invoice_payment_reference"
                 value={paymentReference}
                 onChange={(event) => setPaymentReference(event.target.value)}
-                placeholder="Optional"
+                placeholder="Opcional"
               />
             </div>
           </div>
@@ -485,7 +529,7 @@ export default function DashboardInvoicesPage() {
               onClick={() => setMarkPaidInvoice(null)}
               disabled={Boolean(statusUpdatingId)}
             >
-              Cancel
+              Cancelar
             </Button>
             <Button
               onClick={async () => {
@@ -500,7 +544,7 @@ export default function DashboardInvoicesPage() {
               }}
               disabled={Boolean(statusUpdatingId)}
             >
-              {statusUpdatingId ? "Saving..." : "Confirm paid"}
+              {statusUpdatingId ? "Guardando…" : "Confirmar pago"}
             </Button>
           </DialogFooter>
         </DialogContent>
