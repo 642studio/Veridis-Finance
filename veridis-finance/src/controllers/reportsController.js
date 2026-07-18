@@ -63,9 +63,19 @@ async function getAgingReport(request, reply) {
   reply.send({ data: report });
 }
 
+/** Recordatorios de cobro listos para copiar/enviar, por cliente. */
+async function getCollectionReminders(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  const report = await reportsService.getCollectionReminders({
+    organization_id: organizationId,
+  });
+  reply.send({ data: report });
+}
+
 module.exports = {
   getMonthlyReport,
   getDiotReport,
   getDiotBatch,
   getAgingReport,
+  getCollectionReminders,
 };

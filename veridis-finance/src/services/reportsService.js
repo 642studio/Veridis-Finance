@@ -233,10 +233,89 @@ async function getAgingReport({ organization_id }) {
   return { receivables: round(receivables), payables: round(payables) };
 }
 
+/** Compose a polite es-MX collection reminder for one client. Pure. */
+function composeReminderMessage({ counterparty, invoices, total }) {
+  const fmt = (n) =>
+    Number(n).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+  const lines = invoices
+    .slice(0, 10)
+    .map(
+      (inv) =>
+        `  • ${fmt(inv.total)} — factura del ${String(inv.invoice_date).slice(0, 10)} (${inv.days_old} días)`
+    )
+    .join('\n');
+  return (
+    `Hola ${counterparty}:\n\n` +
+    `Te compartimos un recordatorio amistoso de tu saldo pendiente por ${fmt(total)}:\n\n` +
+    `${lines}\n\n` +
+    `Si ya realizaste el pago, por favor ignora este mensaje o compártenos el comprobante. ` +
+    `Quedamos atentos, ¡gracias!`
+  );
+}
+
+/**
+ * Recordatorios de cobro: pending ISSUED invoices grouped by client, each with
+ * a ready-to-send es-MX message (copy/paste to WhatsApp or email). Skips
+ * synthetic CRM placeholders? No — CRM sales are real receivables too.
+ */
+async function getCollectionReminders({ organization_id }) {
+  const { rows } = await pool.query(
+    `SELECT receiver, receiver_rfc, total, invoice_date,
+            GREATEST(0, EXTRACT(DAY FROM now() - invoice_date))::int AS days_old
+       FROM finance.invoices
+      WHERE organization_id = $1
+        AND status = 'pending'
+        AND COALESCE(direction, 'issued') = 'issued'
+      ORDER BY invoice_date ASC`,
+    [organization_id]
+  );
+
+  const byClient = new Map();
+  for (const row of rows) {
+    const key = `${row.receiver || '—'}|${row.receiver_rfc || ''}`;
+    if (!byClient.has(key)) {
+      byClient.set(key, {
+        counterparty: row.receiver || row.receiver_rfc || 'Cliente',
+        rfc: row.receiver_rfc || null,
+        total: 0,
+        invoice_count: 0,
+        max_days_old: 0,
+        invoices: [],
+      });
+    }
+    const c = byClient.get(key);
+    c.total += Number(row.total) || 0;
+    c.invoice_count += 1;
+    c.max_days_old = Math.max(c.max_days_old, row.days_old);
+    if (c.invoices.length < 10) {
+      c.invoices.push({
+        total: Number(row.total) || 0,
+        invoice_date: row.invoice_date,
+        days_old: row.days_old,
+      });
+    }
+  }
+
+  const clients = [...byClient.values()]
+    .map((c) => ({
+      counterparty: c.counterparty,
+      rfc: c.rfc,
+      total: Number(c.total.toFixed(2)),
+      invoice_count: c.invoice_count,
+      max_days_old: c.max_days_old,
+      message: composeReminderMessage(c),
+    }))
+    .sort((a, b) => b.max_days_old - a.max_days_old || b.total - a.total);
+
+  return { clients };
+}
+
 module.exports = {
   getMonthlyReport,
   getDiotReport,
   getDiotBatchFile,
   getAgingReport,
+  getCollectionReminders,
+  composeReminderMessage,
   agingBucket,
 };

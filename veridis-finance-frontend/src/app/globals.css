@@ -132,3 +132,19 @@ h6 {
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Impresión: los reportes se imprimen limpios (Imprimir / PDF). */
+@media print {
+  aside,
+  header,
+  .no-print,
+  button {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}

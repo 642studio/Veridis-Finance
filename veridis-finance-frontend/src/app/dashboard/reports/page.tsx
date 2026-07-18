@@ -74,6 +74,15 @@ interface AgingReport {
   payables: AgingSide;
 }
 
+interface ReminderClient {
+  counterparty: string;
+  rfc: string | null;
+  total: number;
+  invoice_count: number;
+  max_days_old: number;
+  message: string;
+}
+
 const AGING_BUCKET_KEYS = ["0-30", "31-60", "61-90", "90+"] as const;
 
 function buildPeriodsEnding(count: number, month: number, year: number) {
@@ -118,6 +127,7 @@ export default function DashboardReportsPage() {
   const [cashflowTrendData, setCashflowTrendData] = useState<CashflowLineDatum[]>([]);
   const [diot, setDiot] = useState<DiotReport | null>(null);
   const [aging, setAging] = useState<AgingReport | null>(null);
+  const [reminders, setReminders] = useState<ReminderClient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadReport = useCallback(async () => {
@@ -185,6 +195,15 @@ export default function DashboardReportsPage() {
         setAging(agingResponse.data);
       } catch {
         setAging(null);
+      }
+      // Recordatorios de cobro — best-effort.
+      try {
+        const remindersResponse = await clientApiFetch<
+          ApiEnvelope<{ clients: ReminderClient[] }>
+        >("/api/finance/reports/collection-reminders");
+        setReminders(remindersResponse.data?.clients ?? []);
+      } catch {
+        setReminders([]);
       }
     } catch (error) {
       const message =
@@ -292,9 +311,17 @@ export default function DashboardReportsPage() {
               />
             </div>
 
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? "Cargando…" : "Generar reporte"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="no-print shrink-0"
+                onClick={() => window.print()}
+              >
+                Imprimir / PDF
               </Button>
             </div>
           </form>
@@ -418,6 +445,61 @@ export default function DashboardReportsPage() {
             </Card>
           ))}
         </div>
+      ) : null}
+
+      {reminders.length > 0 ? (
+        <Card className="no-print">
+          <CardHeader>
+            <CardTitle>Recordatorios de cobro ({reminders.length} clientes)</CardTitle>
+            <CardDescription>
+              Mensajes listos para enviar por WhatsApp o correo, generados desde tus facturas
+              pendientes de cobro. Copia y pega — sin redactar nada.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {reminders.slice(0, 10).map((client, i) => (
+                <li
+                  key={i}
+                  className="flex flex-col gap-2 rounded-xl border border-border/70 p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{client.counterparty}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {client.invoice_count} factura(s) ·{" "}
+                      {client.total.toLocaleString("es-MX", {
+                        style: "currency",
+                        currency: "MXN",
+                      })}{" "}
+                      · la más antigua {client.max_days_old} días
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(client.message);
+                        notify.success({
+                          title: "Mensaje copiado",
+                          description: `Recordatorio para ${client.counterparty} listo para pegar.`,
+                        });
+                      } catch {
+                        notify.error({
+                          title: "No se pudo copiar",
+                          description: "Selecciona y copia manualmente.",
+                        });
+                      }
+                    }}
+                  >
+                    Copiar mensaje
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       ) : null}
 
       <Card>

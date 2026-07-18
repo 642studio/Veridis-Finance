@@ -3,6 +3,7 @@ const {
   getDiotReport,
   getDiotBatch,
   getAgingReport,
+  getCollectionReminders,
 } = require('../controllers/reportsController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -52,6 +53,18 @@ async function reportsRoutes(app) {
       ],
     },
     getAgingReport
+  );
+
+  // Recordatorios de cobro por cliente (mensaje listo para copiar/enviar).
+  app.get(
+    '/report/collection-reminders',
+    {
+      preHandler: [
+        authenticate,
+        authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS]),
+      ],
+    },
+    getCollectionReminders
   );
 }
 

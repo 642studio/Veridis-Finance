@@ -195,6 +195,18 @@ function expect(cond, message) {
     expect(d.receivables.buckets['0-30'], 'sin buckets');
   });
 
+  await step('11c. Recordatorios de cobro', async () => {
+    const r = await api('/api/finance/report/collection-reminders');
+    expect(r.status === 200, `status ${r.status}`);
+    const clients = r.json?.data?.clients;
+    expect(Array.isArray(clients), 'sin lista de clientes');
+    // La factura E2E sigue pendiente en este punto sólo si la auto-conciliación
+    // no la tomó; si la tomó, la lista puede venir vacía — ambas válidas.
+    if (clients.length) {
+      expect(clients[0].message && clients[0].message.includes('$'), 'mensaje sin monto');
+    }
+  });
+
   await step('12. Planeación: plantilla → import → resultados', async () => {
     const tpl = await api('/api/planning/template', { raw: true });
     expect(tpl.status === 200 && tpl.buffer.length > 1000, `plantilla status ${tpl.status}`);
