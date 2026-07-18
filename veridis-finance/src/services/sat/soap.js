@@ -282,18 +282,34 @@ function endpoints(env = 'production') {
   return ENDPOINTS[env] || ENDPOINTS.production;
 }
 
-async function postSoap(url, soapAction, xml, extraHeaders = {}) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: `"${soapAction}"`,
-      ...extraHeaders,
-    },
-    body: xml,
-  });
-  const text = await res.text();
-  return { status: res.status, body: text, headers: res.headers };
+const DEFAULT_TIMEOUT_MS = 20000;
+
+async function postSoap(url, soapAction, xml, extraHeaders = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/xml; charset=utf-8',
+        SOAPAction: `"${soapAction}"`,
+        ...extraHeaders,
+      },
+      body: xml,
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    return { status: res.status, body: text, headers: res.headers };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const e = new Error(`El SAT no respondió en ${Math.round(timeoutMs / 1000)}s (timeout).`);
+      e.statusCode = 504;
+      throw e;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 module.exports = {

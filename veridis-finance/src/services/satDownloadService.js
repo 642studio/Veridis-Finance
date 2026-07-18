@@ -301,8 +301,27 @@ async function checkRequest(organizationId, requestId, env = 'production') {
   if (req.status === 'completed') return req;
   if (!req.sat_request_id) throw badRequest('La solicitud no tiene folio del SAT (revisa el estado).');
 
+  // Wall-clock budget so a big download never blows the serverless limit
+  // (Vercel maxDuration 60s; each SOAP call is capped at 20s). We stop early and
+  // resume the remaining packages on the next check/cron.
+  const deadline = Date.now() + 30000;
+
   const fiel = await loadActiveFiel(organizationId);
   const token = await authenticate(fiel, env);
+
+  // Resume: a request already 'downloading' has its remaining package ids
+  // stored; keep pulling those instead of re-verifying.
+  if (req.status === 'downloading' && Array.isArray(req.package_ids) && req.package_ids.length) {
+    const { imported, doneIds } = await downloadAndImport(
+      organizationId, fiel, token, req.package_ids, req.request_type, env, deadline
+    );
+    const remaining = req.package_ids.filter((id) => !doneIds.includes(id));
+    return updateRequest(req.id, {
+      status: remaining.length ? 'downloading' : 'completed',
+      package_ids: JSON.stringify(remaining),
+      cfdi_imported: (req.cfdi_imported || 0) + imported,
+    });
+  }
 
   const envelope = soap.buildVerificaEnvelope(fiel, req.sat_request_id);
   const { body } = await soap.postSoap(
@@ -331,10 +350,25 @@ async function checkRequest(organizationId, requestId, env = 'production') {
       package_ids: JSON.stringify(packageIds),
       cfdi_found: numCfdi,
     });
-    const imported = await downloadAndImport(organizationId, fiel, token, packageIds, req.request_type, env);
+    const { imported, doneIds } = await downloadAndImport(
+      organizationId, fiel, token, packageIds, req.request_type, env, deadline
+    );
+    const remaining = packageIds.filter((id) => !doneIds.includes(id));
+    return updateRequest(req.id, {
+      status: remaining.length ? 'downloading' : 'completed',
+      package_ids: JSON.stringify(remaining),
+      cfdi_imported: imported,
+    });
+  }
+
+  if (estado === '3' && !packageIds.length) {
+    // Terminada sin paquetes = no hubo CFDI en el rango.
     return updateRequest(req.id, {
       status: 'completed',
-      cfdi_imported: imported,
+      sat_status_code: estado,
+      sat_message: 'Sin facturas en el rango solicitado.',
+      cfdi_found: 0,
+      cfdi_imported: 0,
     });
   }
 
@@ -361,9 +395,12 @@ function collectPackageIds(result) {
   return (Array.isArray(ids) ? ids : [ids]).map((v) => String(v)).filter(Boolean);
 }
 
-async function downloadAndImport(organizationId, fiel, token, packageIds, requestType, env) {
+async function downloadAndImport(organizationId, fiel, token, packageIds, requestType, env, deadline = Infinity) {
   let imported = 0;
+  const doneIds = [];
   for (const packageId of packageIds) {
+    // Stop before the serverless budget runs out; the rest resume next round.
+    if (Date.now() > deadline) break;
     const envelope = soap.buildDescargaEnvelope(fiel, packageId);
     const { body } = await soap.postSoap(
       soap.endpoints(env).descarga,
@@ -373,11 +410,12 @@ async function downloadAndImport(organizationId, fiel, token, packageIds, reques
     );
     const parsed = xml.parse(body);
     const paqueteB64 = firstDeep(parsed, 'Paquete');
+    doneIds.push(packageId); // consumed even if empty, so we don't loop forever
     if (!paqueteB64) continue;
     const zipBuf = Buffer.from(String(paqueteB64), 'base64');
     imported += await importPackage(organizationId, zipBuf, requestType);
   }
-  return imported;
+  return { imported, doneIds };
 }
 
 /** Import one downloaded ZIP (CFDI xml files or a Metadata text file). */

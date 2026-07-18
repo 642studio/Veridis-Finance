@@ -34,16 +34,33 @@ function authHeader(creds) {
   return 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64');
 }
 
+const FACTURAMA_TIMEOUT_MS = 20000;
+
 async function request(method, path, body, creds) {
-  const res = await fetch(`${baseUrl(creds?.env)}${path}`, {
-    method,
-    headers: {
-      Authorization: authHeader(creds),
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FACTURAMA_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${baseUrl(creds?.env)}${path}`, {
+      method,
+      headers: {
+        Authorization: authHeader(creds),
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const e = new Error(`Facturama no respondió en ${Math.round(FACTURAMA_TIMEOUT_MS / 1000)}s (timeout).`);
+      e.statusCode = 504;
+      throw e;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   const text = await res.text();
   let data;
