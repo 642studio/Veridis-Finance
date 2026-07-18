@@ -29,7 +29,12 @@ const uploadInvoiceFormSchema = z.object({
 
 const listInvoicesQuerySchema = z.object({
   status: z.enum(['pending', 'paid']).optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(100),
+  direction: z.enum(['issued', 'received']).optional(),
+  source: z
+    .enum(['upload', 'issued_cfdi', 'pac_received', 'crm', 'sat_download'])
+    .optional(),
+  q: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
@@ -64,14 +69,17 @@ async function listInvoices(request, reply) {
   const query = listInvoicesQuerySchema.parse(request.query || {});
   const organizationId = resolveOrganizationId(request);
 
-  const rows = await invoicesService.listInvoices({
+  const { rows, total } = await invoicesService.listInvoices({
     organization_id: organizationId,
     status: query.status,
+    direction: query.direction,
+    source: query.source,
+    q: query.q,
     limit: query.limit,
     offset: query.offset,
   });
 
-  reply.send({ data: rows });
+  reply.send({ data: rows, total });
 }
 
 /**
