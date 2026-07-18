@@ -187,6 +187,14 @@ function expect(cond, message) {
     expect(r2.status === 200, `batch status ${r2.status}`);
   });
 
+  await step('11b. Antigüedad de saldos (CxC/CxP)', async () => {
+    const r = await api('/api/finance/report/aging');
+    expect(r.status === 200, `status ${r.status}`);
+    const d = r.json?.data;
+    expect(d?.receivables && d?.payables, 'sin estructura receivables/payables');
+    expect(d.receivables.buckets['0-30'], 'sin buckets');
+  });
+
   await step('12. Planeación: plantilla → import → resultados', async () => {
     const tpl = await api('/api/planning/template', { raw: true });
     expect(tpl.status === 200 && tpl.buffer.length > 1000, `plantilla status ${tpl.status}`);
