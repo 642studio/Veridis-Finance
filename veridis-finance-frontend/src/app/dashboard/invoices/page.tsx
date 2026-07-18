@@ -53,10 +53,18 @@ function counterparty(row: Invoice): string {
   return row.direction === "issued" ? row.receiver : row.emitter;
 }
 
+const PAGE_SIZE = 50;
+
 export default function DashboardInvoicesPage() {
   const notify = useNotify();
   const { canWrite } = useSession();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [directionFilter, setDirectionFilter] = useState<"" | "issued" | "received">("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [searchQ, setSearchQ] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [markPaidInvoice, setMarkPaidInvoice] = useState<Invoice | null>(null);
@@ -72,13 +80,27 @@ export default function DashboardInvoicesPage() {
     status: "pending" as "pending" | "paid",
   });
 
+  const buildQuery = useCallback(
+    (limit: number, off: number) => {
+      const params = new URLSearchParams();
+      params.set("limit", String(limit));
+      params.set("offset", String(off));
+      if (directionFilter) params.set("direction", directionFilter);
+      if (sourceFilter) params.set("source", sourceFilter);
+      if (searchQ.trim()) params.set("q", searchQ.trim());
+      return params.toString();
+    },
+    [directionFilter, sourceFilter, searchQ]
+  );
+
   const loadInvoices = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await clientApiFetch<ApiEnvelope<Invoice[]>>(
-        "/api/finance/invoices?limit=100&offset=0"
+      const response = await clientApiFetch<ApiEnvelope<Invoice[]> & { total?: number }>(
+        `/api/finance/invoices?${buildQuery(PAGE_SIZE, offset)}`
       );
       setInvoices(response.data || []);
+      setTotal(response.total ?? (response.data || []).length);
     } catch (error) {
       const message =
         error instanceof ApiClientError ? error.message : "No se pudieron cargar las facturas";
@@ -87,11 +109,77 @@ export default function DashboardInvoicesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [notify]);
+  }, [notify, buildQuery, offset]);
 
   useEffect(() => {
     loadInvoices();
   }, [loadInvoices]);
+
+  // Cambiar filtros regresa a la primera página.
+  useEffect(() => {
+    setOffset(0);
+  }, [directionFilter, sourceFilter, searchQ]);
+
+  // Exporta el filtro actual a CSV (hasta 5000 filas), para el contador.
+  const exportCsv = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const all: Invoice[] = [];
+      for (let off = 0; off < 5000; off += 500) {
+        const res = await clientApiFetch<ApiEnvelope<Invoice[]>>(
+          `/api/finance/invoices?${buildQuery(500, off)}`
+        );
+        const chunk = res.data || [];
+        all.push(...chunk);
+        if (chunk.length < 500) break;
+      }
+      const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const lines = [
+        [
+          "uuid",
+          "tipo",
+          "origen",
+          "emisor",
+          "rfc_emisor",
+          "receptor",
+          "rfc_receptor",
+          "total",
+          "estatus",
+          "fecha",
+        ].join(","),
+        ...all.map((r) =>
+          [
+            esc(r.uuid_sat),
+            esc(r.direction === "issued" ? "Emitida" : "Recibida"),
+            esc(sourceMeta(r.source).label),
+            esc(r.emitter),
+            esc(r.emitter_rfc || ""),
+            esc(r.receiver),
+            esc(r.receiver_rfc || ""),
+            esc(r.total),
+            esc(r.status === "paid" ? "Pagada" : "Pendiente"),
+            esc(r.invoice_date?.slice(0, 10) || ""),
+          ].join(",")
+        ),
+      ];
+      const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `facturas-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify.success({
+        title: "CSV exportado",
+        description: `${all.length} factura(s) — se abre directo en Excel.`,
+      });
+    } catch (error) {
+      const message = error instanceof ApiClientError ? error.message : "No se pudo exportar";
+      notify.error({ title: "Error al exportar", description: message });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [buildQuery, notify]);
 
   const handleUpload = async (files: File[]) => {
     const formData = new FormData();
@@ -352,6 +440,9 @@ export default function DashboardInvoicesPage() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={exportCsv} disabled={isExporting}>
+              {isExporting ? "Exportando…" : "Exportar CSV"}
+            </Button>
             {canWrite ? (
               <Button
                 variant="outline"
@@ -369,12 +460,67 @@ export default function DashboardInvoicesPage() {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 grid gap-3 sm:grid-cols-3">
+            <Input
+              placeholder="Buscar por cliente, proveedor, RFC o folio…"
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+            />
+            <select
+              className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
+              value={directionFilter}
+              onChange={(e) => setDirectionFilter(e.target.value as "" | "issued" | "received")}
+            >
+              <option value="">Todas (emitidas y recibidas)</option>
+              <option value="issued">Emitidas</option>
+              <option value="received">Recibidas</option>
+            </select>
+            <select
+              className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+            >
+              <option value="">Todos los orígenes</option>
+              <option value="sat_download">SAT (Descarga Masiva)</option>
+              <option value="crm">CRM</option>
+              <option value="upload">XML subidos</option>
+              <option value="issued_cfdi">CFDI timbrados</option>
+              <option value="pac_received">PAC recibidas</option>
+            </select>
+          </div>
+
           <DataTable
             rows={invoices}
             columns={columns}
             getRowId={(row) => row.id}
             emptyMessage={isLoading ? "Cargando facturas…" : "Aún no hay facturas."}
           />
+
+          <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              {total > 0
+                ? `${Math.min(offset + 1, total)}–${Math.min(offset + PAGE_SIZE, total)} de ${total}`
+                : "Sin resultados"}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset === 0 || isLoading}
+                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={offset + PAGE_SIZE >= total || isLoading}
+                onClick={() => setOffset(offset + PAGE_SIZE)}
+              >
+                Siguiente
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

@@ -197,6 +197,9 @@ async function upsertFromCfdi(payload) {
 async function listInvoices({
   organization_id,
   status,
+  direction,
+  source,
+  q,
   limit = 100,
   offset = 0,
 }) {
@@ -207,6 +210,29 @@ async function listInvoices({
     values.push(status);
     conditions.push(`status = $${values.length}`);
   }
+  if (direction) {
+    values.push(direction);
+    conditions.push(`COALESCE(direction, 'issued') = $${values.length}`);
+  }
+  if (source) {
+    values.push(source);
+    conditions.push(`COALESCE(source, 'upload') = $${values.length}`);
+  }
+  if (q) {
+    values.push(`%${q}%`);
+    const p = `$${values.length}`;
+    conditions.push(
+      `(emitter ILIKE ${p} OR receiver ILIKE ${p} OR uuid_sat ILIKE ${p}
+        OR emitter_rfc ILIKE ${p} OR receiver_rfc ILIKE ${p})`
+    );
+  }
+
+  // Total for pagination (same filters, before limit/offset).
+  const { rows: countRows } = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM finance.invoices WHERE ${conditions.join(' AND ')}`,
+    values.slice()
+  );
+  const total = countRows[0]?.total ?? 0;
 
   values.push(limit);
   const limitParam = `$${values.length}`;
@@ -244,7 +270,7 @@ async function listInvoices({
   };
 
   const { rows } = await pool.query(query);
-  return rows;
+  return { rows, total };
 }
 
 async function updateInvoiceStatus({
