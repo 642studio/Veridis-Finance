@@ -46,8 +46,12 @@ const ENDPOINTS = {
 
 const SOAP_ACTIONS = {
   auth: 'http://DescargaMasivaTerceros.gob.mx/IAutenticacion/Autentica',
-  solicita:
-    'http://DescargaMasivaTerceros.sat.gob.mx/ISolicitaDescargaService/SolicitaDescarga',
+  // The SAT split the single SolicitaDescarga into two operations; the legacy
+  // one now returns ActionNotSupported. Pick by direction.
+  solicitaEmitidos:
+    'http://DescargaMasivaTerceros.sat.gob.mx/ISolicitaDescargaService/SolicitaDescargaEmitidos',
+  solicitaRecibidos:
+    'http://DescargaMasivaTerceros.sat.gob.mx/ISolicitaDescargaService/SolicitaDescargaRecibidos',
   verifica:
     'http://DescargaMasivaTerceros.sat.gob.mx/IVerificaSolicitudDescargaService/VerificaSolicitudDescarga',
   descarga: 'http://DescargaMasivaTerceros.sat.gob.mx/IDescargaMasivaService/Descargar',
@@ -204,15 +208,28 @@ function buildSolicitaEnvelope(fiel, { requestType, downloadType, dateFrom, date
       `RfcEmisor="${rfc}" RfcSolicitante="${rfc}" TipoSolicitud="${tipo}"`;
   }
 
+  // Split operation: SolicitaDescargaEmitidos (I issued) vs
+  // SolicitaDescargaRecibidos (I received). The signed <solicitud> node itself
+  // is identical in shape; only the wrapper element + SOAPAction differ.
+  const operation =
+    requestType === 'received' ? 'SolicitaDescargaRecibidos' : 'SolicitaDescargaEmitidos';
+
   const canonicalNode = `<solicitud xmlns="${NS.query}" ${attrs}></solicitud>`;
   const signature = buildEnvelopedSignature(fiel, canonicalNode);
 
   const body =
-    `<SolicitaDescarga xmlns="${NS.query}">` +
+    `<${operation} xmlns="${NS.query}">` +
     `<solicitud ${attrs}>${signature}</solicitud>` +
-    `</SolicitaDescarga>`;
+    `</${operation}>`;
 
   return wrapSimpleEnvelope(body);
+}
+
+/** The SOAPAction for a Solicita request, chosen by direction. */
+function solicitaAction(requestType) {
+  return requestType === 'received'
+    ? SOAP_ACTIONS.solicitaRecibidos
+    : SOAP_ACTIONS.solicitaEmitidos;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,5 +305,6 @@ module.exports = {
   buildSolicitaEnvelope,
   buildVerificaEnvelope,
   buildDescargaEnvelope,
+  solicitaAction,
   postSoap,
 };

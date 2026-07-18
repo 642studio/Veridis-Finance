@@ -226,7 +226,7 @@ async function createRequest(organizationId, opts, env = 'production') {
     });
     const { status, body } = await soap.postSoap(
       soap.endpoints(env).solicita,
-      soap.SOAP_ACTIONS.solicita,
+      soap.solicitaAction(requestType),
       envelope,
       { Authorization: `WRAP access_token="${token}"` }
     );
