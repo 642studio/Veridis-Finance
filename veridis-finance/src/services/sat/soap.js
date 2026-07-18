@@ -54,7 +54,10 @@ const SOAP_ACTIONS = {
     'http://DescargaMasivaTerceros.sat.gob.mx/ISolicitaDescargaService/SolicitaDescargaRecibidos',
   verifica:
     'http://DescargaMasivaTerceros.sat.gob.mx/IVerificaSolicitudDescargaService/VerificaSolicitudDescarga',
-  descarga: 'http://DescargaMasivaTerceros.sat.gob.mx/IDescargaMasivaService/Descargar',
+  // Contract name is IDescargaMasivaTercerosService — with "Terceros". The
+  // shorter name returns ActionNotSupported and an empty (package-less) body.
+  descarga:
+    'http://DescargaMasivaTerceros.sat.gob.mx/IDescargaMasivaTercerosService/Descargar',
 };
 
 function pad(n) {
