@@ -287,6 +287,32 @@ async function createRequest(organizationId, opts, env = 'production') {
 }
 
 /**
+ * Re-import a finished/failed request WITHOUT opening a new SAT solicitud: the
+ * SAT keeps the packages of a terminada solicitud available, and re-verifying
+ * returns the same package ids. Used to recover data dropped by an importer
+ * bug (e.g. the BOM issue) — resets the row to 'accepted' and re-runs the
+ * normal check flow with the fixed importer. Idempotent: dedupe by uuid.
+ */
+async function reimportRequest(organizationId, requestId, env = 'production') {
+  const { rows } = await pool.query(
+    `SELECT * FROM finance.sat_download_requests WHERE id = $1 AND organization_id = $2`,
+    [requestId, organizationId]
+  );
+  const req = rows[0];
+  if (!req) throw notFound('Solicitud no encontrada.');
+  if (!req.sat_request_id) throw badRequest('La solicitud no tiene folio del SAT; crea una nueva.');
+
+  await updateRequest(req.id, {
+    status: 'accepted',
+    package_ids: '[]',
+    cfdi_imported: 0,
+    sat_message: 'Reimportando desde el SAT…',
+  });
+  // Advance immediately so the user sees movement without waiting for the loop.
+  return checkRequest(organizationId, requestId, env);
+}
+
+/**
  * Poll a request. When the SAT reports it ready, download every package, parse
  * and import into the ledger, and mark completed. Idempotent — safe to call
  * repeatedly; imports dedupe by (org, uuid_sat).
@@ -615,6 +641,7 @@ module.exports = {
   deleteCredentials,
   createRequest,
   checkRequest,
+  reimportRequest,
   listRequests,
   // exported for tests
   importMetadata,

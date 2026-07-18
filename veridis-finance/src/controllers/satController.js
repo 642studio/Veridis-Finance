@@ -101,11 +101,20 @@ async function listRequests(request, reply) {
   reply.send({ data: rows });
 }
 
+/** Re-download + re-import the packages of an already-finished solicitud. */
+async function reimportRequest(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  const { id } = requestParamsSchema.parse(request.params || {});
+  const req = await satService.reimportRequest(organizationId, id, SAT_ENV);
+  reply.send({ data: req });
+}
+
 module.exports = {
   getCredentials,
   uploadCredentials,
   deleteCredentials,
   createRequest,
   checkRequest,
+  reimportRequest,
   listRequests,
 };
