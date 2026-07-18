@@ -1,5 +1,6 @@
 const {
   importPlanningWorkbook,
+  downloadPlanningTemplate,
   listPlans,
   getPlanOverview,
   getPlanResults,
@@ -33,6 +34,13 @@ async function planningRoutes(app) {
       bodyLimit: 1024 * 1024 * 20,
     },
     importPlanningWorkbook
+  );
+
+  // Plantilla XLSX lista para llenar y volver a subir en /planning/import.
+  app.get(
+    '/planning/template',
+    { preHandler: [authenticate, authorize(READ_ROLES)] },
+    downloadPlanningTemplate
   );
 
   app.get(

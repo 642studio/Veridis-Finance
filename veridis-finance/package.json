@@ -13,7 +13,8 @@
     "db:setup": "node scripts/migrate.js && node scripts/seed.js",
     "seed": "node scripts/seed.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "smoke:phase1": "node scripts/smoke-phase1.js"
+    "smoke:phase1": "node scripts/smoke-phase1.js",
+    "e2e": "node scripts/e2e-full.js"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

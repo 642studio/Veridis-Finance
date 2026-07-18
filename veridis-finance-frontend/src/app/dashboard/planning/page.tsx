@@ -1517,11 +1517,21 @@ export default function DashboardPlanningPage() {
 
       {activeTab === "import" ? (
         <Card>
-          <CardHeader>
-            <CardTitle>Import Input-Based Template</CardTitle>
-            <CardDescription>
-              Upload your XLSX template. After import, all edits are done directly in the app.
-            </CardDescription>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Importar plantilla de planeación</CardTitle>
+              <CardDescription>
+                1) Descarga la plantilla · 2) Llénala en Excel (productos, costos fijos, variables) ·
+                3) Súbela aquí. Después todo se edita directo en la app.
+              </CardDescription>
+            </div>
+            <a
+              href="/api/planning/template"
+              download
+              className="inline-flex h-10 shrink-0 items-center rounded-xl border border-border bg-card px-4 text-sm font-medium hover:bg-muted"
+            >
+              Descargar plantilla (.xlsx)
+            </a>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleImport} className="space-y-4">
