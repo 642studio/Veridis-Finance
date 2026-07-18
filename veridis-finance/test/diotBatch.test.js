@@ -23,3 +23,15 @@ test('DIOT batch layout: 23 pipe-separated fields, whole pesos, tercero 04 / ope
   assert.match(line, /\|99\|/); // retención rounded
   assert.equal(typeof reportsService.getDiotBatchFile, 'function');
 });
+
+test('agingBucket classifies days into the four standard buckets', () => {
+  const { agingBucket } = require('../src/services/reportsService');
+  assert.equal(agingBucket(0), '0-30');
+  assert.equal(agingBucket(30), '0-30');
+  assert.equal(agingBucket(31), '31-60');
+  assert.equal(agingBucket(60), '31-60');
+  assert.equal(agingBucket(61), '61-90');
+  assert.equal(agingBucket(90), '61-90');
+  assert.equal(agingBucket(91), '90+');
+  assert.equal(agingBucket(400), '90+');
+});

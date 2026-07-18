@@ -51,6 +51,31 @@ interface DiotReport {
   unclassified_count: number;
 }
 
+interface AgingBucket {
+  total: number;
+  count: number;
+}
+
+interface AgingSide {
+  total: number;
+  count: number;
+  buckets: Record<"0-30" | "31-60" | "61-90" | "90+", AgingBucket>;
+  oldest: Array<{
+    counterparty: string;
+    rfc: string | null;
+    total: number;
+    invoice_date: string;
+    days_old: number;
+  }>;
+}
+
+interface AgingReport {
+  receivables: AgingSide;
+  payables: AgingSide;
+}
+
+const AGING_BUCKET_KEYS = ["0-30", "31-60", "61-90", "90+"] as const;
+
 function buildPeriodsEnding(count: number, month: number, year: number) {
   const periods: Array<{ month: number; year: number; label: string }> = [];
 
@@ -92,6 +117,7 @@ export default function DashboardReportsPage() {
   const [monthlyTrendData, setMonthlyTrendData] = useState<MonthlyIncomeExpenseDatum[]>([]);
   const [cashflowTrendData, setCashflowTrendData] = useState<CashflowLineDatum[]>([]);
   const [diot, setDiot] = useState<DiotReport | null>(null);
+  const [aging, setAging] = useState<AgingReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadReport = useCallback(async () => {
@@ -150,6 +176,15 @@ export default function DashboardReportsPage() {
         setDiot(diotResponse.data);
       } catch {
         setDiot(null);
+      }
+      // Antigüedad de saldos — también best-effort.
+      try {
+        const agingResponse = await clientApiFetch<ApiEnvelope<AgingReport>>(
+          "/api/finance/reports/aging"
+        );
+        setAging(agingResponse.data);
+      } catch {
+        setAging(null);
       }
     } catch (error) {
       const message =
@@ -322,6 +357,68 @@ export default function DashboardReportsPage() {
           />
         </CardContent>
       </Card>
+
+      {aging ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {(
+            [
+              ["Cuentas por cobrar (nos deben)", aging.receivables],
+              ["Cuentas por pagar (debemos)", aging.payables],
+            ] as Array<[string, AgingSide]>
+          ).map(([title, side]) => (
+            <Card key={title}>
+              <CardHeader>
+                <CardTitle className="text-base">{title}</CardTitle>
+                <CardDescription>
+                  {side.count} factura(s) pendientes ·{" "}
+                  {side.total.toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-4 gap-2 text-center text-sm">
+                  {AGING_BUCKET_KEYS.map((bucket) => (
+                    <div key={bucket} className="rounded-xl border border-border/70 p-2">
+                      <div className="text-xs text-muted-foreground">{bucket} días</div>
+                      <div className="font-semibold">
+                        {side.buckets[bucket].total.toLocaleString("es-MX", {
+                          style: "currency",
+                          currency: "MXN",
+                          maximumFractionDigits: 0,
+                        })}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {side.buckets[bucket].count} fact.
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {side.oldest.length > 0 ? (
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
+                      Más antiguas
+                    </p>
+                    <ul className="space-y-1 text-sm">
+                      {side.oldest.slice(0, 5).map((row, i) => (
+                        <li key={i} className="flex items-center justify-between gap-2">
+                          <span className="truncate">{row.counterparty || row.rfc || "—"}</span>
+                          <span className="shrink-0 text-muted-foreground">
+                            {row.days_old} días ·{" "}
+                            {row.total.toLocaleString("es-MX", {
+                              style: "currency",
+                              currency: "MXN",
+                              maximumFractionDigits: 0,
+                            })}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

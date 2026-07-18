@@ -169,8 +169,74 @@ async function getDiotBatchFile({ organization_id, year, month }) {
   };
 }
 
+/** Aging bucket for an invoice `days` old. Pure — unit tested. */
+function agingBucket(days) {
+  if (days <= 30) return '0-30';
+  if (days <= 60) return '31-60';
+  if (days <= 90) return '61-90';
+  return '90+';
+}
+
+const AGING_BUCKETS = ['0-30', '31-60', '61-90', '90+'];
+
+/**
+ * Antigüedad de saldos: pending invoices grouped by how many days old they are,
+ * split into receivables (issued — clients owe us) and payables (received — we
+ * owe suppliers). Fed by the unified ledger, so SAT/CRM/XML sources all count.
+ */
+async function getAgingReport({ organization_id }) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(direction, 'issued') AS direction,
+            emitter, receiver, emitter_rfc, receiver_rfc, total, invoice_date,
+            GREATEST(0, EXTRACT(DAY FROM now() - invoice_date))::int AS days_old
+       FROM finance.invoices
+      WHERE organization_id = $1
+        AND status = 'pending'
+      ORDER BY invoice_date ASC`,
+    [organization_id]
+  );
+
+  const empty = () => ({
+    total: 0,
+    count: 0,
+    buckets: Object.fromEntries(AGING_BUCKETS.map((b) => [b, { total: 0, count: 0 }])),
+    oldest: [],
+  });
+  const receivables = empty();
+  const payables = empty();
+
+  for (const row of rows) {
+    const side = row.direction === 'received' ? payables : receivables;
+    const bucket = agingBucket(row.days_old);
+    const amount = Number(row.total) || 0;
+    side.total += amount;
+    side.count += 1;
+    side.buckets[bucket].total += amount;
+    side.buckets[bucket].count += 1;
+    if (side.oldest.length < 10) {
+      side.oldest.push({
+        counterparty: row.direction === 'received' ? row.emitter : row.receiver,
+        rfc: row.direction === 'received' ? row.emitter_rfc : row.receiver_rfc,
+        total: amount,
+        invoice_date: row.invoice_date,
+        days_old: row.days_old,
+      });
+    }
+  }
+
+  const round = (side) => {
+    side.total = Number(side.total.toFixed(2));
+    for (const b of AGING_BUCKETS) side.buckets[b].total = Number(side.buckets[b].total.toFixed(2));
+    return side;
+  };
+
+  return { receivables: round(receivables), payables: round(payables) };
+}
+
 module.exports = {
   getMonthlyReport,
   getDiotReport,
   getDiotBatchFile,
+  getAgingReport,
+  agingBucket,
 };

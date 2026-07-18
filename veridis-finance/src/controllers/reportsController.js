@@ -56,8 +56,16 @@ async function getDiotBatch(request, reply) {
     .send(file.content);
 }
 
+/** Antigüedad de saldos (CxC / CxP) desde el libro de facturas pendientes. */
+async function getAgingReport(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  const report = await reportsService.getAgingReport({ organization_id: organizationId });
+  reply.send({ data: report });
+}
+
 module.exports = {
   getMonthlyReport,
   getDiotReport,
   getDiotBatch,
+  getAgingReport,
 };

@@ -2,6 +2,7 @@ const {
   getMonthlyReport,
   getDiotReport,
   getDiotBatch,
+  getAgingReport,
 } = require('../controllers/reportsController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -39,6 +40,18 @@ async function reportsRoutes(app) {
       ],
     },
     getDiotBatch
+  );
+
+  // Antigüedad de saldos (CxC/CxP) del libro de facturas pendientes.
+  app.get(
+    '/report/aging',
+    {
+      preHandler: [
+        authenticate,
+        authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER]),
+      ],
+    },
+    getAgingReport
   );
 }
 
