@@ -157,6 +157,29 @@ function firstDeep(obj, key) {
 }
 
 /**
+ * Find the first node in a parsed SOAP response that carries a given attribute.
+ * The SAT wraps its answer in operation-specific elements
+ * (SolicitaDescargaEmitidosResult, SolicitaDescargaRecibidosResult, …) and puts
+ * the real payload — IdSolicitud, CodEstatus, Mensaje, EstadoSolicitud — in
+ * ATTRIBUTES. Searching by attribute is robust to the element name.
+ */
+function findNodeWithAttr(obj, attr) {
+  if (!obj || typeof obj !== 'object') return undefined;
+  if (Object.prototype.hasOwnProperty.call(obj, attr)) return obj;
+  for (const v of Object.values(obj)) {
+    const found = findNodeWithAttr(v, attr);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** Map a SAT CodEstatus + Mensaje into a readable line. */
+function satStatusLine(cod, mensaje) {
+  const c = cod ? `[${cod}] ` : '';
+  return `${c}${mensaje || 'sin mensaje del SAT'}`.trim();
+}
+
+/**
  * Best-effort extraction of a human-readable reason from a SAT SOAP response.
  * SAT errors surface as SOAP faults (faultstring / Reason / Text) or, on a bad
  * signature, as a bare HTTP 500 with an HTML/text body. We return whatever is
@@ -231,16 +254,22 @@ async function createRequest(organizationId, opts, env = 'production') {
       { Authorization: `WRAP access_token="${token}"` }
     );
     const parsed = xml.parse(body);
-    const result = firstDeep(parsed, 'SolicitaDescargaResult') || {};
+    // The split operations return SolicitaDescarga{Emitidos,Recibidos}Result;
+    // find the node by attribute rather than a fixed element name.
+    const result =
+      findNodeWithAttr(parsed, '@_IdSolicitud') ||
+      findNodeWithAttr(parsed, '@_CodEstatus') ||
+      {};
     const idSolicitud = result['@_IdSolicitud'];
     const cod = result['@_CodEstatus'];
+    const mensaje = result['@_Mensaje'];
 
     if (!idSolicitud) {
-      const mensaje = result['@_Mensaje'] || extractFault(parsed, body, status);
+      const reason = cod || mensaje ? satStatusLine(cod, mensaje) : extractFault(parsed, body, status);
       return updateRequest(req.id, {
         status: 'failed',
         sat_status_code: cod || null,
-        sat_message: `Solicitud rechazada — ${String(mensaje)}`.slice(0, 400),
+        sat_message: `Solicitud rechazada — ${reason}`.slice(0, 400),
       });
     }
     return updateRequest(req.id, {
@@ -283,7 +312,10 @@ async function checkRequest(organizationId, requestId, env = 'production') {
     { Authorization: `WRAP access_token="${token}"` }
   );
   const parsed = xml.parse(body);
-  const result = firstDeep(parsed, 'VerificaSolicitudDescargaResult') || {};
+  const result =
+    findNodeWithAttr(parsed, '@_EstadoSolicitud') ||
+    findNodeWithAttr(parsed, '@_CodEstatus') ||
+    {};
   const estado = String(result['@_EstadoSolicitud'] || '');
   const numCfdi = parseInt(result['@_NumeroCFDIs'] || '0', 10) || 0;
   const mensaje = result['@_Mensaje'] || '';
