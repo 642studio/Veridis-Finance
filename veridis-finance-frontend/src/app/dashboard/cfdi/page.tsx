@@ -555,9 +555,11 @@ export default function CfdiPage() {
       {pending.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Facturas pendientes de CSF ({pending.length})</CardTitle>
+            <CardTitle className="text-base">Ventas del 642 CRM ({pending.length})</CardTitle>
             <CardDescription>
-              Pagadas en 642 CRM — esperan la Constancia del cliente para timbrar.
+              Cobros registrados en tu CRM. <strong>No todas requieren factura</strong>: timbra solo
+              las que el cliente pida (con su Constancia). Las demás márcalas como venta sin factura —
+              siguen contando en tu libro para conciliar.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -566,7 +568,7 @@ export default function CfdiPage() {
                 <thead className="text-left text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="py-2">Cliente</th>
-                    <th className="py-2">Factura</th>
+                    <th className="py-2">Concepto / venta</th>
                     <th className="py-2">Total</th>
                     <th className="py-2 text-right">Acción</th>
                   </tr>
@@ -589,17 +591,20 @@ export default function CfdiPage() {
                             onClick={async () => {
                               try {
                                 await clientApiFetch(`/api/crm/pending/${p.id}/dismiss`, { method: "POST" });
-                                notify.success({ title: "Pendiente descartado" });
+                                notify.success({
+                                  title: "Marcada como venta sin factura",
+                                  description: "Queda en tu libro como cobro; no se timbra.",
+                                });
                                 load();
                               } catch (error) {
                                 notify.error({
-                                  title: "No se pudo descartar",
+                                  title: "No se pudo actualizar",
                                   description: error instanceof ApiClientError ? error.message : "Error",
                                 });
                               }
                             }}
                           >
-                            Descartar
+                            No requiere factura
                           </Button>
                         </span>
                       </td>
