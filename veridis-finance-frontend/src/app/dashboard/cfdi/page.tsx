@@ -75,6 +75,10 @@ export default function CfdiPage() {
   const [receivers, setReceivers] = useState<Receiver[]>([]);
   const [crm, setCrm] = useState<CrmStatus | null>(null);
   const [pending, setPending] = useState<PendingInvoice[]>([]);
+  const [satCounts, setSatCounts] = useState<{ issued: number; received: number }>({
+    issued: 0,
+    received: 0,
+  });
   const [shareUrl, setShareUrl] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [importingHistory, setImportingHistory] = useState(false);
@@ -115,16 +119,26 @@ export default function CfdiPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, r, s, p] = await Promise.all([
+      const [c, r, s, p, satIssued, satReceived] = await Promise.all([
         clientApiFetch<{ data: Cfdi[] }>("/api/finance/cfdi"),
         clientApiFetch<{ data: Receiver[] }>("/api/finance/receivers"),
         clientApiFetch<{ data: CrmStatus }>("/api/crm/status").catch(() => ({ data: null })),
         clientApiFetch<{ data: PendingInvoice[] }>("/api/crm/pending").catch(() => ({ data: [] })),
+        clientApiFetch<{ data: unknown[]; total?: number }>(
+          "/api/finance/invoices?direction=issued&source=sat_download&limit=1"
+        ).catch(() => ({ data: [], total: 0 })),
+        clientApiFetch<{ data: unknown[]; total?: number }>(
+          "/api/finance/invoices?direction=received&source=sat_download&limit=1"
+        ).catch(() => ({ data: [], total: 0 })),
       ]);
       setCfdis(c.data || []);
       setReceivers(r.data || []);
       setCrm((s as { data: CrmStatus | null }).data);
       setPending((p as { data: PendingInvoice[] }).data || []);
+      setSatCounts({
+        issued: (satIssued as { total?: number }).total ?? 0,
+        received: (satReceived as { total?: number }).total ?? 0,
+      });
     } catch (error) {
       notify.error({
         title: "No se pudo cargar",
@@ -380,15 +394,17 @@ export default function CfdiPage() {
         data: {
           issued: { found: number; created: number; updated: number };
           crm?: { found: number; created: number; updated: number; error?: string | null };
+          crm_matched?: { checked: number; matched: number };
           received: { found: number; created: number; updated: number; error?: string | null };
         };
       }>("/api/finance/cfdi/sync-invoices", { method: "POST" });
-      const { issued, crm, received } = response.data;
+      const { issued, crm, crm_matched, received } = response.data;
       const crmCreated = crm?.created ?? 0;
       const crmFound = crm?.found ?? 0;
+      const matched = crm_matched?.matched ?? 0;
       notify.success({
         title: "Facturas sincronizadas",
-        description: `Ventas del CRM: ${crmCreated} nuevas al libro (${crmFound} en total). CFDI emitidos: ${issued.created}. Recibidas del PAC: ${received.error ? "configura tu emisor fiscal" : `${received.created} nuevas`}.`,
+        description: `Ventas del CRM: ${crmCreated} nuevas al libro (${crmFound} en total)${matched ? ` · ${matched} ya tenían CFDI en el SAT (resueltas solas)` : ""}. CFDI emitidos: ${issued.created}. Recibidas del PAC: ${received.error ? "configura tu emisor fiscal" : `${received.created} nuevas`}.`,
       });
       load();
     } catch (error) {
@@ -549,6 +565,30 @@ export default function CfdiPage() {
             {shareUrl}
           </a>
         </div>
+      ) : null}
+
+      {/* Historial fiscal real (SAT) — vive en el libro de Facturas */}
+      {satCounts.issued + satCounts.received > 0 ? (
+        <Card>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-base">
+                Tu historial fiscal del SAT ({satCounts.issued + satCounts.received} CFDI)
+              </CardTitle>
+              <CardDescription>
+                Descargado con tu e.firma: <strong>{satCounts.issued} emitidas</strong> y{" "}
+                <strong>{satCounts.received} recibidas</strong>. Estas son tus facturas fiscales
+                reales — consúltalas y concílialas en el libro.
+              </CardDescription>
+            </div>
+            <a
+              href="/dashboard/invoices"
+              className="inline-flex h-10 shrink-0 items-center rounded-xl border border-border bg-card px-4 text-sm font-medium hover:bg-muted"
+            >
+              Ver en Facturas →
+            </a>
+          </CardHeader>
+        </Card>
       ) : null}
 
       {/* Pending CSF */}

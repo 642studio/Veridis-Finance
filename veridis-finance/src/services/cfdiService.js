@@ -678,9 +678,13 @@ async function syncInvoices(organizationId) {
 
   // CRM sales (paid in the CRM, stamped or not) → issued receivables ledger.
   let crm = { found: 0, created: 0, updated: 0 };
+  let crmMatched = { checked: 0, matched: 0 };
   try {
     const ghl = require('./ghlService');
     crm = await ghl.syncCrmToLedger(organizationId);
+    // Cross-match: CRM sales that already have a REAL CFDI at the SAT leave the
+    // pending queue automatically (their placeholder is replaced by the CFDI).
+    crmMatched = await ghl.matchPendingToExistingCfdi(organizationId);
   } catch (err) {
     crm.error = String(err.message).slice(0, 200);
   }
@@ -692,7 +696,7 @@ async function syncInvoices(organizationId) {
     // Received sync needs a working PAC; report the error but keep the rest.
     received.error = String(err.message).slice(0, 200);
   }
-  return { issued, crm, received };
+  return { issued, crm, crm_matched: crmMatched, received };
 }
 
 /** List issued CFDIs from our DB. */

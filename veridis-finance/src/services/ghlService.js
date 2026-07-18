@@ -586,6 +586,13 @@ async function listPending(organizationId) {
             error_message, received_at
        FROM finance.ghl_webhook_events
       WHERE status = 'pending_csf' AND location_id = $1
+        -- Skip malformed/test events with no amount and no client — they render
+        -- as useless "—" rows with a Timbrar button that can't work.
+        AND payload->'data'->>'total' IS NOT NULL
+        AND COALESCE(
+              payload->'data'->'contactDetails'->>'name',
+              payload->'data'->>'name'
+            ) IS NOT NULL
       ORDER BY received_at DESC LIMIT 100`,
     [install.location_id]
   );
@@ -809,7 +816,93 @@ async function markWebhook(id, status, errorMessage) {
   );
 }
 
+/**
+ * Cross-match CRM sales against REAL fiscal invoices already at the SAT.
+ *
+ * With Descarga Masiva feeding the ledger, many "pending" CRM sales already
+ * have a CFDI (stamped elsewhere, e.g. directly in Facturama or by the
+ * accountant). Those must NOT sit in the pending queue nor duplicate the
+ * ledger: match by amount (±2%) + date window (90 días) against issued fiscal
+ * invoices, mark the event 'already_invoiced' and drop its crm:<id>
+ * placeholder — the SAT invoice is the real record.
+ */
+async function matchPendingToExistingCfdi(organizationId) {
+  const install = await getInstallForOrg(organizationId);
+  if (!install) return { checked: 0, matched: 0 };
+
+  const parseAmount = (value) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (value == null) return 0;
+    const n = Number(String(value).replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const { rows: events } = await pool.query(
+    `SELECT id, payload, received_at
+       FROM finance.ghl_webhook_events
+      WHERE location_id = $1 AND status = 'pending_csf'
+      ORDER BY received_at DESC
+      LIMIT 200`,
+    [install.location_id]
+  );
+  if (!events.length) return { checked: 0, matched: 0 };
+
+  // Real fiscal invoices we issued (any status — a paid CFDI still proves the
+  // sale was invoiced). Synthetic refs are excluded.
+  const { rows: fiscal } = await pool.query(
+    `SELECT id, uuid_sat, total, invoice_date
+       FROM finance.invoices
+      WHERE organization_id = $1
+        AND COALESCE(direction, 'issued') = 'issued'
+        AND uuid_sat NOT LIKE 'crm:%'
+        AND uuid_sat NOT LIKE 'manual:%'
+        AND uuid_sat NOT LIKE 'e2e:%'`,
+    [organizationId]
+  );
+
+  const DAY = 24 * 60 * 60 * 1000;
+  const used = new Set();
+  let matched = 0;
+
+  for (const event of events) {
+    const data = event.payload?.data || event.payload || {};
+    const amount = parseAmount(data.total ?? data.amount ?? data.amountDue);
+    if (!amount) continue;
+    const eventTime = new Date(event.received_at).getTime();
+
+    let best = null;
+    for (const inv of fiscal) {
+      if (used.has(inv.id)) continue;
+      const total = Number(inv.total) || 0;
+      if (Math.abs(total - amount) > Math.max(0.02 * amount, 0.01)) continue;
+      const daysApart = Math.abs(new Date(inv.invoice_date).getTime() - eventTime) / DAY;
+      if (daysApart > 90) continue;
+      if (!best || daysApart < best.daysApart) best = { inv, daysApart };
+    }
+    if (!best) continue;
+
+    used.add(best.inv.id);
+    const ghlInvoiceId = String(data._id || data.id || data.invoiceId || data.invoiceNumber || event.id);
+    await pool.query(
+      `UPDATE finance.ghl_webhook_events
+          SET status = 'already_invoiced', processed_at = now(),
+              error_message = $2
+        WHERE id = $1`,
+      [event.id, `Cubierta por CFDI ${best.inv.uuid_sat}`]
+    );
+    await pool.query(
+      `DELETE FROM finance.invoices
+        WHERE organization_id = $1 AND uuid_sat = $2`,
+      [organizationId, `crm:${ghlInvoiceId}`]
+    );
+    matched += 1;
+  }
+
+  return { checked: events.length, matched };
+}
+
 module.exports = {
+  matchPendingToExistingCfdi,
   buildInstallUrl,
   exchangeCode,
   getValidAccessToken,
