@@ -35,3 +35,19 @@ test('agingBucket classifies days into the four standard buckets', () => {
   assert.equal(agingBucket(91), '90+');
   assert.equal(agingBucket(400), '90+');
 });
+
+test('composeReminderMessage builds a polite es-MX message with amounts and days', () => {
+  const { composeReminderMessage } = require('../src/services/reportsService');
+  const msg = composeReminderMessage({
+    counterparty: 'HOTEL ISHA DEL NOROESTE',
+    total: 11634.8,
+    invoices: [
+      { total: 5817.4, invoice_date: '2026-06-06', days_old: 42 },
+      { total: 5817.4, invoice_date: '2026-05-22', days_old: 57 },
+    ],
+  });
+  assert.match(msg, /HOTEL ISHA DEL NOROESTE/);
+  assert.match(msg, /\$11,634\.80/);
+  assert.match(msg, /2026-06-06 \(42 días\)/);
+  assert.match(msg, /gracias/i);
+});
