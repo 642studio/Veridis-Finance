@@ -26,6 +26,45 @@ test('extractFault falls back to a cleaned body snippet', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Metadata parsing — the SAT prepends a UTF-8 BOM and uses CRLF
+// ---------------------------------------------------------------------------
+
+const { parseMetadataRows } = require('../src/services/satDownloadService');
+const { normalizeUuidSat } = require('../src/services/invoicesService');
+
+const SAT_METADATA_SAMPLE =
+  '﻿Uuid~RfcEmisor~NombreEmisor~RfcReceptor~NombreReceptor~RfcPac~FechaEmision~FechaCertificacionSat~Monto~EfectoComprobante~Estatus~FechaCancelacion\r\n' +
+  'AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111~XAXX010101000~PROVEEDOR UNO~SCD2507076C4~642 STUDIO~PAC010101AAA~2026-06-15T10:00:00~2026-06-15T10:01:00~1160.00~I~Vigente~\r\n' +
+  '22223333-4444-5555-6666-777788889999~XEXX010101000~PROVEEDOR DOS~SCD2507076C4~642 STUDIO~PAC010101AAA~2026-06-20T12:00:00~2026-06-20T12:01:00~5015.50~I~Vigente~\r\n';
+
+test('parseMetadataRows survives the SAT BOM + CRLF and reads every row', () => {
+  const rows = parseMetadataRows(SAT_METADATA_SAMPLE);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].uuid, 'AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111');
+  assert.equal(rows[0].emitterRfc, 'XAXX010101000');
+  assert.equal(rows[0].emitterName, 'PROVEEDOR UNO');
+  assert.equal(rows[0].receiverRfc, 'SCD2507076C4');
+  assert.equal(rows[0].monto, 1160);
+  assert.equal(rows[1].monto, 5015.5);
+});
+
+test('parseMetadataRows without BOM also works, and garbage yields []', () => {
+  assert.equal(parseMetadataRows(SAT_METADATA_SAMPLE.replace('﻿', '')).length, 2);
+  assert.deepEqual(parseMetadataRows('no es un archivo de metadatos'), []);
+  assert.deepEqual(parseMetadataRows(''), []);
+});
+
+test('normalizeUuidSat uppercases real UUIDs but leaves synthetic refs alone', () => {
+  assert.equal(
+    normalizeUuidSat('aaaabbbb-cccc-dddd-eeee-ffff00001111'),
+    'AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111'
+  );
+  assert.equal(normalizeUuidSat('crm:68c48920ac6bca0ecf50cc36'), 'crm:68c48920ac6bca0ecf50cc36');
+  assert.equal(normalizeUuidSat('manual:123-456'), 'manual:123-456');
+  assert.equal(normalizeUuidSat('  AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111  '), 'AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111');
+});
+
+// ---------------------------------------------------------------------------
 // Pure FIEL helpers
 // ---------------------------------------------------------------------------
 
