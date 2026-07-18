@@ -4,6 +4,7 @@ const {
   deleteCredentials,
   createRequest,
   checkRequest,
+  reimportRequest,
   listRequests,
 } = require('../controllers/satController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
@@ -48,6 +49,13 @@ async function satRoutes(app) {
     '/sat/requests/:id/check',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     checkRequest
+  );
+
+  // Re-download + re-import an already-finished solicitud (same SAT folio).
+  app.post(
+    '/sat/requests/:id/reimport',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    reimportRequest
   );
 }
 

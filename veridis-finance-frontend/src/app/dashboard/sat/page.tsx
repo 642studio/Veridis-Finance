@@ -209,6 +209,36 @@ export default function SatPage() {
     }
   };
 
+  // Reimportar: vuelve a bajar los paquetes de una solicitud ya terminada
+  // (mismo folio del SAT) y los importa con el importador vigente.
+  const reimportRequest = async (id: string) => {
+    setCheckingId(id);
+    try {
+      const res = await clientApiFetch<ApiEnvelope<SatRequest>>(
+        `/api/finance/sat/requests/${id}/reimport`,
+        { method: "POST" }
+      );
+      const req = res.data;
+      await loadRequests();
+      if (req.status === "completed") {
+        notify.success({
+          title: "Reimportación terminada",
+          description: `${req.cfdi_imported} factura(s) entraron al libro.`,
+        });
+      } else {
+        notify.info?.({
+          title: "Reimportando…",
+          description: req.sat_message || "Bajando paquetes del SAT; se termina solo.",
+        });
+      }
+    } catch (error) {
+      const message = error instanceof ApiClientError ? error.message : "No se pudo reimportar";
+      notify.error({ title: "Error al reimportar", description: message });
+    } finally {
+      setCheckingId(null);
+    }
+  };
+
   // Auto-verificación: el SAT procesa de forma asíncrona. Mientras haya
   // solicitudes en curso, revisamos una cada 45s sin que el usuario le pique.
   useEffect(() => {
@@ -415,6 +445,16 @@ export default function SatPage() {
                               onClick={() => checkRequest(req.id)}
                             >
                               {checkingId === req.id ? "Verificando…" : "Verificar"}
+                            </Button>
+                          )}
+                          {req.status === "completed" && req.sat_request_id && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={checkingId === req.id}
+                              onClick={() => reimportRequest(req.id)}
+                            >
+                              {checkingId === req.id ? "Reimportando…" : "Reimportar"}
                             </Button>
                           )}
                         </td>
