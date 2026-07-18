@@ -452,7 +452,9 @@ async function checkRequest(organizationId, requestId, env = 'production') {
 function collectPackageIds(result) {
   const ids = firstDeep(result, 'IdsPaquetes');
   if (!ids) return [];
-  return (Array.isArray(ids) ? ids : [ids]).map((v) => String(v)).filter(Boolean);
+  return (Array.isArray(ids) ? ids : [ids])
+    .map((v) => String(v).trim())
+    .filter(Boolean);
 }
 
 async function downloadAndImport(organizationId, fiel, token, packageIds, requestType, env, deadline = Infinity) {
@@ -473,7 +475,13 @@ async function downloadAndImport(organizationId, fiel, token, packageIds, reques
     const paqueteB64 = firstDeep(parsed, 'Paquete');
     doneIds.push(packageId); // consumed even if empty, so we don't loop forever
     if (!paqueteB64) {
-      files.push({ name: '(paquete sin contenido)', size: 0 });
+      // Surface WHY the SAT sent no package (fault, CodEstatus, Mensaje…).
+      const respuesta = findNodeWithAttr(parsed, '@_CodEstatus') || {};
+      const reason =
+        respuesta['@_CodEstatus'] || respuesta['@_Mensaje']
+          ? satStatusLine(respuesta['@_CodEstatus'], respuesta['@_Mensaje'])
+          : extractFault(parsed, body, 200);
+      files.push({ name: `(sin paquete: ${String(reason).slice(0, 160)})`, size: 0 });
       continue;
     }
     const zipBuf = Buffer.from(String(paqueteB64), 'base64');
