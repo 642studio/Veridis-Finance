@@ -1,4 +1,8 @@
-const { getMonthlyReport, getDiotReport } = require('../controllers/reportsController');
+const {
+  getMonthlyReport,
+  getDiotReport,
+  getDiotBatch,
+} = require('../controllers/reportsController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
 async function reportsRoutes(app) {
@@ -23,6 +27,18 @@ async function reportsRoutes(app) {
       ],
     },
     getDiotReport
+  );
+
+  // Archivo batch oficial de la DIOT (.txt de 23 campos, listo para el applet).
+  app.get(
+    '/report/diot/batch',
+    {
+      preHandler: [
+        authenticate,
+        authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS]),
+      ],
+    },
+    getDiotBatch
   );
 }
 

@@ -167,10 +167,116 @@ async function confirmMatch({ organization_id, transaction_id, invoice_id }) {
   });
 }
 
+// Auto-match thresholds: high confidence AND a clear winner (ambiguity guard).
+const AUTO_MIN_SCORE = 0.85;
+const AUTO_MIN_GAP = 0.15;
+
+/**
+ * Bulk auto-reconciliation: scan bank transactions that no invoice references
+ * yet, score their candidates, and confirm only unambiguous high-confidence
+ * matches (score >= 0.85 and clearly better than the runner-up). Everything
+ * else is left for the 1-click manual flow. Runs under a time budget so it
+ * never blows the serverless limit; call again to continue.
+ */
+async function autoReconcile({ organization_id, max_transactions = 100 }) {
+  const deadline = Date.now() + 25000;
+
+  // Transactions not yet referenced by any invoice payment.
+  const { rows: txns } = await pool.query(
+    `SELECT t.id, t.amount, t.transaction_date, t.type, t.description, t.entity
+       FROM finance.transactions t
+      WHERE t.organization_id = $1
+        AND t.deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM finance.invoices i
+           WHERE i.organization_id = t.organization_id
+             AND i.payment_reference = 'bank_txn:' || t.id::text
+        )
+      ORDER BY t.transaction_date DESC
+      LIMIT $2`,
+    [organization_id, max_transactions]
+  );
+
+  const summary = { scanned: 0, matched: 0, ambiguous: 0, no_match: 0, remaining: 0 };
+  const matches = [];
+  const usedInvoices = new Set();
+
+  for (const txn of txns) {
+    if (Date.now() > deadline) {
+      summary.remaining = txns.length - summary.scanned;
+      break;
+    }
+    summary.scanned += 1;
+
+    const amount = money(txn.amount);
+    const lo = Number(amount.times(1 - AMOUNT_TOLERANCE));
+    const hi = Number(amount.times(1 + AMOUNT_TOLERANCE));
+    const direction = txn.type === 'expense' ? 'received' : 'issued';
+
+    const { rows: invs } = await pool.query(
+      `SELECT id, uuid_sat, emitter, receiver, total, invoice_date, payment_reference
+         FROM finance.invoices
+        WHERE organization_id = $1
+          AND status = 'pending'
+          AND COALESCE(direction, 'issued') = $5
+          AND total BETWEEN $2 AND $3
+          AND invoice_date BETWEEN $4::timestamp - INTERVAL '${DATE_WINDOW_DAYS} days'
+                               AND $4::timestamp + INTERVAL '${DATE_WINDOW_DAYS} days'
+        LIMIT 50`,
+      [organization_id, lo, hi, txn.transaction_date, direction]
+    );
+
+    const ranked = invs
+      .filter((inv) => !usedInvoices.has(inv.id))
+      .map((inv) => ({
+        inv,
+        match: scoreMatch(
+          { amount: txn.amount, date: txn.transaction_date, description: txn.description || txn.entity },
+          inv
+        ),
+      }))
+      .sort((a, b) => b.match.score - a.match.score);
+
+    if (!ranked.length) {
+      summary.no_match += 1;
+      continue;
+    }
+
+    const best = ranked[0];
+    const second = ranked[1];
+    const clearWinner = !second || best.match.score - second.match.score >= AUTO_MIN_GAP;
+
+    if (best.match.score >= AUTO_MIN_SCORE && best.match.is_amount_candidate && clearWinner) {
+      await invoicesService.updateInvoiceStatus({
+        organization_id,
+        invoice_id: best.inv.id,
+        status: 'paid',
+        payment_method: 'conciliacion_auto',
+        payment_reference: `bank_txn:${txn.id}`,
+      });
+      usedInvoices.add(best.inv.id);
+      summary.matched += 1;
+      matches.push({
+        transaction_id: txn.id,
+        invoice_id: best.inv.id,
+        uuid_sat: best.inv.uuid_sat,
+        emitter: best.inv.emitter,
+        total: Number(best.inv.total),
+        score: best.match.score,
+      });
+    } else {
+      summary.ambiguous += 1;
+    }
+  }
+
+  return { ...summary, matches };
+}
+
 module.exports = {
   scoreMatch,
   findInvoiceCandidates,
   confirmMatch,
+  autoReconcile,
   AMOUNT_TOLERANCE,
   DATE_WINDOW_DAYS,
 };

@@ -1,10 +1,18 @@
 const {
   listCandidates,
   confirmCandidate,
+  autoReconcile,
 } = require('../controllers/reconciliationController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
 async function reconciliationRoutes(app) {
+  // Bulk auto-reconciliation (only unambiguous high-confidence matches).
+  app.post(
+    '/reconciliation/auto',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    autoReconcile
+  );
+
   // Ranked invoice candidates for a bank transaction.
   app.get(
     '/transactions/:transactionId/reconciliation-candidates',

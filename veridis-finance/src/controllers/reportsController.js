@@ -39,7 +39,25 @@ async function getDiotReport(request, reply) {
   reply.send({ data: report });
 }
 
+/** Official DIOT batch .txt (23-field pipe layout) as a file download. */
+async function getDiotBatch(request, reply) {
+  const query = monthReportQuerySchema.parse(request.query);
+  const organizationId = resolveOrganizationId(request);
+  const file = await reportsService.getDiotBatchFile({
+    organization_id: organizationId,
+    month: query.month,
+    year: query.year,
+  });
+
+  reply
+    .header('content-type', 'text/plain; charset=utf-8')
+    .header('content-disposition', `attachment; filename="${file.filename}"`)
+    .header('x-supplier-count', String(file.supplier_count))
+    .send(file.content);
+}
+
 module.exports = {
   getMonthlyReport,
   getDiotReport,
+  getDiotBatch,
 };
