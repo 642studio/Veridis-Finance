@@ -232,3 +232,68 @@ test('readZipEntries inflates deflated entries', () => {
   assert.equal(entries.length, 1);
   assert.equal(entries[0].data.toString('utf8'), big);
 });
+
+/**
+ * .NET-style STREAMING zip, like the SAT's packages: the local header has flag
+ * bit 3 set and ZERO sizes (they live in a data descriptor after the data and
+ * in the central directory). A sequential local-header walk reads nothing here
+ * — only the central directory knows the truth.
+ */
+function buildStreamingZip(name, content) {
+  const nameBuf = Buffer.from(name, 'utf8');
+  const raw = Buffer.from(content, 'utf8');
+  const data = zlib.deflateRawSync(raw);
+  const crc = zlib.crc32 ? zlib.crc32(raw) : 0;
+
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0x0008, 6); // bit 3: streaming — sizes unknown here
+  local.writeUInt16LE(8, 8); // deflate
+  local.writeUInt32LE(0, 14); // crc 0 in local header
+  local.writeUInt32LE(0, 18); // comp size 0 in local header
+  local.writeUInt32LE(0, 22); // uncomp size 0 in local header
+  local.writeUInt16LE(nameBuf.length, 26);
+  local.writeUInt16LE(0, 28);
+
+  const descriptor = Buffer.alloc(16);
+  descriptor.writeUInt32LE(0x08074b50, 0);
+  descriptor.writeUInt32LE(crc, 4);
+  descriptor.writeUInt32LE(data.length, 8);
+  descriptor.writeUInt32LE(raw.length, 12);
+
+  const localOffset = 0;
+  const centralOffset = 30 + nameBuf.length + data.length + 16;
+
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(0x0008, 8);
+  central.writeUInt16LE(8, 10); // method
+  central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(data.length, 20); // REAL compressed size
+  central.writeUInt32LE(raw.length, 24); // REAL uncompressed size
+  central.writeUInt16LE(nameBuf.length, 28);
+  central.writeUInt16LE(0, 30); // extra
+  central.writeUInt16LE(0, 32); // comment
+  central.writeUInt32LE(localOffset, 42);
+
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(1, 8); // entries this disk
+  eocd.writeUInt16LE(1, 10); // entries total
+  eocd.writeUInt32LE(46 + nameBuf.length, 12); // central dir size
+  eocd.writeUInt32LE(centralOffset, 16); // central dir offset
+
+  return Buffer.concat([local, nameBuf, data, descriptor, central, nameBuf, eocd]);
+}
+
+test('readZipEntries handles .NET streaming zips (SAT packages) via central directory', () => {
+  const content = 'Uuid~RfcEmisor\r\nAAAA-BBBB~XAXX010101000\r\n';
+  const zip = buildStreamingZip('12345_metadata.txt', content);
+  const entries = readZipEntries(zip);
+  assert.equal(entries.length, 1, 'streaming entry must be found via central directory');
+  assert.equal(entries[0].name, '12345_metadata.txt');
+  assert.equal(entries[0].data.toString('utf8'), content);
+});

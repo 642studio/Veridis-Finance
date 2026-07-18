@@ -351,7 +351,7 @@ async function checkRequest(organizationId, requestId, env = 'production') {
   // Resume: a request already 'downloading' has its remaining package ids
   // stored; keep pulling those instead of re-verifying.
   if (req.status === 'downloading' && Array.isArray(req.package_ids) && req.package_ids.length) {
-    const { imported, doneIds } = await downloadAndImport(
+    const { imported, doneIds, files } = await downloadAndImport(
       organizationId, fiel, token, req.package_ids, req.request_type, env, deadline
     );
     const remaining = req.package_ids.filter((id) => !doneIds.includes(id));
@@ -362,7 +362,9 @@ async function checkRequest(organizationId, requestId, env = 'production') {
       cfdi_imported: totalImported,
       sat_message: remaining.length
         ? `Descargando: faltan ${remaining.length} paquete(s)…`
-        : `Importación terminada: ${totalImported} factura(s) al libro.`,
+        : totalImported > 0
+          ? `Importación terminada: ${totalImported} factura(s) al libro.`
+          : `0 facturas importadas. Contenido del paquete: ${describeFiles(files)}`.slice(0, 400),
     });
   }
 
@@ -403,7 +405,7 @@ async function checkRequest(organizationId, requestId, env = 'production') {
       package_ids: JSON.stringify(packageIds),
       cfdi_found: numCfdi,
     });
-    const { imported, doneIds } = await downloadAndImport(
+    const { imported, doneIds, files } = await downloadAndImport(
       organizationId, fiel, token, packageIds, req.request_type, env, deadline
     );
     const remaining = packageIds.filter((id) => !doneIds.includes(id));
@@ -413,7 +415,9 @@ async function checkRequest(organizationId, requestId, env = 'production') {
       cfdi_imported: imported,
       sat_message: remaining.length
         ? `Descargando: faltan ${remaining.length} paquete(s)…`
-        : `Importación terminada: ${imported} factura(s) al libro (${packageIds.length} paquete(s) del SAT).`,
+        : imported > 0
+          ? `Importación terminada: ${imported} factura(s) al libro (${packageIds.length} paquete(s) del SAT).`
+          : `0 facturas importadas. Contenido del paquete: ${describeFiles(files)}`.slice(0, 400),
     });
   }
 
@@ -454,6 +458,7 @@ function collectPackageIds(result) {
 async function downloadAndImport(organizationId, fiel, token, packageIds, requestType, env, deadline = Infinity) {
   let imported = 0;
   const doneIds = [];
+  const files = [];
   for (const packageId of packageIds) {
     // Stop before the serverless budget runs out; the rest resume next round.
     if (Date.now() > deadline) break;
@@ -467,11 +472,28 @@ async function downloadAndImport(organizationId, fiel, token, packageIds, reques
     const parsed = xml.parse(body);
     const paqueteB64 = firstDeep(parsed, 'Paquete');
     doneIds.push(packageId); // consumed even if empty, so we don't loop forever
-    if (!paqueteB64) continue;
+    if (!paqueteB64) {
+      files.push({ name: '(paquete sin contenido)', size: 0 });
+      continue;
+    }
     const zipBuf = Buffer.from(String(paqueteB64), 'base64');
-    imported += await importPackage(organizationId, zipBuf, requestType);
+    const result = await importPackage(organizationId, zipBuf, requestType);
+    imported += result.imported;
+    files.push(...result.files);
   }
-  return { imported, doneIds };
+  return { imported, doneIds, files };
+}
+
+/**
+ * Human-readable summary of what a download round contained — shown when 0 rows
+ * import so nobody has to guess whether the packages were empty or unreadable.
+ */
+function describeFiles(files) {
+  if (!files.length) return 'el SAT no devolvió contenido';
+  return files
+    .slice(0, 5)
+    .map((f) => `${f.name} (${f.size} B)`)
+    .join(', ');
 }
 
 /** Import one downloaded ZIP (CFDI xml files or a Metadata text file). */
@@ -480,22 +502,27 @@ async function importPackage(organizationId, zipBuf, requestType) {
   try {
     entries = readZipEntries(zipBuf);
   } catch {
-    return 0;
+    return { imported: 0, files: [{ name: '(zip ilegible)', size: zipBuf.length }] };
   }
-  let count = 0;
+  if (!entries.length) {
+    return { imported: 0, files: [{ name: '(zip sin archivos reconocibles)', size: zipBuf.length }] };
+  }
+  let imported = 0;
+  const files = [];
   for (const entry of entries) {
     const name = (entry.name || '').toLowerCase();
+    files.push({ name: entry.name || '(sin nombre)', size: entry.data.length });
     try {
       if (name.endsWith('.xml')) {
-        count += (await importCfdiXml(organizationId, entry.data, requestType)) ? 1 : 0;
+        imported += (await importCfdiXml(organizationId, entry.data, requestType)) ? 1 : 0;
       } else if (name.endsWith('.txt') || name.endsWith('.csv') || !name.includes('.')) {
-        count += await importMetadata(organizationId, entry.data, requestType);
+        imported += await importMetadata(organizationId, entry.data, requestType);
       }
     } catch {
       /* one bad entry never aborts the package */
     }
   }
-  return count;
+  return { imported, files };
 }
 
 async function importCfdiXml(organizationId, buffer, requestType) {
