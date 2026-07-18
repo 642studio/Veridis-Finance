@@ -220,8 +220,11 @@ function buildApp() {
       ? error.statusCode
       : 500;
 
+    // 502/504 are curated gateway messages ("El SAT no respondió en 20s…",
+    // "Facturama no respondió…") — the user needs to SEE them to know it's the
+    // external service, not us. Only raw 500s stay generic (never leak internals).
     const message =
-      statusCode >= 500 ? 'Internal server error' : error.message;
+      statusCode === 500 ? 'Internal server error' : error.message;
 
     return reply.status(statusCode).send({ error: message });
   });

@@ -307,7 +307,20 @@ async function checkRequest(organizationId, requestId, env = 'production') {
   const deadline = Date.now() + 30000;
 
   const fiel = await loadActiveFiel(organizationId);
-  const token = await authenticate(fiel, env);
+
+  let token;
+  try {
+    token = await authenticate(fiel, env);
+  } catch (err) {
+    // Transient SAT unavailability (timeout / 5xx at their end) must not blow
+    // up the check: note it on the request and let auto-verify/cron retry.
+    if (err.statusCode === 502 || err.statusCode === 504) {
+      return updateRequest(req.id, {
+        sat_message: `SAT sin respuesta ahora mismo (${String(err.message).slice(0, 200)}). Se reintenta solo.`,
+      });
+    }
+    throw err;
+  }
 
   // Resume: a request already 'downloading' has its remaining package ids
   // stored; keep pulling those instead of re-verifying.
@@ -328,12 +341,22 @@ async function checkRequest(organizationId, requestId, env = 'production') {
   }
 
   const envelope = soap.buildVerificaEnvelope(fiel, req.sat_request_id);
-  const { body } = await soap.postSoap(
-    soap.endpoints(env).verifica,
-    soap.SOAP_ACTIONS.verifica,
-    envelope,
-    { Authorization: `WRAP access_token="${token}"` }
-  );
+  let body;
+  try {
+    ({ body } = await soap.postSoap(
+      soap.endpoints(env).verifica,
+      soap.SOAP_ACTIONS.verifica,
+      envelope,
+      { Authorization: `WRAP access_token="${token}"` }
+    ));
+  } catch (err) {
+    if (err.statusCode === 502 || err.statusCode === 504) {
+      return updateRequest(req.id, {
+        sat_message: `SAT sin respuesta ahora mismo (${String(err.message).slice(0, 200)}). Se reintenta solo.`,
+      });
+    }
+    throw err;
+  }
   const parsed = xml.parse(body);
   const result =
     findNodeWithAttr(parsed, '@_EstadoSolicitud') ||
