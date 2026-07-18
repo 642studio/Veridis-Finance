@@ -75,8 +75,8 @@ function expect(cond, message) {
       method: 'POST',
       body: {
         organization_name: slug('E2E Org'),
-        name: 'E2E Runner',
-        email,
+        owner_name: 'E2E Runner',
+        owner_email: email,
         password: 'E2e!Passw0rd#2026',
       },
     });
