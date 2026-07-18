@@ -69,7 +69,57 @@ async function list({ organization_id, limit = 100, offset = 0 }) {
       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
     [organization_id, limit, offset]
   );
-  return rows.map(mapRow);
+  const full = rows.map(mapRow);
+
+  // Derived receivers: distinct clients found in the SAT-issued history. They
+  // have RFC + name (enough to identify them and link to a CRM contact) but
+  // LACK the CSF data (CP, régimen) required to stamp — flagged derived:true so
+  // the UI can prompt "sube su CSF para completar".
+  const known = new Set(full.map((r) => String(r.rfc || '').toUpperCase()));
+  const { rows: derived } = await pool.query(
+    `SELECT receiver_rfc AS rfc, MAX(receiver) AS name, COUNT(*)::int AS cfdi_count
+       FROM finance.invoices
+      WHERE organization_id = $1
+        AND COALESCE(direction, 'issued') = 'issued'
+        AND source = 'sat_download'
+        AND receiver_rfc IS NOT NULL
+      GROUP BY receiver_rfc
+      ORDER BY cfdi_count DESC
+      LIMIT 200`,
+    [organization_id]
+  );
+
+  // Best-effort CRM link: match by normalized client name against the CRM
+  // events already stored (no external API call).
+  const { rows: crmContacts } = await pool.query(
+    `SELECT DISTINCT
+            COALESCE(payload->'data'->'contactDetails'->>'name', payload->'data'->>'name') AS name,
+            COALESCE(payload->'data'->>'contactId', payload->'data'->'contactDetails'->>'id') AS contact_id
+       FROM finance.ghl_webhook_events e
+       JOIN finance.ghl_installs i ON i.location_id = e.location_id
+      WHERE i.organization_id = $1`,
+    [organization_id]
+  ).catch(() => ({ rows: [] }));
+  const norm = (s) =>
+    String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const crmByName = new Map(crmContacts.filter((c) => c.name).map((c) => [norm(c.name), c.contact_id]));
+
+  for (const d of derived) {
+    const rfc = String(d.rfc).toUpperCase();
+    if (known.has(rfc)) continue;
+    full.push({
+      id: `sat:${rfc}`,
+      rfc,
+      legal_name: d.name || rfc,
+      zip_code: null,
+      fiscal_regime: null,
+      cfdi_count: d.cfdi_count,
+      ghl_contact_id: crmByName.get(norm(d.name)) || null,
+      derived: true,
+    });
+  }
+
+  return full;
 }
 
 async function getById({ organization_id, id }) {

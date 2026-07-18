@@ -707,7 +707,38 @@ async function listIssued({ organization_id, limit = 50, offset = 0 }) {
       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
     [organization_id, limit, offset]
   );
-  return rows.map(mapRow);
+  const platform = rows.map((r) => ({ ...mapRow(r), origin: 'platform' }));
+
+  // Historical issued CFDIs pulled from the SAT (Descarga Masiva). They're real
+  // stamped invoices (stamped elsewhere), so they belong in "CFDIs emitidos" —
+  // flagged origin:'sat' (metadata only: no PDF/XML stored here).
+  const { rows: sat } = await pool.query(
+    `SELECT id, uuid_sat, receiver, receiver_rfc, total, currency, invoice_date, status
+       FROM finance.invoices
+      WHERE organization_id = $1
+        AND COALESCE(direction, 'issued') = 'issued'
+        AND source = 'sat_download'
+      ORDER BY invoice_date DESC
+      LIMIT 500`,
+    [organization_id]
+  );
+  const historical = sat.map((r) => ({
+    id: r.id,
+    cfdi_type: 'I',
+    status: 'stamped',
+    uuid: r.uuid_sat,
+    folio: null,
+    receiver_rfc: r.receiver_rfc || null,
+    receiver_name: r.receiver || null,
+    total: r.total != null ? Number(r.total) : null,
+    currency: r.currency || 'MXN',
+    metodo_pago: null,
+    payment_status: r.status === 'paid' ? 'paid' : 'pending',
+    created_at: r.invoice_date,
+    origin: 'sat',
+  }));
+
+  return [...platform, ...historical];
 }
 
 async function getById({ organization_id, id }) {

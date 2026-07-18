@@ -62,7 +62,8 @@ export default function DashboardInvoicesPage() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [directionFilter, setDirectionFilter] = useState<"" | "issued" | "received">("");
-  const [sourceFilter, setSourceFilter] = useState("");
+  // Vista por defecto: los recibos/ventas del CRM (lo fiscal vive en CFDI).
+  const [sourceFilter, setSourceFilter] = useState("crm");
   const [searchQ, setSearchQ] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -394,6 +395,13 @@ export default function DashboardInvoicesPage() {
               >
                 XML
               </a>
+            </div>
+          ) : row.payment_reference?.startsWith("cfdi:") ? (
+            <div className="flex flex-col">
+              <Badge variant="success">Facturada</Badge>
+              <span className="mt-1 font-mono text-[10px] text-muted-foreground">
+                …{row.payment_reference.slice(-12)}
+              </span>
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">Sin CFDI</span>

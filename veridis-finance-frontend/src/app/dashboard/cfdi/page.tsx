@@ -47,6 +47,8 @@ interface Cfdi {
   ghl_contact_id?: string | null;
   created_at: string;
   error_message?: string | null;
+  /** 'platform' = timbrado aquí; 'sat' = histórico de Descarga Masiva. */
+  origin?: "platform" | "sat";
 }
 
 interface CrmStatus {
@@ -752,7 +754,9 @@ export default function CfdiPage() {
                       </td>
                       <td className="py-2 font-mono text-xs">{c.uuid?.slice(0, 18) || "—"}</td>
                       <td className="py-2 text-right">
-                        {c.status === "stamped" ? (
+                        {c.origin === "sat" ? (
+                          <Badge className="bg-sky-100 text-sky-700">Histórico SAT</Badge>
+                        ) : c.status === "stamped" ? (
                           <span className="flex flex-wrap items-center justify-end gap-2">
                             {canWrite && c.payment_status !== "paid" ? (
                               <button
