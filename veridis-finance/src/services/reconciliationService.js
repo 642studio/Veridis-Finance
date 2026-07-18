@@ -38,12 +38,24 @@ function nameOverlap(a, b) {
   return shared / Math.min(ta.size, tb.size);
 }
 
+// Mexican RFC pattern — bank SPEI descriptions often carry the counterparty's
+// RFC verbatim ("… CONCEPTO FACT 4 RFC HIN120905SE4"). Matching it against the
+// invoice's RFC is near-proof of identity, far stronger than name overlap.
+const RFC_RE = /\b[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b/g;
+
+function extractRfcs(text) {
+  const found = String(text || '').toUpperCase().match(RFC_RE);
+  return found ? new Set(found) : new Set();
+}
+
 /**
  * Score how well an invoice matches a bank transaction. Returns 0..1 plus the
- * component breakdown. Amount is weighted highest, then date, then name.
+ * component breakdown. Amount is weighted highest, then date, then name; an
+ * RFC found verbatim in the bank description adds a decisive bonus and sets
+ * `rfc_match` for the auto-reconciler's tie-breaking.
  *
  * @param {{amount:number|string, date:Date|string, description?:string}} transaction
- * @param {{total:number|string, invoice_date:Date|string, emitter?:string, receiver?:string, payment_reference?:string}} invoice
+ * @param {{total:number|string, invoice_date:Date|string, emitter?:string, receiver?:string, emitter_rfc?:string, receiver_rfc?:string, payment_reference?:string}} invoice
  */
 function scoreMatch(transaction, invoice) {
   const txnAmount = money(transaction.amount);
@@ -72,12 +84,19 @@ function scoreMatch(transaction, invoice) {
       : 0
   );
 
-  const score = 0.6 * amountScore + 0.3 * dateScore + 0.1 * nameScore;
+  const descriptionRfcs = extractRfcs(transaction.description);
+  const rfcMatch =
+    (invoice.emitter_rfc && descriptionRfcs.has(String(invoice.emitter_rfc).toUpperCase())) ||
+    (invoice.receiver_rfc && descriptionRfcs.has(String(invoice.receiver_rfc).toUpperCase()));
+
+  const base = 0.6 * amountScore + 0.3 * dateScore + 0.1 * nameScore;
+  const score = Math.min(1, base + (rfcMatch ? 0.1 : 0));
   return {
     score: Number(score.toFixed(4)),
     amountScore: Number(amountScore.toFixed(4)),
     dateScore: Number(dateScore.toFixed(4)),
     nameScore: Number(nameScore.toFixed(4)),
+    rfc_match: Boolean(rfcMatch),
     days_apart: Math.round(daysApart),
     is_amount_candidate: amountScore > 0,
   };
@@ -117,7 +136,8 @@ async function findInvoiceCandidates({ organization_id, transaction_id, limit = 
   const direction = txn.type === 'expense' ? 'received' : 'issued';
 
   const { rows } = await pool.query(
-    `SELECT id, uuid_sat, emitter, receiver, total, status, invoice_date, payment_reference
+    `SELECT id, uuid_sat, emitter, receiver, emitter_rfc, receiver_rfc,
+            total, status, invoice_date, payment_reference
        FROM finance.invoices
       WHERE organization_id = $1
         AND status = 'pending'
@@ -168,8 +188,11 @@ async function confirmMatch({ organization_id, transaction_id, invoice_id }) {
 }
 
 // Auto-match thresholds: high confidence AND a clear winner (ambiguity guard).
+// The gap must be reachable by the name signal alone (its weight caps the
+// possible gap at ~0.10 when amount+date tie), otherwise same-amount candidates
+// could never auto-match even with a perfect name hit.
 const AUTO_MIN_SCORE = 0.85;
-const AUTO_MIN_GAP = 0.15;
+const AUTO_MIN_GAP = 0.08;
 
 /**
  * Bulk auto-reconciliation: scan bank transactions that no invoice references
@@ -214,7 +237,8 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
     const direction = txn.type === 'expense' ? 'received' : 'issued';
 
     const { rows: invs } = await pool.query(
-      `SELECT id, uuid_sat, emitter, receiver, total, invoice_date, payment_reference
+      `SELECT id, uuid_sat, emitter, receiver, emitter_rfc, receiver_rfc,
+              total, invoice_date, payment_reference
          FROM finance.invoices
         WHERE organization_id = $1
           AND status = 'pending'
@@ -242,11 +266,32 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
       continue;
     }
 
-    const best = ranked[0];
-    const second = ranked[1];
-    const clearWinner = !second || best.match.score - second.match.score >= AUTO_MIN_GAP;
+    // Decision, two paths:
+    //  a) RFC evidence: the bank description carries the invoice's RFC verbatim
+    //     (near-proof of identity). Among RFC-matching candidates only a small
+    //     gap is needed — date proximity settles which invoice of that party.
+    //  b) Generic: high score AND clearly better than the runner-up. Note that
+    //     with identical amount+date the name signal alone caps the gap at
+    //     ~0.10, so the generic gap must stay below that ceiling.
+    const rfcGroup = ranked.filter((r) => r.match.rfc_match);
+    let best = null;
+    if (
+      rfcGroup.length &&
+      rfcGroup[0].match.score >= 0.8 &&
+      rfcGroup[0].match.is_amount_candidate &&
+      (!rfcGroup[1] || rfcGroup[0].match.score - rfcGroup[1].match.score >= 0.05)
+    ) {
+      best = rfcGroup[0];
+    } else {
+      const top = ranked[0];
+      const second = ranked[1];
+      const clearWinner = !second || top.match.score - second.match.score >= AUTO_MIN_GAP;
+      if (top.match.score >= AUTO_MIN_SCORE && top.match.is_amount_candidate && clearWinner) {
+        best = top;
+      }
+    }
 
-    if (best.match.score >= AUTO_MIN_SCORE && best.match.is_amount_candidate && clearWinner) {
+    if (best) {
       await invoicesService.updateInvoiceStatus({
         organization_id,
         invoice_id: best.inv.id,

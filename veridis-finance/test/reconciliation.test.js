@@ -35,3 +35,39 @@ test('a closer amount within tolerance scores higher than a looser one', () => {
   const loose = scoreMatch({ amount: 1000, date: '2026-01-15' }, { total: 1015, invoice_date: '2026-01-15' });
   assert.ok(exact.amountScore > loose.amountScore);
 });
+
+test('an RFC verbatim in the bank description sets rfc_match and boosts the score', () => {
+  const txn = {
+    amount: 5817.4,
+    date: '2026-06-14',
+    description:
+      'ABONO TRANSFERENCIA SPEI RECIBIDO DE BBVA DEL CLIENTE HOTEL ISHA DEL NOROE STE SA DE CV REF 0150626 CONCEPTO FACT 4 RFC HIN120905SE4',
+  };
+  const withRfc = scoreMatch(txn, {
+    total: 5817.4,
+    invoice_date: '2026-06-06',
+    receiver: 'HOTEL ISHA DEL NOROESTE',
+    emitter: 'MI EMPRESA',
+    receiver_rfc: 'HIN120905SE4',
+  });
+  const withoutRfc = scoreMatch(txn, {
+    total: 5817.4,
+    invoice_date: '2026-06-06',
+    receiver: 'AUTO SERVICIO MAS',
+    emitter: 'MI EMPRESA',
+    receiver_rfc: 'ASM010101AAA',
+  });
+  assert.equal(withRfc.rfc_match, true);
+  assert.equal(withoutRfc.rfc_match, false);
+  assert.ok(withRfc.score > withoutRfc.score, 'RFC evidence must outrank same-amount rivals');
+  // Same-party older invoice: date proximity must separate them enough for the
+  // rfc-group auto rule (gap >= 0.05).
+  const samePartyOlder = scoreMatch(txn, {
+    total: 5817.4,
+    invoice_date: '2026-05-22',
+    receiver: 'HOTEL ISHA DEL NOROESTE',
+    emitter: 'MI EMPRESA',
+    receiver_rfc: 'HIN120905SE4',
+  });
+  assert.ok(withRfc.score - samePartyOlder.score >= 0.05);
+});
