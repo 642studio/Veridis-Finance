@@ -308,6 +308,17 @@ async function cancelCfdi(request, reply) {
   reply.send(result);
 }
 
+/**
+ * Sync the invoice ledger: mirror issued CFDIs (incl. imported CRM history) as
+ * receivables and pull received CFDIs from the PAC as payables. Makes both
+ * reconcilable in one place.
+ */
+async function syncInvoices(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  const data = await cfdiService.syncInvoices(organizationId);
+  reply.send({ data });
+}
+
 /** Get the tenant's configured fiscal issuer (no secrets returned). */
 async function getIssuer(request, reply) {
   const organizationId = resolveOrganizationId(request);
@@ -336,6 +347,7 @@ module.exports = {
   creditNoteCfdi,
   paymentCfdi,
   payrollCfdi,
+  syncInvoices,
   getIssuer,
   putIssuer,
 };

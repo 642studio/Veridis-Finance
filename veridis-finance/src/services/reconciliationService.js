@@ -110,16 +110,23 @@ async function findInvoiceCandidates({ organization_id, transaction_id, limit = 
   const lo = Number(amount.times(1 - AMOUNT_TOLERANCE));
   const hi = Number(amount.times(1 + AMOUNT_TOLERANCE));
 
+  // Direction-aware: bank INCOME reconciles against invoices we ISSUED
+  // (clients paying us); bank EXPENSE against invoices we RECEIVED (paying
+  // suppliers). Legacy invoices without a direction are treated as issued so
+  // uploaded-XML receivables keep matching income.
+  const direction = txn.type === 'expense' ? 'received' : 'issued';
+
   const { rows } = await pool.query(
     `SELECT id, uuid_sat, emitter, receiver, total, status, invoice_date, payment_reference
        FROM finance.invoices
       WHERE organization_id = $1
         AND status = 'pending'
+        AND COALESCE(direction, 'issued') = $5
         AND total BETWEEN $2 AND $3
         AND invoice_date BETWEEN $4::timestamp - INTERVAL '${DATE_WINDOW_DAYS} days'
                              AND $4::timestamp + INTERVAL '${DATE_WINDOW_DAYS} days'
       LIMIT 50`,
-    [organization_id, lo, hi, txn.transaction_date]
+    [organization_id, lo, hi, txn.transaction_date, direction]
   );
 
   const candidates = rows

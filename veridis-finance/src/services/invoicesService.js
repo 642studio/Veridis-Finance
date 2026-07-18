@@ -121,6 +121,66 @@ async function createInvoice(payload) {
   }
 }
 
+/**
+ * Insert-or-update an invoice mirrored from a CFDI (issued or PAC-received), so
+ * finance.invoices is the single reconcilable ledger. Deduped by (org, uuid_sat).
+ * Never downgrades a 'paid' invoice back to 'pending'.
+ */
+async function upsertFromCfdi(payload) {
+  const { rows } = await pool.query(
+    `
+    INSERT INTO finance.invoices (
+      organization_id, uuid_sat, emitter, receiver, total, status, invoice_date,
+      paid_at, emitter_rfc, receiver_rfc, subtotal, currency, comprobante_type,
+      forma_pago, metodo_pago, taxes, concepts, direction, source, cfdi_document_id
+    )
+    VALUES ($1,$2,$3,$4,$5,$6::finance.invoice_status,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+    ON CONFLICT (organization_id, uuid_sat) DO UPDATE SET
+      emitter = EXCLUDED.emitter,
+      receiver = EXCLUDED.receiver,
+      total = EXCLUDED.total,
+      status = CASE
+        WHEN finance.invoices.status = 'paid'::finance.invoice_status
+          THEN finance.invoices.status
+        ELSE EXCLUDED.status
+      END,
+      paid_at = COALESCE(finance.invoices.paid_at, EXCLUDED.paid_at),
+      emitter_rfc = COALESCE(EXCLUDED.emitter_rfc, finance.invoices.emitter_rfc),
+      receiver_rfc = COALESCE(EXCLUDED.receiver_rfc, finance.invoices.receiver_rfc),
+      subtotal = COALESCE(EXCLUDED.subtotal, finance.invoices.subtotal),
+      taxes = COALESCE(EXCLUDED.taxes, finance.invoices.taxes),
+      direction = EXCLUDED.direction,
+      source = EXCLUDED.source,
+      cfdi_document_id = COALESCE(EXCLUDED.cfdi_document_id, finance.invoices.cfdi_document_id),
+      updated_at = now()
+    RETURNING id, uuid_sat, status, direction, source, (xmax = 0) AS inserted
+  `,
+    [
+      payload.organization_id,
+      payload.uuid_sat,
+      payload.emitter,
+      payload.receiver,
+      payload.total,
+      payload.status === 'paid' ? 'paid' : 'pending',
+      payload.invoice_date,
+      payload.status === 'paid' ? payload.paid_at || new Date() : null,
+      payload.emitter_rfc || null,
+      payload.receiver_rfc || null,
+      payload.subtotal ?? null,
+      payload.currency || 'MXN',
+      payload.comprobante_type || null,
+      payload.forma_pago || null,
+      payload.metodo_pago || null,
+      payload.taxes ? JSON.stringify(payload.taxes) : null,
+      payload.concepts ? JSON.stringify(payload.concepts) : null,
+      payload.direction === 'issued' ? 'issued' : 'received',
+      payload.source || 'issued_cfdi',
+      payload.cfdi_document_id || null,
+    ]
+  );
+  return rows[0];
+}
+
 async function listInvoices({
   organization_id,
   status,
@@ -252,6 +312,7 @@ async function updateInvoiceStatus({
 
 module.exports = {
   createInvoice,
+  upsertFromCfdi,
   listInvoices,
   findInvoiceByUuid,
   updateInvoiceStatus,
