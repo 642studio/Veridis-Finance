@@ -1204,12 +1204,43 @@ export default function DashboardTransactionsPage() {
     return null;
   }, [clients, members, selectedClientId, selectedMemberId, selectedVendorId, vendors]);
 
+  const [isAutoReconciling, setIsAutoReconciling] = useState(false);
+  const runAutoReconcile = async () => {
+    setIsAutoReconciling(true);
+    try {
+      const res = await clientApiFetch<{
+        data: { scanned: number; matched: number; ambiguous: number; no_match: number; remaining: number };
+      }>("/api/finance/reconciliation/auto", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ max_transactions: 150 }),
+      });
+      const s = res.data;
+      notify.success({
+        title: `Conciliación automática: ${s.matched} conciliadas`,
+        description: `${s.scanned} movimientos revisados · ${s.ambiguous} con candidatos ambiguos (revísalos 1×1) · ${s.no_match} sin factura${s.remaining ? ` · quedan ${s.remaining}, vuelve a ejecutar` : ""}.`,
+      });
+    } catch (error) {
+      const message = error instanceof ApiClientError ? error.message : "No se pudo conciliar";
+      notify.error({ title: "Error en conciliación automática", description: message });
+    } finally {
+      setIsAutoReconciling(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader className="sticky top-2 z-20 flex flex-row items-center justify-between gap-3 border-b border-border/70 bg-card/95 backdrop-blur">
           <CardTitle>Transactions</CardTitle>
           <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            <Button
+              variant="outline"
+              onClick={runAutoReconcile}
+              disabled={isAutoReconciling}
+            >
+              {isAutoReconciling ? "Conciliando…" : "Conciliar automático"}
+            </Button>
             <Button onClick={() => setIsCreateOpen(true)}>Create Transaction</Button>
             <select
               className="h-9 min-w-[220px] rounded-lg border border-border bg-card px-3 text-sm"

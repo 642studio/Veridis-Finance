@@ -324,14 +324,23 @@ export default function DashboardReportsPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>IVA por proveedor (base DIOT)</CardTitle>
-          <CardDescription>
-            Calculado desde los CFDI recibidos que subiste en el mes seleccionado.
-            {diot && diot.unclassified_count > 0
-              ? ` ${diot.unclassified_count} factura(s) sin datos fiscales estructurados — vuelve a subir su XML para incluirlas.`
-              : ""}
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>IVA por proveedor (base DIOT)</CardTitle>
+            <CardDescription>
+              Calculado desde los CFDI recibidos del mes seleccionado (subidos o del SAT).
+              {diot && diot.unclassified_count > 0
+                ? ` ${diot.unclassified_count} factura(s) sin datos fiscales estructurados — vuelve a subir su XML para incluirlas.`
+                : ""}
+            </CardDescription>
+          </div>
+          <a
+            href={`/api/finance/report/diot/batch?month=${String(normalizeMonth(month) || 1).padStart(2, "0")}&year=${normalizeYear(year) || new Date().getFullYear()}`}
+            download
+            className="inline-flex h-10 items-center rounded-xl border border-border bg-card px-4 text-sm font-medium hover:bg-muted"
+          >
+            Descargar DIOT (.txt)
+          </a>
         </CardHeader>
         <CardContent>
           <DataTable

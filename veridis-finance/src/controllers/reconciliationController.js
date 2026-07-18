@@ -35,4 +35,23 @@ async function confirmCandidate(request, reply) {
   reply.send({ data });
 }
 
-module.exports = { listCandidates, confirmCandidate };
+const autoSchema = z.object({
+  max_transactions: z.coerce.number().int().min(1).max(300).default(100),
+});
+
+/** Bulk auto-reconciliation: confirm only unambiguous high-confidence matches. */
+async function autoReconcile(request, reply) {
+  const { max_transactions } = autoSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const data = await reconciliationService.autoReconcile({
+    organization_id: organizationId,
+    max_transactions,
+  });
+  request.log.info(
+    { source: 'auto_reconcile', organization_id: organizationId, ...data, matches: undefined },
+    'Bulk auto-reconciliation run'
+  );
+  reply.send({ data });
+}
+
+module.exports = { listCandidates, confirmCandidate, autoReconcile };

@@ -126,7 +126,51 @@ async function getDiotReport({ organization_id, year, month }) {
   };
 }
 
+/**
+ * DIOT batch file (carga masiva): the classic 23-field pipe-delimited layout
+ * the SAT's DIOT applet imports. One line per national supplier:
+ *
+ *   1  Tipo de tercero          04 = proveedor nacional
+ *   2  Tipo de operación        85 = otros
+ *   3  RFC
+ *   4  ID fiscal (extranjero)   —
+ *   5  Nombre del extranjero    —
+ *   6  País de residencia       —
+ *   7  Nacionalidad             —
+ *   8  Base IVA 16%             (valor de actos pagados a la tasa general)
+ *   9..15                       otras tasas (fronteriza, importación, 0%…) — vacías
+ *   16 IVA exento               —
+ *   17 IVA retenido             (redondeado a pesos)
+ *   18..23                      devoluciones y campos finales — vacíos
+ *
+ * Amounts are whole pesos (the applet rejects decimals). Suppliers without RFC
+ * can't go in the DIOT; they stay in the report's unclassified_count.
+ */
+async function getDiotBatchFile({ organization_id, year, month }) {
+  const report = await getDiotReport({ organization_id, year, month });
+
+  const lines = report.suppliers
+    .filter((s) => s.rfc)
+    .map((s) => {
+      const fields = new Array(23).fill('');
+      fields[0] = '04';
+      fields[1] = '85';
+      fields[2] = String(s.rfc).trim().toUpperCase();
+      fields[7] = String(Math.round(s.base_total || 0));
+      fields[16] = s.iva_retenido ? String(Math.round(s.iva_retenido)) : '';
+      return fields.join('|');
+    });
+
+  return {
+    filename: `DIOT_${year}_${String(month).padStart(2, '0')}.txt`,
+    content: lines.join('\r\n') + (lines.length ? '\r\n' : ''),
+    supplier_count: lines.length,
+    unclassified_count: report.unclassified_count,
+  };
+}
+
 module.exports = {
   getMonthlyReport,
   getDiotReport,
+  getDiotBatchFile,
 };
