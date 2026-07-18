@@ -122,6 +122,19 @@ async function createInvoice(payload) {
 }
 
 /**
+ * Fiscal UUIDs (folio fiscal) are case-insensitive; the SAT emits uppercase,
+ * uploaded XMLs sometimes carry lowercase. Normalize REAL UUIDs to uppercase so
+ * (org, uuid_sat) dedupe works across sources. Synthetic refs (crm:…, manual:…)
+ * pass through untouched.
+ */
+function normalizeUuidSat(value) {
+  const raw = String(value || '').trim();
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(raw)
+    ? raw.toUpperCase()
+    : raw;
+}
+
+/**
  * Insert-or-update an invoice mirrored from a CFDI (issued or PAC-received), so
  * finance.invoices is the single reconcilable ledger. Deduped by (org, uuid_sat).
  * Never downgrades a 'paid' invoice back to 'pending'.
@@ -157,7 +170,7 @@ async function upsertFromCfdi(payload) {
   `,
     [
       payload.organization_id,
-      payload.uuid_sat,
+      normalizeUuidSat(payload.uuid_sat),
       payload.emitter,
       payload.receiver,
       payload.total,
@@ -319,4 +332,5 @@ module.exports = {
   listInvoices,
   findInvoiceByUuid,
   updateInvoiceStatus,
+  normalizeUuidSat,
 };

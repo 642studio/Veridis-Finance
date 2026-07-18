@@ -64,8 +64,26 @@ function buildInstallUrl(state) {
   return `${MARKETPLACE_AUTH}?${params.toString()}`;
 }
 
+/** Fetch with a hard timeout so a slow GHL never hangs the serverless fn. */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const e = new Error(`GHL no respondió en ${Math.round(timeoutMs / 1000)}s (timeout).`);
+      e.statusCode = 504;
+      throw e;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function tokenRequest(body) {
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetchWithTimeout(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams(body).toString(),
@@ -173,7 +191,7 @@ async function getValidAccessToken(installId) {
 /** Call the GHL API for a given install. */
 async function apiFetch(installId, path, options = {}) {
   const token = await getValidAccessToken(installId);
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetchWithTimeout(`${API_BASE}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,

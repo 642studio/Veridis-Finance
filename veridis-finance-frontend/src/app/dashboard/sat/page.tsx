@@ -395,7 +395,7 @@ export default function SatPage() {
                         <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(req.date_from)} → {fmtDate(req.date_to)}</td>
                         <td className="py-2 pr-4">
                           <Badge variant={status.variant}>{status.label}</Badge>
-                          {req.sat_message && req.status === "failed" && (
+                          {req.sat_message && (
                             <p className="mt-1 max-w-xs text-xs text-muted-foreground">{req.sat_message}</p>
                           )}
                         </td>

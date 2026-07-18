@@ -316,10 +316,14 @@ async function checkRequest(organizationId, requestId, env = 'production') {
       organizationId, fiel, token, req.package_ids, req.request_type, env, deadline
     );
     const remaining = req.package_ids.filter((id) => !doneIds.includes(id));
+    const totalImported = (req.cfdi_imported || 0) + imported;
     return updateRequest(req.id, {
       status: remaining.length ? 'downloading' : 'completed',
       package_ids: JSON.stringify(remaining),
-      cfdi_imported: (req.cfdi_imported || 0) + imported,
+      cfdi_imported: totalImported,
+      sat_message: remaining.length
+        ? `Descargando: faltan ${remaining.length} paquete(s)…`
+        : `Importación terminada: ${totalImported} factura(s) al libro.`,
     });
   }
 
@@ -358,6 +362,9 @@ async function checkRequest(organizationId, requestId, env = 'production') {
       status: remaining.length ? 'downloading' : 'completed',
       package_ids: JSON.stringify(remaining),
       cfdi_imported: imported,
+      sat_message: remaining.length
+        ? `Descargando: faltan ${remaining.length} paquete(s)…`
+        : `Importación terminada: ${imported} factura(s) al libro (${packageIds.length} paquete(s) del SAT).`,
     });
   }
 
@@ -468,17 +475,20 @@ async function importCfdiXml(organizationId, buffer, requestType) {
 }
 
 /**
- * SAT metadata file: header row + '~'-delimited data rows. Columns (order):
- * Uuid, RfcEmisor, NombreEmisor, RfcReceptor, NombreReceptor, RfcPac,
- * FechaEmision, FechaCertificacionSat, Monto, EfectoComprobante, Estatus,
- * FechaCancelacion. We map each row into the ledger.
+ * Parse a SAT metadata file (pure, no DB). Header row + '~'-delimited data
+ * rows: Uuid~RfcEmisor~NombreEmisor~RfcReceptor~NombreReceptor~RfcPac~
+ * FechaEmision~FechaCertificacionSat~Monto~EfectoComprobante~Estatus~….
+ * Robust to the UTF-8 BOM the SAT's generator prepends (without stripping it,
+ * the first header cell reads "\uFEFFuuid" and NOTHING imports).
  */
-async function importMetadata(organizationId, buffer, requestType) {
-  const text = buffer.toString('utf8');
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return 0;
+function parseMetadataRows(text) {
+  const clean = String(text).replace(/^\uFEFF/, '');
+  const lines = clean.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
 
-  const header = lines[0].split('~').map((h) => h.trim().toLowerCase());
+  const header = lines[0]
+    .split('~')
+    .map((h) => h.replace(/^\uFEFF/, '').trim().toLowerCase());
   const idx = (names) => {
     for (const n of names) {
       const i = header.indexOf(n);
@@ -493,26 +503,40 @@ async function importMetadata(organizationId, buffer, requestType) {
   const iReceptorName = idx(['nombrereceptor']);
   const iFecha = idx(['fechaemision']);
   const iMonto = idx(['monto']);
-  if (iUuid < 0) return 0;
+  if (iUuid < 0) return [];
 
-  let count = 0;
+  const rows = [];
   for (let i = 1; i < lines.length; i += 1) {
     const cols = lines[i].split('~');
     const uuid = (cols[iUuid] || '').trim();
     if (!uuid) continue;
-    const emitterRfc = iEmisorRfc >= 0 ? (cols[iEmisorRfc] || '').trim() : null;
-    const receiverRfc = iReceptorRfc >= 0 ? (cols[iReceptorRfc] || '').trim() : null;
-    const emitterName = iEmisorName >= 0 ? (cols[iEmisorName] || '').trim() : '';
-    const receiverName = iReceptorName >= 0 ? (cols[iReceptorName] || '').trim() : '';
-    const fecha = iFecha >= 0 ? (cols[iFecha] || '').trim() : null;
-    const monto = iMonto >= 0 ? Number((cols[iMonto] || '0').replace(/[^0-9.\-]/g, '')) : 0;
+    const monto =
+      iMonto >= 0 ? Number((cols[iMonto] || '0').replace(/[^0-9.\-]/g, '')) : 0;
+    rows.push({
+      uuid,
+      emitterRfc: iEmisorRfc >= 0 ? (cols[iEmisorRfc] || '').trim() || null : null,
+      receiverRfc: iReceptorRfc >= 0 ? (cols[iReceptorRfc] || '').trim() || null : null,
+      emitterName: iEmisorName >= 0 ? (cols[iEmisorName] || '').trim() : '',
+      receiverName: iReceptorName >= 0 ? (cols[iReceptorName] || '').trim() : '',
+      fecha: iFecha >= 0 ? (cols[iFecha] || '').trim() || null : null,
+      monto: Number.isFinite(monto) ? monto : 0,
+    });
+  }
+  return rows;
+}
 
+/** Import a SAT metadata file into the ledger. Returns rows imported. */
+async function importMetadata(organizationId, buffer, requestType) {
+  const rows = parseMetadataRows(buffer.toString('utf8'));
+  let count = 0;
+  for (const row of rows) {
+    const { uuid, emitterRfc, receiverRfc, emitterName, receiverName, fecha, monto } = row;
     await invoicesService.upsertFromCfdi({
       organization_id: organizationId,
       uuid_sat: uuid,
       emitter: emitterName || emitterRfc || 'SAT',
       receiver: receiverName || receiverRfc || 'SAT',
-      total: Number.isFinite(monto) ? monto : 0,
+      total: monto,
       status: 'pending',
       invoice_date: fecha ? new Date(fecha) : new Date(),
       emitter_rfc: emitterRfc,
@@ -573,4 +597,5 @@ module.exports = {
   importMetadata,
   importPackage,
   extractFault,
+  parseMetadataRows,
 };
