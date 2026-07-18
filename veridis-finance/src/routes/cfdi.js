@@ -11,6 +11,7 @@ const {
   creditNoteCfdi,
   paymentCfdi,
   payrollCfdi,
+  syncInvoices,
   getIssuer,
   putIssuer,
 } = require('../controllers/cfdiController');
@@ -62,6 +63,13 @@ async function cfdiRoutes(app) {
     '/cfdi/payroll',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
     payrollCfdi
+  );
+
+  // Sync the reconcilable invoice ledger (issued mirror + PAC received).
+  app.post(
+    '/cfdi/sync-invoices',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    syncInvoices
   );
 
   // Reconcile a CFDI as paid (syncs the payment to the 642 CRM).

@@ -10,7 +10,38 @@ const pool = require('../db/pool');
 const pac = require('./pacService');
 const receiversService = require('./cfdiReceiversService');
 const issuersService = require('./cfdiIssuersService');
+const invoicesService = require('./invoicesService');
 const { round } = require('../lib/money');
+
+/**
+ * Mirror an issued CFDI de Ingreso into finance.invoices (the reconcilable
+ * ledger) as a receivable. Best-effort: never fail stamping if this errors.
+ * Only type 'I' (Ingreso) is a receivable — Egreso/Pago are not mirrored.
+ */
+async function mirrorIssuedInvoice(organizationId, doc, issuer) {
+  if (!doc || doc.cfdi_type !== 'I' || !doc.uuid) return null;
+  try {
+    return await invoicesService.upsertFromCfdi({
+      organization_id: organizationId,
+      uuid_sat: doc.uuid,
+      emitter: `${issuer?.rfc || 'EMISOR'} - ${issuer?.legal_name || 'Mi empresa'}`,
+      receiver: `${doc.receiver_rfc || ''} - ${doc.receiver_name || ''}`.trim(),
+      emitter_rfc: issuer?.rfc || null,
+      receiver_rfc: doc.receiver_rfc || null,
+      total: doc.total ?? 0,
+      invoice_date: doc.stamped_at || doc.created_at || new Date(),
+      status: doc.payment_status === 'paid' ? 'paid' : 'pending',
+      paid_at: doc.paid_at || null,
+      currency: doc.currency || 'MXN',
+      metodo_pago: doc.metodo_pago || null,
+      direction: 'issued',
+      source: 'issued_cfdi',
+      cfdi_document_id: doc.id,
+    });
+  } catch {
+    return null;
+  }
+}
 
 /** Load the active issuer record for a tenant (or null). */
 async function getIssuer(organizationId) {
@@ -153,6 +184,9 @@ async function issueIngreso(input) {
 
   const doc = mapRow(rows[0]);
 
+  // Mirror into the reconcilable invoice ledger (receivable).
+  await mirrorIssuedInvoice(organizationId, doc, issuer);
+
   // Veridis -> CRM: when a CFDI is issued *inside* Veridis (not from a CRM
   // webhook) for a receiver linked to a CRM contact, mirror it as an invoice in
   // the 642 CRM. Best-effort: never fail the stamping if the CRM call errors.
@@ -205,7 +239,12 @@ async function markPaid({ organization_id, id, source = 'veridis' }) {
       RETURNING *`,
     [organization_id, id, source]
   );
-  return rows[0] ? mapRow(rows[0]) : null;
+  if (!rows[0]) return null;
+  const doc = mapRow(rows[0]);
+  // Keep the mirrored invoice's paid status in sync.
+  const issuer = await getIssuer(organization_id);
+  await mirrorIssuedInvoice(organization_id, doc, issuer);
+  return doc;
 }
 
 /** Find a CFDI by the CRM invoice id it was mirrored to (for payment sync). */
@@ -565,6 +604,87 @@ async function cancel({ organization_id, id, motive = '02', substitution = null 
   return { data: rows[0] ? mapRow(rows[0]) : doc, acuse };
 }
 
+/**
+ * Backfill: mirror every stamped CFDI de Ingreso (manual, CRM webhook, CRM
+ * history import) into finance.invoices as a receivable. Idempotent.
+ */
+async function syncIssuedToInvoices(organizationId) {
+  const issuer = await getIssuer(organizationId);
+  const { rows } = await pool.query(
+    `SELECT * FROM finance.cfdi_documents
+      WHERE organization_id = $1 AND cfdi_type = 'I' AND status = 'stamped' AND uuid IS NOT NULL`,
+    [organizationId]
+  );
+  let created = 0;
+  let updated = 0;
+  for (const row of rows) {
+    const result = await mirrorIssuedInvoice(organizationId, mapRow(row), issuer);
+    if (result?.inserted) created += 1;
+    else if (result) updated += 1;
+  }
+  return { found: rows.length, created, updated };
+}
+
+/**
+ * Pull the tenant's RECEIVED CFDIs from the PAC and persist them into
+ * finance.invoices as payables (direction=received), so supplier payments are
+ * reconcilable and feed DIOT. Deduped by UUID. Best-effort per document.
+ */
+async function syncReceivedToInvoices(organizationId) {
+  const issuer = await getIssuer(organizationId);
+  const { provider, creds } = resolveCreds(issuer);
+  let list = [];
+  try {
+    list = await pac.list('received', { provider, creds });
+  } catch (err) {
+    const e = new Error(`No se pudieron obtener facturas recibidas del PAC: ${String(err.message).slice(0, 200)}`);
+    e.statusCode = err.statusCode || 502;
+    throw e;
+  }
+
+  const summary = { found: Array.isArray(list) ? list.length : 0, created: 0, updated: 0, skipped: 0 };
+  for (const c of list || []) {
+    const uuid = c?.Complement?.TaxStamp?.Uuid || c?.Uuid || null;
+    if (!uuid) {
+      summary.skipped += 1;
+      continue;
+    }
+    const emitterRfc = c?.Issuer?.Rfc || c?.IssuerRfc || null;
+    const emitterName = c?.Issuer?.Name || c?.IssuerName || '';
+    const result = await invoicesService.upsertFromCfdi({
+      organization_id: organizationId,
+      uuid_sat: uuid,
+      emitter: `${emitterRfc || ''} - ${emitterName}`.trim(),
+      receiver: `${issuer?.rfc || ''} - ${issuer?.legal_name || 'Mi empresa'}`.trim(),
+      emitter_rfc: emitterRfc,
+      receiver_rfc: issuer?.rfc || null,
+      total: Number(c?.Total ?? 0),
+      subtotal: c?.Subtotal != null ? Number(c.Subtotal) : null,
+      invoice_date: c?.Date || new Date(),
+      status: 'pending',
+      currency: c?.Currency || 'MXN',
+      direction: 'received',
+      source: 'pac_received',
+    });
+    if (result?.inserted) summary.created += 1;
+    else summary.updated += 1;
+  }
+  return summary;
+}
+
+/** Run both syncs: mirror issued receivables + pull received payables. */
+async function syncInvoices(organizationId) {
+  const issued = await syncIssuedToInvoices(organizationId);
+  let received = { found: 0, created: 0, updated: 0, skipped: 0, error: null };
+  try {
+    received = await syncReceivedToInvoices(organizationId);
+  } catch (err) {
+    // Received sync needs a working PAC; report the error but keep issued sync.
+    received.error = String(err.message).slice(0, 200);
+  }
+  return { issued, received };
+}
+
 /** List issued CFDIs from our DB. */
 async function listIssued({ organization_id, limit = 50, offset = 0 }) {
   const { rows } = await pool.query(
@@ -627,6 +747,9 @@ module.exports = {
   registerPayment,
   issuePayroll,
   cancel,
+  syncInvoices,
+  syncIssuedToInvoices,
+  syncReceivedToInvoices,
   listIssued,
   getById,
   download,

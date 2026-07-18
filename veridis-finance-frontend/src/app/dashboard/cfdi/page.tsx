@@ -78,6 +78,7 @@ export default function CfdiPage() {
   const [shareUrl, setShareUrl] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [importingHistory, setImportingHistory] = useState(false);
+  const [syncingInvoices, setSyncingInvoices] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -372,6 +373,31 @@ export default function CfdiPage() {
     }
   };
 
+  const syncInvoices = async () => {
+    setSyncingInvoices(true);
+    try {
+      const response = await clientApiFetch<{
+        data: {
+          issued: { found: number; created: number; updated: number };
+          received: { found: number; created: number; updated: number; error?: string | null };
+        };
+      }>("/api/finance/cfdi/sync-invoices", { method: "POST" });
+      const { issued, received } = response.data;
+      notify.success({
+        title: "Facturas sincronizadas",
+        description: `Emitidas: ${issued.created} nuevas al libro (${issued.found} CFDI). Recibidas del PAC: ${received.error ? "sin conexión al PAC" : `${received.created} nuevas`}.`,
+      });
+      load();
+    } catch (error) {
+      notify.error({
+        title: "No se pudieron sincronizar",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setSyncingInvoices(false);
+    }
+  };
+
   const openCreditNote = (c: Cfdi) => {
     setNcForm({ amount: String(c.total ?? ""), description: "Nota de crédito", relation: "01" });
     setNcFor(c);
@@ -466,6 +492,9 @@ export default function CfdiPage() {
         </div>
         {canWrite ? (
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={syncInvoices} disabled={syncingInvoices}>
+              {syncingInvoices ? "Sincronizando…" : "Sincronizar facturas"}
+            </Button>
             <Button variant="outline" onClick={shareCsfLink}>
               Compartir link CSF
             </Button>
