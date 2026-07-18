@@ -235,6 +235,11 @@ export interface Invoice {
   /** 'issued' = la emitió tu organización; 'received' = de un proveedor. */
   direction?: "issued" | "received";
   emitter_rfc?: string | null;
+  receiver_rfc?: string | null;
+  /** De dónde vino: 'crm', 'sat_download', 'upload', 'issued_cfdi', 'pac_received'. */
+  source?: string | null;
+  /** Presente sólo cuando existe un CFDI timbrado detrás (con PDF/XML). */
+  cfdi_document_id?: string | null;
   paid_at?: string | null;
   payment_method?: string | null;
   payment_reference?: string | null;

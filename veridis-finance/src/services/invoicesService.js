@@ -215,7 +215,10 @@ async function listInvoices({
         payment_method,
         payment_reference,
         emitter_rfc,
+        receiver_rfc,
         direction,
+        source,
+        cfdi_document_id,
         updated_at,
         created_at
       FROM finance.invoices
