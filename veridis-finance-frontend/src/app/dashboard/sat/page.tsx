@@ -209,6 +209,24 @@ export default function SatPage() {
     }
   };
 
+  // Auto-verificación: el SAT procesa de forma asíncrona. Mientras haya
+  // solicitudes en curso, revisamos una cada 45s sin que el usuario le pique.
+  useEffect(() => {
+    const pending = requests.filter((r) =>
+      ["accepted", "in_progress", "downloading"].includes(r.status)
+    );
+    if (pending.length === 0) return undefined;
+    const timer = setInterval(async () => {
+      try {
+        await clientApiFetch(`/api/finance/sat/requests/${pending[0].id}/check`, { method: "POST" });
+        await loadRequests();
+      } catch {
+        /* silencioso — el usuario puede pulsar «Verificar» manualmente */
+      }
+    }, 45000);
+    return () => clearInterval(timer);
+  }, [requests, loadRequests]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -342,8 +360,11 @@ export default function SatPage() {
         <CardHeader>
           <CardTitle>Solicitudes</CardTitle>
           <CardDescription>
-            El SAT procesa cada solicitud de forma asíncrona. Cuando esté lista, pulsa «Verificar» para
-            traer las facturas al libro.
+            El SAT procesa cada solicitud de forma asíncrona: tarda de <strong>unos minutos hasta
+            varias horas</strong> (más entre más grande el rango). Las revisamos <strong>solas cada
+            45 s</strong> mientras esta página esté abierta; también puedes pulsar «Verificar». Al
+            terminar, las facturas entran al libro automáticamente. Tip: para tu primera prueba usa un
+            mes para que baje rápido.
           </CardDescription>
         </CardHeader>
         <CardContent>
