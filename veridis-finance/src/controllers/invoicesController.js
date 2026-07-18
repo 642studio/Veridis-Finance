@@ -21,6 +21,8 @@ const createInvoiceSchema = z.object({
   total: z.coerce.number().positive(),
   status: z.enum(['pending', 'paid']).default('pending'),
   invoice_date: z.coerce.date(),
+  // 'issued' = cuenta por cobrar (cliente); 'received' = por pagar (proveedor).
+  direction: z.enum(['issued', 'received']).optional(),
 });
 
 const uploadInvoiceFormSchema = z.object({

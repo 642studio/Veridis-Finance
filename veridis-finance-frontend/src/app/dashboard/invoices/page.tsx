@@ -78,6 +78,7 @@ export default function DashboardInvoicesPage() {
     total: "",
     invoice_date: "",
     status: "pending" as "pending" | "paid",
+    direction: "issued" as "issued" | "received",
   });
 
   const buildQuery = useCallback(
@@ -217,7 +218,14 @@ export default function DashboardInvoicesPage() {
   };
 
   const resetCreateForm = useCallback(() => {
-    setCreateForm({ emitter: "", receiver: "", total: "", invoice_date: "", status: "pending" });
+    setCreateForm({
+      emitter: "",
+      receiver: "",
+      total: "",
+      invoice_date: "",
+      status: "pending",
+      direction: "issued",
+    });
   }, []);
 
   const handleCreateInvoice = useCallback(async () => {
@@ -252,6 +260,7 @@ export default function DashboardInvoicesPage() {
           total,
           status: createForm.status,
           invoice_date: createForm.invoice_date,
+          direction: createForm.direction,
         }),
       });
 
@@ -594,6 +603,23 @@ export default function DashboardInvoicesPage() {
                   }
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create_direction">Tipo</Label>
+              <select
+                id="create_direction"
+                className="flex h-10 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                value={createForm.direction}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    direction: event.target.value === "received" ? "received" : "issued",
+                  }))
+                }
+              >
+                <option value="issued">Emitida (yo cobro — cliente)</option>
+                <option value="received">Recibida (yo pago — proveedor)</option>
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="create_status">Estatus</Label>

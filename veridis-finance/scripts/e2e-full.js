@@ -128,6 +128,7 @@ function expect(cond, message) {
         total: 5817.4,
         status: 'pending',
         invoice_date: new Date().toISOString().slice(0, 10),
+        direction: 'issued', // cuenta por cobrar: el ingreso bancario debe encontrarla
       },
     });
     expect(r.status === 201, `status ${r.status}: ${JSON.stringify(r.json).slice(0, 200)}`);
@@ -222,8 +223,11 @@ function expect(cond, message) {
   });
 
   await step('15. Limpieza: borrar organización de prueba', async () => {
-    const r = await api('/auth/account', { method: 'DELETE' });
-    expect(r.status === 200 || r.status === 204, `status ${r.status}`);
+    const r = await api('/auth/account', {
+      method: 'DELETE',
+      body: { password: 'E2e!Passw0rd#2026' },
+    });
+    expect(r.status === 200 || r.status === 204, `status ${r.status}: ${JSON.stringify(r.json).slice(0, 150)}`);
   });
 
   const failed = results.filter((r) => !r.ok);
