@@ -672,17 +672,27 @@ async function syncReceivedToInvoices(organizationId) {
   return summary;
 }
 
-/** Run both syncs: mirror issued receivables + pull received payables. */
+/** Run all syncs: issued receivables + CRM pre-fiscal sales + PAC received. */
 async function syncInvoices(organizationId) {
   const issued = await syncIssuedToInvoices(organizationId);
+
+  // CRM sales (paid in the CRM, stamped or not) → issued receivables ledger.
+  let crm = { found: 0, created: 0, updated: 0 };
+  try {
+    const ghl = require('./ghlService');
+    crm = await ghl.syncCrmToLedger(organizationId);
+  } catch (err) {
+    crm.error = String(err.message).slice(0, 200);
+  }
+
   let received = { found: 0, created: 0, updated: 0, skipped: 0, error: null };
   try {
     received = await syncReceivedToInvoices(organizationId);
   } catch (err) {
-    // Received sync needs a working PAC; report the error but keep issued sync.
+    // Received sync needs a working PAC; report the error but keep the rest.
     received.error = String(err.message).slice(0, 200);
   }
-  return { issued, received };
+  return { issued, crm, received };
 }
 
 /** List issued CFDIs from our DB. */
