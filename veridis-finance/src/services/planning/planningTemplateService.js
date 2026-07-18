@@ -28,12 +28,13 @@ function buildPlanningTemplate() {
     ['Software y licencias', 'Tecnología', 6500, 3, 'TRUE'],
   ]);
 
+  // Applies To must be "global" (or a product_id UUID) — the import validates it.
   const variables = XLSX.utils.aoa_to_sheet([
     ['Variable Name', 'Type', 'Value', 'Applies To'],
-    ['ACCOUNTS_RECEIVABLE', 'fixed', 30, 'Días de cobro a clientes'],
-    ['ACCOUNTS_PAYABLE', 'fixed', 15, 'Días de pago a proveedores'],
-    ['DISCOUNT_RATE', 'percentage', 12, 'Tasa de descuento anual'],
-    ['INVENTORY', 'fixed', 0, 'Inventario promedio'],
+    ['ACCOUNTS_RECEIVABLE', 'fixed', 30, 'global'],
+    ['ACCOUNTS_PAYABLE', 'fixed', 15, 'global'],
+    ['DISCOUNT_RATE', 'percentage', 12, 'global'],
+    ['INVENTORY', 'fixed', 0, 'global'],
   ]);
 
   XLSX.utils.book_append_sheet(wb, planConfig, 'PLAN_CONFIG');
