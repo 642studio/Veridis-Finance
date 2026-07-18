@@ -26,6 +26,7 @@ const transactionSplitsRoutes = require('./routes/transactionSplits');
 const reconciliationRoutes = require('./routes/reconciliation');
 const cronRoutes = require('./routes/cron');
 const onboardingRoutes = require('./routes/onboarding');
+const satRoutes = require('./routes/sat');
 const logger = require('./logger');
 const pool = require('./db/pool');
 
@@ -177,6 +178,7 @@ function buildApp() {
   app.register(transactionSplitsRoutes, { prefix: '/api/finance' });
   app.register(reconciliationRoutes, { prefix: '/api/finance' });
   app.register(onboardingRoutes, { prefix: '/api/finance' });
+  app.register(satRoutes, { prefix: '/api/finance' });
   app.register(planningRoutes, { prefix: '/api' });
 
   // Canonical SaaS endpoints requested for entity modules and transactions.
