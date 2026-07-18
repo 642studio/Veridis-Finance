@@ -128,6 +128,27 @@ test('solicita uses RfcReceptor for received and RfcEmisor for issued', () => {
   assert.doesNotMatch(issued, /RfcReceptor=/);
 });
 
+test('solicita uses the split operations + matching SOAPAction (SAT deprecated the single op)', () => {
+  const f = syntheticFiel();
+  const received = soap.buildSolicitaEnvelope(f, {
+    requestType: 'received',
+    downloadType: 'Metadata',
+    dateFrom: '2019-01-01',
+    dateTo: '2026-06-30',
+  });
+  const issued = soap.buildSolicitaEnvelope(f, {
+    requestType: 'issued',
+    downloadType: 'Metadata',
+    dateFrom: '2019-01-01',
+    dateTo: '2026-06-30',
+  });
+  assert.match(received, /<SolicitaDescargaRecibidos xmlns=/);
+  assert.match(issued, /<SolicitaDescargaEmitidos xmlns=/);
+  assert.doesNotMatch(received, /<SolicitaDescarga xmlns=/); // not the legacy single op
+  assert.match(soap.solicitaAction('received'), /SolicitaDescargaRecibidos$/);
+  assert.match(soap.solicitaAction('issued'), /SolicitaDescargaEmitidos$/);
+});
+
 // ---------------------------------------------------------------------------
 // ZIP reader — both stored (method 0) and deflate (method 8)
 // ---------------------------------------------------------------------------
