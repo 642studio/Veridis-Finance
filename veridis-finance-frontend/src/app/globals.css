@@ -122,6 +122,40 @@ h5,
 h6 {
   font-family: var(--font-heading), sans-serif;
   letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* Finanzas = números: cifras tabulares en todas las tablas y celdas de datos,
+   para que los montos queden alineados columna a columna. */
+table,
+td,
+th,
+dd {
+  font-variant-numeric: tabular-nums;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Filas de datos vivas: hover sutil en todas las tablas del dashboard. */
+tbody tr {
+  transition: background-color 150ms ease;
+}
+tbody tr:hover {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @layer utilities {
