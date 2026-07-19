@@ -755,7 +755,7 @@ export default function CfdiPage() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Aún no hay receptores. Sube el CSF de un cliente para empezar.
+              Aún no hay receptores. Sube el CSF de un cliente, o sincroniza facturas para derivarlos de tu histórico del SAT.
             </p>
           )}
         </CardContent>
@@ -891,7 +891,7 @@ export default function CfdiPage() {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Aún no hay CFDIs emitidos.</p>
+            <p className="text-sm text-muted-foreground">Aún no hay CFDIs timbrados desde aquí. Configura tu Emisor fiscal para timbrar, o consulta tu histórico con Descarga SAT.</p>
           )}
         </CardContent>
       </Card>

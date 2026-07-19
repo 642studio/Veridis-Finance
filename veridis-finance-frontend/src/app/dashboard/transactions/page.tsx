@@ -60,10 +60,10 @@ import type {
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 const SORT_BY_OPTIONS = [
-  { value: "transaction_date", label: "Date" },
-  { value: "amount", label: "Amount" },
-  { value: "category", label: "Category" },
-  { value: "created_at", label: "Created" },
+  { value: "transaction_date", label: "Fecha" },
+  { value: "amount", label: "Monto" },
+  { value: "category", label: "Categoría" },
+  { value: "created_at", label: "Creación" },
 ] as const;
 const SORT_ORDER_OPTIONS = [
   { value: "desc", label: "Desc" },
@@ -82,7 +82,7 @@ function EntityBadge({ transaction }: { transaction: Transaction }) {
     return (
       <Link href={`/dashboard/contacts?contactId=${transaction.contact_id}`}>
         <Badge variant="outline" className="hover:bg-accent">
-          Contact: {transaction.contact_name || "View"}
+          Contacto: {transaction.contact_name || "Ver"}
         </Badge>
       </Link>
     );
@@ -96,7 +96,7 @@ function EntityBadge({ transaction }: { transaction: Transaction }) {
         )}`}
       >
         <Badge variant="outline" className="hover:bg-accent">
-          Member: {transaction.member_name || "View"}
+          Equipo: {transaction.member_name || "Ver"}
         </Badge>
       </Link>
     );
@@ -110,7 +110,7 @@ function EntityBadge({ transaction }: { transaction: Transaction }) {
         )}`}
       >
         <Badge variant="outline" className="hover:bg-accent">
-          Client: {transaction.client_name || "View"}
+          Cliente: {transaction.client_name || "Ver"}
         </Badge>
       </Link>
     );
@@ -124,7 +124,7 @@ function EntityBadge({ transaction }: { transaction: Transaction }) {
         )}`}
       >
         <Badge variant="outline" className="hover:bg-accent">
-          Vendor: {transaction.vendor_name || "View"}
+          Proveedor: {transaction.vendor_name || "Ver"}
         </Badge>
       </Link>
     );
@@ -743,7 +743,7 @@ export default function DashboardTransactionsPage() {
     const targetIds = [...selectedTransactionIds];
     if (targetIds.length === 0) {
       notify.info({
-        title: "No transactions selected",
+        title: "Sin movimientos seleccionados",
         description: "Select at least one transaction to continue.",
       });
       return;
@@ -1232,7 +1232,7 @@ export default function DashboardTransactionsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader className="sticky top-2 z-20 flex flex-row items-center justify-between gap-3 border-b border-border/70 bg-card/95 backdrop-blur">
-          <CardTitle>Transactions</CardTitle>
+          <CardTitle>Movimientos</CardTitle>
           <div className="flex flex-wrap items-center gap-2 md:justify-end">
             <Button
               variant="outline"
@@ -1241,7 +1241,7 @@ export default function DashboardTransactionsPage() {
             >
               {isAutoReconciling ? "Conciliando…" : "Conciliar automático"}
             </Button>
-            <Button onClick={() => setIsCreateOpen(true)}>Create Transaction</Button>
+            <Button onClick={() => setIsCreateOpen(true)}>Nuevo movimiento</Button>
             <select
               className="h-9 min-w-[220px] rounded-lg border border-border bg-card px-3 text-sm"
               value={selectedContactId}
@@ -1254,7 +1254,7 @@ export default function DashboardTransactionsPage() {
               }}
               disabled={isMetaLoading}
             >
-              <option value="all">All contacts</option>
+              <option value="all">Todos los contactos</option>
               {contacts.map((contact) => (
                 <option key={contact.id} value={contact.id}>
                   {contact.business_name || contact.name}
@@ -1289,7 +1289,7 @@ export default function DashboardTransactionsPage() {
               }}
               disabled={isMetaLoading}
             >
-              <option value="all">All accounts</option>
+              <option value="all">Todas las cuentas</option>
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
                   {account.name}
@@ -1304,7 +1304,7 @@ export default function DashboardTransactionsPage() {
                 setPage(1);
               }}
             >
-              <option value="all">All status</option>
+              <option value="all">Todos los estatus</option>
               <option value="posted">posted</option>
               <option value="pending">pending</option>
               <option value="reconciled">reconciled</option>
@@ -1318,7 +1318,7 @@ export default function DashboardTransactionsPage() {
                 setPage(1);
               }}
             >
-              <option value="all">All sources</option>
+              <option value="all">Todos los orígenes</option>
               <option value="manual">manual</option>
               <option value="automation">automation</option>
               <option value="bank_statement_import">bank_statement_import</option>
@@ -1334,7 +1334,7 @@ export default function DashboardTransactionsPage() {
                 setQueryText(event.target.value);
                 setPage(1);
               }}
-              placeholder="Search description/category..."
+              placeholder="Buscar descripción o categoría…"
               className="h-9 min-w-[230px]"
             />
             <Input
@@ -1402,7 +1402,7 @@ export default function DashboardTransactionsPage() {
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>
-                  {size} / page
+                  {size} / pág.
                 </option>
               ))}
             </select>
@@ -1467,7 +1467,7 @@ export default function DashboardTransactionsPage() {
               onClick={exportTransactionsCsv}
               disabled={isLoading || isExporting}
             >
-              {isExporting ? "Exporting..." : "Export CSV"}
+              {isExporting ? "Exportando…" : "Exportar CSV"}
             </Button>
             <Button variant="secondary" onClick={() => setIsBankUploadOpen(true)}>
               Upload Bank Statements
@@ -1477,7 +1477,7 @@ export default function DashboardTransactionsPage() {
         <CardContent>
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-background/40 p-3">
             <span className="text-sm text-muted-foreground">
-              {selectedCount} selected
+              {selectedCount} seleccionados
             </span>
             <span className="text-sm text-muted-foreground">
               Total: {formatCurrency(selectedAmountTotal)}
@@ -1490,7 +1490,7 @@ export default function DashboardTransactionsPage() {
               }
               disabled={selectedCount === 0 || isBulkApplying || isBulkDeleting}
             >
-              <option value="">Set status...</option>
+              <option value="">Cambiar estatus…</option>
               <option value="posted">posted</option>
               <option value="pending">pending</option>
               <option value="reconciled">reconciled</option>
@@ -1507,12 +1507,12 @@ export default function DashboardTransactionsPage() {
                 isBulkDeleting
               }
             >
-              {isBulkApplying ? "Applying..." : "Apply status"}
+              {isBulkApplying ? "Aplicando…" : "Aplicar estatus"}
             </Button>
             <Input
               value={bulkCategory}
               onChange={(event) => setBulkCategory(event.target.value)}
-              placeholder="Set category..."
+              placeholder="Asignar categoría…"
               list="bulk-category-options"
               className="h-9 min-w-[220px]"
               disabled={selectedCount === 0 || isBulkApplying || isBulkDeleting}
@@ -1533,7 +1533,7 @@ export default function DashboardTransactionsPage() {
                 isBulkDeleting
               }
             >
-              {isBulkApplying ? "Applying..." : "Apply category"}
+              {isBulkApplying ? "Aplicando…" : "Aplicar categoría"}
             </Button>
             <Button
               variant="danger"
@@ -1567,16 +1567,16 @@ export default function DashboardTransactionsPage() {
                       aria-label="Select all visible transactions"
                     />
                   </TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Linked Entity</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Estatus</TableHead>
+                  <TableHead>Monto</TableHead>
+                  <TableHead>Cuenta</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Vinculado a</TableHead>
+                  <TableHead>Origen</TableHead>
+                  <TableHead>Notas</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
