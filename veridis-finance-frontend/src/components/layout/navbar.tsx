@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 
 import { Logo } from "@/components/layout/logo";
+import { NotificationsBell } from "@/components/layout/notifications-bell";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { cn } from "@/lib/utils";
 import { DASHBOARD_NAV_ITEMS } from "@/lib/navigation";
@@ -45,6 +46,7 @@ export function Navbar({ session }: NavbarProps) {
 
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
+          <NotificationsBell />
 
           <div className="flex items-center gap-2 rounded-lg border border-border bg-card py-1 pl-1 pr-2">
             <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/15 text-xs font-bold text-primary">

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { EfosCard } from "@/components/fiscal/efos-card";
+import { EvidenceDialog } from "@/components/fiscal/evidence-dialog";
 import { useSession } from "@/components/session-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -105,6 +107,7 @@ export default function CfdiPage() {
   const [syncingInvoices, setSyncingInvoices] = useState(false);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [evidenceFor, setEvidenceFor] = useState<Cfdi | null>(null);
 
   // CSF upload / receiver form
   const [csfOpen, setCsfOpen] = useState(false);
@@ -578,6 +581,9 @@ export default function CfdiPage() {
         </CardHeader>
       </Card>
 
+      {/* Monitoreo EFOS (69-B) */}
+      <EfosCard canWrite={canWrite} />
+
       {shareUrl ? (
         <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm">
           <span className="text-muted-foreground">Link self-service (copiado): </span>
@@ -872,6 +878,14 @@ export default function CfdiPage() {
                                 Nota de crédito
                               </button>
                             ) : null}
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+                              onClick={() => setEvidenceFor(c)}
+                              title="Materialidad (49 Bis): adjunta evidencia de la operación"
+                            >
+                              Evidencia
+                            </button>
                             <a className="text-primary hover:underline" href={`/api/finance/cfdi/${c.id}/pdf`}>
                               PDF
                             </a>
@@ -1153,6 +1167,14 @@ export default function CfdiPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Evidencia de materialidad (CFF 49 Bis) */}
+      <EvidenceDialog
+        cfdiId={evidenceFor?.id || null}
+        cfdiLabel={evidenceFor?.uuid ? `${evidenceFor.uuid.slice(0, 13)}…` : evidenceFor?.folio || null}
+        canWrite={canWrite}
+        onClose={() => setEvidenceFor(null)}
+      />
     </div>
   );
 }
