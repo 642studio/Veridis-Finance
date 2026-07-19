@@ -45,20 +45,24 @@ function parseCsvLine(line) {
 function parseEfosCsv(buffer) {
   const text = buffer.toString('latin1');
   const lines = text.split(/\r?\n/);
-  const rows = [];
+  // The SAT file can list the SAME RFC more than once (an RFC progresses
+  // Presunto → Definitivo/Desvirtuado across publications). Postgres rejects
+  // duplicate keys within one upsert (error 21000), so dedupe keeping the
+  // LAST occurrence — the most recent status in file order.
+  const byRfc = new Map();
   for (const line of lines) {
     if (!line || line.length < 10) continue;
     const fields = parseCsvLine(line);
     if (fields.length < 4) continue;
     const rfc = String(fields[1] || '').trim().toUpperCase();
     if (!RFC_RE.test(rfc)) continue;
-    rows.push({
+    byRfc.set(rfc, {
       rfc,
       name: String(fields[2] || '').trim().slice(0, 300),
       situacion: String(fields[3] || '').trim().slice(0, 80) || 'Desconocido',
     });
   }
-  return rows;
+  return Array.from(byRfc.values());
 }
 
 async function upsertRows(rows) {

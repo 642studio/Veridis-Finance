@@ -24,6 +24,19 @@ test('parseEfosCsv extracts RFC/name/situacion and skips junk headers', () => {
   assert.strictEqual(rows[1].situacion, 'Presunto');
 });
 
+test('parseEfosCsv dedupes repeated RFCs keeping the last status', () => {
+  const csv = Buffer.from(
+    [
+      '1,DDD040404DD4,"EMPRESA X, SA",Presunto,a',
+      '2,DDD040404DD4,"EMPRESA X, SA",Definitivo,b',
+    ].join('\n'),
+    'latin1'
+  );
+  const rows = parseEfosCsv(csv);
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].situacion, 'Definitivo');
+});
+
 test('parseEfosCsv handles quoted commas and double quotes', () => {
   const csv = Buffer.from(
     '3,CCC030303CC3,"COMERCIALIZADORA ""X"", SA",Desvirtuado,x\n',
