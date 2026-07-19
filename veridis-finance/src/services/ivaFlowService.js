@@ -123,19 +123,22 @@ function aggregate(rows, overrides, direction) {
     const ov = overrides.get(uuid);
     const excluded = Boolean(ov?.excluded);
     const iva = ivaOfRow(row);
+    // Notas de crédito (tipo E / egreso) RESTAN del cálculo del periodo.
+    const sign = String(row.comprobante_type || 'I').toUpperCase() === 'E' ? -1 : 1;
     const item = {
       uuid: row.uuid_sat,
       fecha: row.invoice_date,
       paid_at: row.paid_at,
+      tipo: String(row.comprobante_type || 'I').toUpperCase(),
       counterparty: direction === 'issued' ? row.receiver : row.emitter,
       counterparty_rfc: direction === 'issued' ? row.receiver_rfc : row.emitter_rfc,
       metodo_pago: row.metodo_pago,
-      total: Number(row.total || 0),
-      subtotal: row.subtotal != null ? Number(row.subtotal) : null,
-      iva: Number(round(iva.iva)),
-      base16: Number(round(iva.base16)),
-      ret_iva: Number(round(iva.ret_iva)),
-      ret_isr: Number(round(iva.ret_isr)),
+      total: sign * Number(row.total || 0),
+      subtotal: row.subtotal != null ? sign * Number(row.subtotal) : null,
+      iva: Number(round(sign * iva.iva)),
+      base16: Number(round(sign * iva.base16)),
+      ret_iva: Number(round(sign * iva.ret_iva)),
+      ret_isr: Number(round(sign * iva.ret_isr)),
       estimated: iva.estimated,
       excluded,
       source: row.source || null,
@@ -143,11 +146,12 @@ function aggregate(rows, overrides, direction) {
     detalle.push(item);
     if (excluded) { totals.excluded_count += 1; continue; }
     totals.count += 1;
-    totals.base16 += iva.base16; totals.iva16 += iva.iva16;
-    totals.base8 += iva.base8; totals.iva8 += iva.iva8;
-    totals.base0 += iva.base0; totals.exento += iva.exento;
-    totals.iva_total += iva.iva; totals.ret_iva += iva.ret_iva; totals.ret_isr += iva.ret_isr;
-    totals.subtotal += item.subtotal != null ? item.subtotal : item.total - iva.iva;
+    totals.base16 += sign * iva.base16; totals.iva16 += sign * iva.iva16;
+    totals.base8 += sign * iva.base8; totals.iva8 += sign * iva.iva8;
+    totals.base0 += sign * iva.base0; totals.exento += sign * iva.exento;
+    totals.iva_total += sign * iva.iva;
+    totals.ret_iva += sign * iva.ret_iva; totals.ret_isr += sign * iva.ret_isr;
+    totals.subtotal += item.subtotal != null ? item.subtotal : item.total - Number(round(sign * iva.iva));
     if (iva.estimated) totals.estimated_count += 1;
   }
   for (const k of Object.keys(totals)) {
