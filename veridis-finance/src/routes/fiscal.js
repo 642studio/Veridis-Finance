@@ -3,6 +3,7 @@ const { z } = require('zod');
 const efosService = require('../services/efosService');
 const notificationsService = require('../services/notificationsService');
 const evidenceService = require('../services/evidenceService');
+const ivaFlowService = require('../services/ivaFlowService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -69,6 +70,26 @@ async function fiscalRoutes(app) {
     const organizationId = resolveOrganizationId(request);
     await notificationsService.markAllRead(organizationId);
     reply.send({ ok: true });
+  });
+
+  // ---- Conciliación IVA/ISR base flujo ----
+  app.get('/fiscal/iva', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = z.object({
+      year: z.coerce.number().int().min(2000).max(2100),
+      month: z.coerce.number().int().min(1).max(12),
+    }).parse(request.query || {});
+    reply.send({ data: await ivaFlowService.compute({ organization_id: organizationId, year, month }) });
+  });
+
+  app.post('/fiscal/iva/override', { preHandler: [authenticate, authorize(WRITE)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const payload = z.object({
+      uuid: z.string().min(30).max(40),
+      excluded: z.boolean(),
+      reason: z.string().max(300).optional(),
+    }).parse(request.body || {});
+    reply.send({ data: await ivaFlowService.setOverride({ organization_id: organizationId, ...payload }) });
   });
 
   // ---- Materialidad (49 Bis): evidencia por CFDI ----
