@@ -583,6 +583,10 @@ async function listPending(organizationId) {
             payload->'data'->'contactDetails'->>'name' AS contact_name,
             payload->'data'->'contactDetails'->>'email' AS contact_email,
             COALESCE(payload->'data'->>'contactId', payload->'data'->'contactDetails'->>'id') AS contact_id,
+            COALESCE(payload->'data'->>'_id', payload->'data'->>'id', payload->'data'->>'invoiceId') AS ghl_invoice_id,
+            COALESCE(payload->'data'->>'invoiceUrl', payload->'data'->>'url') AS invoice_url,
+            payload->'data'->>'invoiceNumber' AS invoice_number,
+            payload->'data'->>'issueDate' AS issue_date,
             error_message, received_at
        FROM finance.ghl_webhook_events
       WHERE status = 'pending_csf' AND location_id = $1

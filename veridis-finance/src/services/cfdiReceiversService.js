@@ -110,6 +110,7 @@ async function list({ organization_id, limit = 100, offset = 0 }) {
     full.push({
       id: `sat:${rfc}`,
       rfc,
+      name: d.name || rfc,
       legal_name: d.name || rfc,
       zip_code: null,
       fiscal_regime: null,
