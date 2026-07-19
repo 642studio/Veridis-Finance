@@ -510,7 +510,7 @@ export default function DashboardInvoicesPage() {
             rows={invoices}
             columns={columns}
             getRowId={(row) => row.id}
-            emptyMessage={isLoading ? "Cargando facturas…" : "Aún no hay facturas."}
+            emptyMessage={isLoading ? "Cargando facturas…" : "Nada en esta vista. Sincroniza en CFDI, cambia el filtro de origen o registra una venta manual."}
           />
 
           <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
