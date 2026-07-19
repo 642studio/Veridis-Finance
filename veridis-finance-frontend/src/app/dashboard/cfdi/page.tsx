@@ -24,11 +24,15 @@ interface Receiver {
   id: string;
   rfc: string;
   name: string;
-  fiscal_regime: string;
-  zip_code: string;
+  fiscal_regime: string | null;
+  zip_code: string | null;
   cfdi_use: string;
   email?: string | null;
   source: string;
+  cfdi_count?: number;
+  ghl_contact_id?: string | null;
+  /** true = derivado del historial SAT (falta su CSF para timbrar). */
+  derived?: boolean;
 }
 
 interface Cfdi {
@@ -63,7 +67,20 @@ interface PendingInvoice {
   total: string | null;
   contact_name: string | null;
   contact_email: string | null;
+  ghl_invoice_id: string | null;
+  invoice_url: string | null;
+  invoice_number: string | null;
+  issue_date: string | null;
   received_at: string;
+}
+
+/** Link al recibo dentro del 642 CRM (URL del payload o la ruta interna). */
+function crmReceiptUrl(p: { invoice_url?: string | null; ghl_invoice_id?: string | null }, locationId?: string | null) {
+  if (p.invoice_url) return p.invoice_url;
+  if (p.ghl_invoice_id && locationId) {
+    return `https://app.gohighlevel.com/v2/location/${locationId}/payments/invoices/${p.ghl_invoice_id}`;
+  }
+  return null;
 }
 
 const emptyCsf = { rfc: "", name: "", fiscal_regime: "", zip_code: "", cfdi_use: "G03", email: "" };
@@ -77,6 +94,7 @@ export default function CfdiPage() {
   const [receivers, setReceivers] = useState<Receiver[]>([]);
   const [crm, setCrm] = useState<CrmStatus | null>(null);
   const [pending, setPending] = useState<PendingInvoice[]>([]);
+  const [pendingOpen, setPendingOpen] = useState(true);
   const [satCounts, setSatCounts] = useState<{ issued: number; received: number }>({
     issued: 0,
     received: 0,
@@ -597,13 +615,22 @@ export default function CfdiPage() {
       {pending.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Ventas del 642 CRM ({pending.length})</CardTitle>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-left"
+              onClick={() => setPendingOpen((v) => !v)}
+            >
+              <CardTitle className="text-base">
+                Ventas del 642 CRM ({pending.length}) {pendingOpen ? "▾" : "▸"}
+              </CardTitle>
+            </button>
             <CardDescription>
               Cobros registrados en tu CRM. <strong>No todas requieren factura</strong>: timbra solo
               las que el cliente pida (con su Constancia). Las demás márcalas como venta sin factura —
               siguen contando en tu libro para conciliar.
             </CardDescription>
           </CardHeader>
+          {pendingOpen ? (
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -611,7 +638,10 @@ export default function CfdiPage() {
                   <tr>
                     <th className="py-2">Cliente</th>
                     <th className="py-2">Concepto / venta</th>
+                    <th className="py-2">Folio</th>
+                    <th className="py-2">Fecha</th>
                     <th className="py-2">Total</th>
+                    <th className="py-2">Recibo</th>
                     <th className="py-2 text-right">Acción</th>
                   </tr>
                 </thead>
@@ -620,7 +650,23 @@ export default function CfdiPage() {
                     <tr key={p.id} className="border-t border-border">
                       <td className="py-2">{p.contact_name || p.contact_email || "—"}</td>
                       <td className="py-2">{p.invoice_name || "—"}</td>
+                      <td className="py-2 font-mono text-xs">{p.invoice_number || "—"}</td>
+                      <td className="py-2 whitespace-nowrap">{formatDate(p.issue_date || p.received_at)}</td>
                       <td className="py-2">{p.total ? formatCurrency(Number(p.total)) : "—"}</td>
+                      <td className="py-2">
+                        {crmReceiptUrl(p, crm?.location_id) ? (
+                          <a
+                            className="text-xs font-medium text-primary underline"
+                            href={crmReceiptUrl(p, crm?.location_id) as string}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Ver recibo
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="py-2 text-right">
                         <span className="flex items-center justify-end gap-2">
                           <Button size="sm" variant="outline" onClick={() => retryPending(p.id)} disabled={retryingId === p.id}>
@@ -656,6 +702,7 @@ export default function CfdiPage() {
               </table>
             </div>
           </CardContent>
+          ) : null}
         </Card>
       ) : null}
 
@@ -675,15 +722,32 @@ export default function CfdiPage() {
                     <th className="py-2">Razón social</th>
                     <th className="py-2">Régimen</th>
                     <th className="py-2">CP</th>
+                    <th className="py-2">CFDIs</th>
+                    <th className="py-2">Origen</th>
                   </tr>
                 </thead>
                 <tbody>
                   {receivers.map((r) => (
                     <tr key={r.id} className="border-t border-border">
                       <td className="py-2 font-mono text-xs">{r.rfc}</td>
-                      <td className="py-2">{r.name}</td>
-                      <td className="py-2">{r.fiscal_regime}</td>
-                      <td className="py-2">{r.zip_code}</td>
+                      <td className="py-2">
+                        {r.name}
+                        {r.ghl_contact_id ? (
+                          <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                            CRM
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-2">{r.fiscal_regime || "—"}</td>
+                      <td className="py-2">{r.zip_code || "—"}</td>
+                      <td className="py-2">{r.cfdi_count ?? "—"}</td>
+                      <td className="py-2">
+                        {r.derived ? (
+                          <span className="text-xs text-sky-700">Historial SAT · falta CSF</span>
+                        ) : (
+                          <span className="text-xs text-emerald-700">CSF completo</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -755,7 +819,19 @@ export default function CfdiPage() {
                       <td className="py-2 font-mono text-xs">{c.uuid?.slice(0, 18) || "—"}</td>
                       <td className="py-2 text-right">
                         {c.origin === "sat" ? (
-                          <Badge className="bg-sky-100 text-sky-700">Histórico SAT</Badge>
+                          <span className="flex items-center justify-end gap-2">
+                            <Badge className="bg-sky-100 text-sky-700">Histórico SAT</Badge>
+                            {crmReceiptUrl({ ghl_invoice_id: c.ghl_invoice_id }, crm?.location_id) ? (
+                              <a
+                                className="text-xs font-medium text-primary hover:underline"
+                                href={crmReceiptUrl({ ghl_invoice_id: c.ghl_invoice_id }, crm?.location_id) as string}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Recibo CRM
+                              </a>
+                            ) : null}
+                          </span>
                         ) : c.status === "stamped" ? (
                           <span className="flex flex-wrap items-center justify-end gap-2">
                             {canWrite && c.payment_status !== "paid" ? (
