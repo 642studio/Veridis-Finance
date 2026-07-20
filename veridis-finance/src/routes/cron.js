@@ -1,6 +1,8 @@
 const pool = require('../db/pool');
 const ghlService = require('../services/ghlService');
 const satDownloadService = require('../services/satDownloadService');
+const efosService = require('../services/efosService');
+const cfdiStatusService = require('../services/cfdiStatusService');
 
 /**
  * Scheduled maintenance (Vercel Cron). vercel.json schedules a daily GET to
@@ -69,6 +71,31 @@ async function cronRoutes(app) {
       }
     }
 
+    // Monitoreo diario (paridad Siigo): cruce EFOS 69-B y validación de
+    // estatus de CFDIs ante el SAT para cada organización activa. Presupuesto
+    // acotado por corrida para caber en la invocación serverless.
+    const { rows: orgs } = await pool.query(
+      `SELECT DISTINCT organization_id FROM finance.invoices LIMIT 20`
+    );
+    let efosHits = 0;
+    let cfdisChecked = 0;
+    let cfdisCanceled = 0;
+    for (const org of orgs) {
+      try {
+        const { hits } = await efosService.check(org.organization_id);
+        efosHits += hits.length;
+      } catch (err) {
+        request.log.warn({ org: org.organization_id, err: err.message }, 'cron: EFOS check failed');
+      }
+      try {
+        const v = await cfdiStatusService.verifyBatch(org.organization_id, { limit: 15 });
+        cfdisChecked += v.checked;
+        cfdisCanceled += v.nuevos_cancelados;
+      } catch (err) {
+        request.log.warn({ org: org.organization_id, err: err.message }, 'cron: validación SAT failed');
+      }
+    }
+
     request.log.info(
       {
         source: 'cron_daily',
@@ -77,6 +104,9 @@ async function cronRoutes(app) {
         still_pending: stillPending,
         sat_checked: satChecked,
         sat_completed: satCompleted,
+        efos_hits: efosHits,
+        cfdis_checked: cfdisChecked,
+        cfdis_canceled: cfdisCanceled,
       },
       'cron: daily maintenance done'
     );
@@ -87,6 +117,9 @@ async function cronRoutes(app) {
         still_pending: stillPending,
         sat_checked: satChecked,
         sat_completed: satCompleted,
+        efos_hits: efosHits,
+        cfdis_checked: cfdisChecked,
+        cfdis_canceled: cfdisCanceled,
       },
     });
   });

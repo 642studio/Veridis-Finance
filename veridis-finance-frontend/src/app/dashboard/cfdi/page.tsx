@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EfosCard } from "@/components/fiscal/efos-card";
 import { EvidenceDialog } from "@/components/fiscal/evidence-dialog";
+import { ValidacionCard } from "@/components/fiscal/validacion-card";
 import { useSession } from "@/components/session-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -581,8 +582,11 @@ export default function CfdiPage() {
         </CardHeader>
       </Card>
 
-      {/* Monitoreo EFOS (69-B) */}
-      <EfosCard canWrite={canWrite} />
+      {/* Monitoreo EFOS (69-B) + Validación SAT */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <EfosCard canWrite={canWrite} />
+        <ValidacionCard canWrite={canWrite} />
+      </div>
 
       {shareUrl ? (
         <div className="rounded-xl border border-border bg-muted px-4 py-3 text-sm">

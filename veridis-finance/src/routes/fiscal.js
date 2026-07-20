@@ -4,6 +4,7 @@ const efosService = require('../services/efosService');
 const notificationsService = require('../services/notificationsService');
 const evidenceService = require('../services/evidenceService');
 const ivaFlowService = require('../services/ivaFlowService');
+const cfdiStatusService = require('../services/cfdiStatusService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -70,6 +71,19 @@ async function fiscalRoutes(app) {
     const organizationId = resolveOrganizationId(request);
     await notificationsService.markAllRead(organizationId);
     reply.send({ ok: true });
+  });
+
+  // ---- Validación de comprobantes ante el SAT (vigente/cancelado) ----
+  app.get('/fiscal/validate/status', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    reply.send({ data: await cfdiStatusService.statusSummary(organizationId) });
+  });
+
+  app.post('/fiscal/validate', { preHandler: [authenticate, authorize(WRITE)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(50).default(25) })
+      .parse(request.body || {});
+    reply.send({ data: await cfdiStatusService.verifyBatch(organizationId, { limit }) });
   });
 
   // ---- Conciliación IVA/ISR base flujo ----
