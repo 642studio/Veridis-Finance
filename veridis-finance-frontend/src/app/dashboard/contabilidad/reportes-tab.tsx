@@ -15,7 +15,8 @@ type ReportKey =
   | "balance-general"
   | "mayor"
   | "diario"
-  | "e-contabilidad";
+  | "e-contabilidad"
+  | "auditoria";
 
 const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "balanza", label: "Balanza de comprobación" },
@@ -24,7 +25,20 @@ const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "mayor", label: "Libro mayor" },
   { key: "diario", label: "Libro diario" },
   { key: "e-contabilidad", label: "Contabilidad electrónica (SAT)" },
+  { key: "auditoria", label: "Auditoría preventiva" },
 ];
+
+interface Hallazgo {
+  id: string;
+  titulo: string;
+  severidad: "ok" | "info" | "warning" | "error";
+  detalle: string;
+  cantidad?: number;
+}
+interface Auditoria {
+  resumen: { ok: number; info: number; warning: number; error: number };
+  hallazgos: Hallazgo[];
+}
 
 interface CheckRow {
   id: string;
@@ -128,6 +142,8 @@ export function ReportesTab() {
       const path =
         report === "e-contabilidad"
           ? `/api/finance/accounting/e-contabilidad/validate?year=${year}&month=${month}`
+          : report === "auditoria"
+          ? `/api/finance/accounting/auditoria?year=${year}&month=${month}`
           : `/api/finance/accounting/reports/${report}?year=${year}&month=${month}`;
       const res = await clientApiFetch<{ data: unknown }>(path);
       setData(res.data);
@@ -265,8 +281,10 @@ export function ReportesTab() {
             <MayorView d={data as { cuentas: MayorCuenta[] }} />
           ) : report === "diario" ? (
             <DiarioView d={data as { polizas: DiarioPoliza[] }} />
-          ) : (
+          ) : report === "e-contabilidad" ? (
             <EContabilidadView d={data as Validacion} onDownload={downloadXml} />
+          ) : (
+            <AuditoriaView d={data as Auditoria} />
           )}
         </CardContent>
       </Card>
@@ -457,6 +475,39 @@ function MayorView({ d }: { d: { cuentas: MayorCuenta[] } }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function AuditoriaView({ d }: { d: Auditoria }) {
+  const style: Record<Hallazgo["severidad"], { dot: string; ring: string; text?: string }> = {
+    error: { dot: "bg-red-500", ring: "border-red-200 bg-red-50", text: "text-red-700" },
+    warning: { dot: "bg-amber-500", ring: "border-amber-200 bg-amber-50", text: "text-amber-800" },
+    info: { dot: "bg-sky-500", ring: "border-sky-200 bg-sky-50", text: "text-sky-800" },
+    ok: { dot: "bg-emerald-500", ring: "border-border bg-card" },
+  };
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 text-xs">
+        <span className="rounded-full bg-red-100 px-2.5 py-1 font-medium text-red-700">{d.resumen.error} errores</span>
+        <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-800">{d.resumen.warning} avisos</span>
+        <span className="rounded-full bg-sky-100 px-2.5 py-1 font-medium text-sky-800">{d.resumen.info} informativos</span>
+        <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-700">{d.resumen.ok} correctos</span>
+      </div>
+      <div className="space-y-2">
+        {d.hallazgos.map((h) => {
+          const s = style[h.severidad];
+          return (
+            <div key={h.id} className={cn("flex items-start gap-3 rounded-lg border px-3 py-2.5", s.ring)}>
+              <span className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", s.dot)} />
+              <div className="min-w-0">
+                <p className={cn("text-sm font-medium", s.text)}>{h.titulo}</p>
+                <p className="text-sm text-muted-foreground">{h.detalle}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

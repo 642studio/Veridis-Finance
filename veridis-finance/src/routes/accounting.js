@@ -4,6 +4,8 @@ const accounting = require('../services/accountingService');
 const autoPoliza = require('../services/autoPolizaService');
 const reportes = require('../services/reportesContablesService');
 const contabE = require('../services/contabilidadElectronicaService');
+const fixedAssets = require('../services/fixedAssetsService');
+const auditoria = require('../services/auditoriaService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -179,6 +181,43 @@ async function accountingRoutes(app) {
     reply.header('Content-Type', 'application/xml; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="${filename}"`);
     reply.send(xml);
+  });
+
+  // ---- Activos fijos + depreciación (S12) ----
+  app.get('/accounting/assets', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    reply.send({ data: await fixedAssets.listAssets(organizationId) });
+  });
+
+  app.post('/accounting/assets', { preHandler: [authenticate, authorize(WRITE)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const payload = z.object({
+      name: z.string().min(1).max(200),
+      description: z.string().max(500).optional(),
+      category: z.string().max(60).optional(),
+      acquisition_date: z.string(),
+      cost: z.coerce.number().min(0),
+      salvage_value: z.coerce.number().min(0).optional(),
+      annual_rate: z.coerce.number().min(0).max(1).optional(),
+      asset_account_code: z.string().max(30).optional(),
+      accum_account_code: z.string().max(30).optional(),
+      expense_account_code: z.string().max(30).optional(),
+      cfdi_uuid: z.string().max(40).optional(),
+    }).parse(request.body || {});
+    reply.status(201).send({ data: await fixedAssets.createAsset(organizationId, payload) });
+  });
+
+  app.post('/accounting/assets/depreciate', { preHandler: [authenticate, authorize(WRITE)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.body || {});
+    reply.send({ data: await fixedAssets.runDepreciation(organizationId, { year, month, createdBy: request.user?.user_id }) });
+  });
+
+  // ---- Auditoría preventiva (S12) ----
+  app.get('/accounting/auditoria', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await auditoria.run(organizationId, { year, month }) });
   });
 }
 
