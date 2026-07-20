@@ -93,13 +93,18 @@ async function libroMayor(organizationId, { year, month, accountCode = null }) {
   let accFilter = '';
   if (accountCode) { params.push(accountCode); accFilter = ` AND a.code = $${params.length}`; }
 
-  // Saldo inicial por cuenta (antes del mes).
+  // Saldo inicial por cuenta (neto acumulado ANTES del mes). El filtro de fecha
+  // va DENTRO del CASE: con LEFT JOIN, si el asiento no cae antes del mes, e es
+  // NULL y `e.entry_date < $2` es NULL (falso) ⇒ 0. Ponerlo en el ON sumaría de
+  // más las partidas del propio mes.
   const { rows: iniRows } = await pool.query(
     `SELECT a.code, a.name, a.nature,
-            COALESCE(SUM(CASE WHEN a.nature = 'deudora' THEN l.debit - l.credit ELSE l.credit - l.debit END), 0) AS saldo_inicial
+            COALESCE(SUM(CASE WHEN e.entry_date < $2::date THEN
+              (CASE WHEN a.nature = 'deudora' THEN l.debit - l.credit ELSE l.credit - l.debit END)
+              ELSE 0 END), 0) AS saldo_inicial
        FROM finance.chart_of_accounts a
        LEFT JOIN finance.journal_lines l ON l.account_id = a.id
-       LEFT JOIN finance.journal_entries e ON e.id = l.entry_id AND e.status = 'posted' AND e.entry_date < $2::date
+       LEFT JOIN finance.journal_entries e ON e.id = l.entry_id AND e.status = 'posted'
       WHERE a.organization_id = $1${accFilter}
       GROUP BY a.id`,
     params
