@@ -66,9 +66,39 @@ const SORT_BY_OPTIONS = [
   { value: "created_at", label: "Creación" },
 ] as const;
 const SORT_ORDER_OPTIONS = [
-  { value: "desc", label: "Desc" },
-  { value: "asc", label: "Asc" },
+  { value: "desc", label: "Descendente" },
+  { value: "asc", label: "Ascendente" },
 ] as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  posted: "Registrado",
+  pending: "Pendiente",
+  reconciled: "Conciliado",
+  void: "Anulado",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  manual: "Manual",
+  automation: "Automatización",
+  bank_statement_import: "Estado de cuenta",
+  ghl: "642 CRM",
+  crm: "642 CRM",
+  sat_download: "Descarga SAT",
+  seed: "Demo",
+};
+
+function statusLabel(status?: string | null) {
+  return STATUS_LABELS[status || "posted"] || status || "—";
+}
+
+function sourceLabel(source?: string | null) {
+  return SOURCE_LABELS[source || "manual"] || source || "Manual";
+}
+
+function isUncategorized(category?: string | null) {
+  const c = (category || "").trim().toLowerCase();
+  return !c || c === "uncategorized" || c === "sin categoría" || c === "general";
+}
 
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
@@ -173,6 +203,8 @@ export default function DashboardTransactionsPage() {
   >("desc");
   const [hasNextPage, setHasNextPage] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isCategorizing, setIsCategorizing] = useState(false);
+  const [categorizingId, setCategorizingId] = useState<string | null>(null);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<"" | TransactionStatus>("");
   const [bulkCategory, setBulkCategory] = useState("");
@@ -229,6 +261,23 @@ export default function DashboardTransactionsPage() {
     setToDate(to);
     setPage(1);
   };
+
+  // IA: sugiere nombre y categoría a los movimientos sin categorizar,
+  // reutilizando el motor de reclasificación del backend.
+  const runReclassify = useCallback(
+    async (limit: number) => {
+      const res = await clientApiFetch<{ data: { updated: number; scanned: number } }>(
+        "/api/finance/intelligence/reclassify",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ limit, min_confidence: 0.5 }),
+        }
+      );
+      return res.data;
+    },
+    []
+  );
 
   const loadTransactions = useCallback(async () => {
     setIsLoading(true);
@@ -895,6 +944,50 @@ export default function DashboardTransactionsPage() {
     }
   };
 
+  const categorizeWithAI = async () => {
+    setIsCategorizing(true);
+    try {
+      const data = await runReclassify(200);
+      notify.success({
+        title: "Categorización con IA",
+        description: data.updated
+          ? `${data.updated} movimiento(s) categorizado(s) de ${data.scanned} revisados.`
+          : "No había movimientos sin categorizar.",
+      });
+      await loadTransactions();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo categorizar",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setIsCategorizing(false);
+    }
+  };
+
+  const categorizeRow = async (transaction: Transaction) => {
+    setCategorizingId(transaction.id);
+    try {
+      const data = await runReclassify(50);
+      if (data.updated) {
+        notify.success({ title: "Categoría sugerida por IA aplicada" });
+      } else {
+        notify.info({
+          title: "La IA no encontró una categoría clara",
+          description: "Agrega una descripción o edítalo manualmente.",
+        });
+      }
+      await loadTransactions();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo categorizar",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setCategorizingId(null);
+    }
+  };
+
   const exportTransactionsCsv = async () => {
     setIsExporting(true);
     const EXPORT_BATCH_LIMIT = 100;
@@ -1305,10 +1398,10 @@ export default function DashboardTransactionsPage() {
               }}
             >
               <option value="all">Todos los estatus</option>
-              <option value="posted">posted</option>
-              <option value="pending">pending</option>
-              <option value="reconciled">reconciled</option>
-              <option value="void">void</option>
+              <option value="posted">Registrado</option>
+              <option value="pending">Pendiente</option>
+              <option value="reconciled">Conciliado</option>
+              <option value="void">Anulado</option>
             </select>
             <select
               className="h-9 min-w-[130px] rounded-lg border border-border bg-card px-3 text-sm"
@@ -1319,12 +1412,12 @@ export default function DashboardTransactionsPage() {
               }}
             >
               <option value="all">Todos los orígenes</option>
-              <option value="manual">manual</option>
-              <option value="automation">automation</option>
-              <option value="bank_statement_import">bank_statement_import</option>
+              <option value="manual">Manual</option>
+              <option value="automation">Automatización</option>
+              <option value="bank_statement_import">Estado de cuenta</option>
               {sourceOptions.map((source) => (
                 <option key={source} value={source}>
-                  {source}
+                  {sourceLabel(source)}
                 </option>
               ))}
             </select>
@@ -1368,21 +1461,21 @@ export default function DashboardTransactionsPage() {
               size="sm"
               onClick={() => applyDatePreset("today")}
             >
-              Today
+              Hoy
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => applyDatePreset("this_month")}
             >
-              This month
+              Este mes
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => applyDatePreset("last_30")}
             >
-              Last 30d
+              Últimos 30d
             </Button>
             <Button
               variant="ghost"
@@ -1390,7 +1483,7 @@ export default function DashboardTransactionsPage() {
               onClick={() => applyDatePreset("clear")}
               disabled={!fromDate && !toDate}
             >
-              Clear dates
+              Limpiar fechas
             </Button>
             <select
               className="h-9 min-w-[130px] rounded-lg border border-border bg-card px-3 text-sm"
@@ -1418,7 +1511,7 @@ export default function DashboardTransactionsPage() {
             >
               {SORT_BY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
-                  Sort: {option.label}
+                  Orden: {option.label}
                 </option>
               ))}
             </select>
@@ -1460,7 +1553,7 @@ export default function DashboardTransactionsPage() {
                 setPage(1);
               }}
             >
-              Clear filters
+              Limpiar filtros
             </Button>
             <Button
               variant="outline"
@@ -1470,7 +1563,10 @@ export default function DashboardTransactionsPage() {
               {isExporting ? "Exportando…" : "Exportar CSV"}
             </Button>
             <Button variant="secondary" onClick={() => setIsBankUploadOpen(true)}>
-              Upload Bank Statements
+              Subir estado de cuenta
+            </Button>
+            <Button variant="outline" onClick={categorizeWithAI} disabled={isCategorizing}>
+              {isCategorizing ? "Categorizando…" : "✨ Categorizar con IA"}
             </Button>
           </div>
         </CardHeader>
@@ -1602,22 +1698,39 @@ export default function DashboardTransactionsPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={transaction.type === "income" ? "success" : "danger"}>
-                          {transaction.type}
+                          {transaction.type === "income" ? "Ingreso" : "Gasto"}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{transaction.status || "posted"}</Badge>
+                        <Badge variant={transaction.status === "reconciled" ? "success" : "secondary"}>
+                          {transaction.status === "reconciled" ? "✓ " : ""}
+                          {statusLabel(transaction.status)}
+                        </Badge>
                       </TableCell>
                       <TableCell className="font-medium">
                         {formatCurrency(transaction.amount)}
                       </TableCell>
                       <TableCell>{transaction.account_name || "-"}</TableCell>
-                      <TableCell>{transaction.category}</TableCell>
+                      <TableCell>
+                        {isUncategorized(transaction.category) ? (
+                          <button
+                            type="button"
+                            onClick={() => categorizeRow(transaction)}
+                            disabled={categorizingId === transaction.id}
+                            className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+                            title="Sugerir categoría con IA"
+                          >
+                            {categorizingId === transaction.id ? "…" : "✨ Categorizar"}
+                          </button>
+                        ) : (
+                          <span>{transaction.category}</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <EntityBadge transaction={transaction} />
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {transaction.source || "manual"}
+                      <TableCell className="text-xs text-muted-foreground">
+                        {sourceLabel(transaction.source)}
                       </TableCell>
                       <TableCell className="max-w-[220px] truncate">
                         {transaction.notes || "-"}
@@ -1631,7 +1744,7 @@ export default function DashboardTransactionsPage() {
                             onClick={() => openSplits(transaction)}
                             disabled={transaction.editable === false}
                           >
-                            Splits
+                            Desglose
                           </Button>
                           <Button
                             size="sm"
@@ -1652,7 +1765,7 @@ export default function DashboardTransactionsPage() {
                             }}
                           >
                             <History className="mr-1 h-3.5 w-3.5" />
-                            History
+                            Historial
                           </Button>
                           <Button
                             size="sm"
@@ -1660,7 +1773,7 @@ export default function DashboardTransactionsPage() {
                             onClick={() => openEdit(transaction)}
                           >
                             <Pencil className="mr-1 h-3.5 w-3.5" />
-                            Edit
+                            Editar
                           </Button>
                           <Button
                             size="sm"
@@ -1669,7 +1782,7 @@ export default function DashboardTransactionsPage() {
                             disabled={transaction.editable === false}
                           >
                             <Trash2 className="mr-1 h-3.5 w-3.5" />
-                            Delete
+                            Eliminar
                           </Button>
                         </div>
                       </TableCell>
