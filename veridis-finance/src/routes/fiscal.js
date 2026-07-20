@@ -5,6 +5,7 @@ const notificationsService = require('../services/notificationsService');
 const evidenceService = require('../services/evidenceService');
 const ivaFlowService = require('../services/ivaFlowService');
 const cfdiStatusService = require('../services/cfdiStatusService');
+const diotService = require('../services/diotService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -104,6 +105,28 @@ async function fiscalRoutes(app) {
       reason: z.string().max(300).optional(),
     }).parse(request.body || {});
     reply.send({ data: await ivaFlowService.setOverride({ organization_id: organizationId, ...payload }) });
+  });
+
+  // ---- DIOT (Declaración Informativa de Operaciones con Terceros) ----
+  app.get('/fiscal/diot', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = z.object({
+      year: z.coerce.number().int(),
+      month: z.coerce.number().int().min(1).max(12),
+    }).parse(request.query || {});
+    reply.send({ data: await diotService.generate(organizationId, { year, month }) });
+  });
+
+  app.get('/fiscal/diot/export', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = z.object({
+      year: z.coerce.number().int(),
+      month: z.coerce.number().int().min(1).max(12),
+    }).parse(request.query || {});
+    const { txt, filename } = await diotService.exportBatch(organizationId, { year, month });
+    reply.header('Content-Type', 'text/plain; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    reply.send(txt);
   });
 
   // ---- Materialidad (49 Bis): evidencia por CFDI ----

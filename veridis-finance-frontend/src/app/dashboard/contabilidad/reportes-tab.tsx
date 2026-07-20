@@ -16,7 +16,8 @@ type ReportKey =
   | "mayor"
   | "diario"
   | "e-contabilidad"
-  | "auditoria";
+  | "auditoria"
+  | "diot";
 
 const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "balanza", label: "Balanza de comprobación" },
@@ -26,7 +27,33 @@ const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "diario", label: "Libro diario" },
   { key: "e-contabilidad", label: "Contabilidad electrónica (SAT)" },
   { key: "auditoria", label: "Auditoría preventiva" },
+  { key: "diot", label: "DIOT" },
 ];
+
+interface DiotRow {
+  tipo_tercero: string;
+  tipo_operacion: string;
+  rfc: string;
+  proveedor: string;
+  valor_16: number;
+  iva_16: number;
+  valor_0: number;
+  exentos: number;
+  iva_retenido: number;
+  count: number;
+}
+interface Diot {
+  proveedores: DiotRow[];
+  totales: {
+    valor_16: number;
+    iva_16: number;
+    valor_0: number;
+    exentos: number;
+    iva_retenido: number;
+    proveedores: number;
+  };
+  cfdis: number;
+}
 
 interface Hallazgo {
   id: string;
@@ -144,6 +171,8 @@ export function ReportesTab() {
           ? `/api/finance/accounting/e-contabilidad/validate?year=${year}&month=${month}`
           : report === "auditoria"
           ? `/api/finance/accounting/auditoria?year=${year}&month=${month}`
+          : report === "diot"
+          ? `/api/finance/fiscal/diot?year=${year}&month=${month}`
           : `/api/finance/accounting/reports/${report}?year=${year}&month=${month}`;
       const res = await clientApiFetch<{ data: unknown }>(path);
       setData(res.data);
@@ -247,7 +276,21 @@ export function ReportesTab() {
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
-          {report !== "e-contabilidad" ? (
+          {report === "diot" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                download(
+                  `/api/finance/fiscal/diot/export?year=${year}&month=${month}`,
+                  `DIOT_${year}${String(month).padStart(2, "0")}.txt`
+                )
+              }
+              disabled={loading || !data}
+            >
+              ⬇ Exportar DIOT (.txt)
+            </Button>
+          ) : report !== "e-contabilidad" && report !== "auditoria" ? (
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={loading || !data}>
               ⬇ Exportar CSV
             </Button>
@@ -283,8 +326,10 @@ export function ReportesTab() {
             <DiarioView d={data as { polizas: DiarioPoliza[] }} />
           ) : report === "e-contabilidad" ? (
             <EContabilidadView d={data as Validacion} onDownload={downloadXml} />
-          ) : (
+          ) : report === "auditoria" ? (
             <AuditoriaView d={data as Auditoria} />
+          ) : (
+            <DiotView d={data as Diot} />
           )}
         </CardContent>
       </Card>
@@ -475,6 +520,61 @@ function MayorView({ d }: { d: { cuentas: MayorCuenta[] } }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+const TIPO_TERCERO: Record<string, string> = { "04": "Nacional", "05": "Extranjero", "15": "Global" };
+const TIPO_OP: Record<string, string> = { "03": "Servicios prof.", "06": "Arrendamiento", "85": "Otros" };
+
+function DiotView({ d }: { d: Diot }) {
+  if (!d.proveedores.length) {
+    return <p className="text-sm text-muted-foreground">Sin operaciones con proveedores en el periodo.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        {d.totales.proveedores} proveedor(es) · {d.cfdis} CFDI(s) recibidos. El archivo .txt sigue el layout de
+        captura batch del SAT para la DIOT.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="py-2">RFC</th>
+              <th className="py-2">Proveedor</th>
+              <th className="py-2">Tercero</th>
+              <th className="py-2">Operación</th>
+              <th className="py-2 text-right">Actos 16%</th>
+              <th className="py-2 text-right">IVA acred.</th>
+              <th className="py-2 text-right">IVA ret.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.proveedores.map((p) => (
+              <tr key={`${p.rfc}-${p.tipo_operacion}`} className="border-t border-border">
+                <td className="py-2 font-mono text-xs">{p.rfc}</td>
+                <td className="max-w-[220px] truncate py-2">{p.proveedor}</td>
+                <td className="py-2 text-xs">{TIPO_TERCERO[p.tipo_tercero] || p.tipo_tercero}</td>
+                <td className="py-2 text-xs">{TIPO_OP[p.tipo_operacion] || p.tipo_operacion}</td>
+                <td className="tnum py-2 text-right">{formatCurrency(p.valor_16)}</td>
+                <td className="tnum py-2 text-right">{formatCurrency(p.iva_16)}</td>
+                <td className="tnum py-2 text-right text-muted-foreground">
+                  {p.iva_retenido ? formatCurrency(p.iva_retenido) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-border font-semibold">
+              <td className="py-2" colSpan={4}>Totales</td>
+              <td className="tnum py-2 text-right">{formatCurrency(d.totales.valor_16)}</td>
+              <td className="tnum py-2 text-right">{formatCurrency(d.totales.iva_16)}</td>
+              <td className="tnum py-2 text-right">{formatCurrency(d.totales.iva_retenido)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
