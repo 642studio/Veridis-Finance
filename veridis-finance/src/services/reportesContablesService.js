@@ -279,18 +279,26 @@ function computeBalanceGeneral({ year, month, saldos }) {
   let totalPasivo = 0;
   let totalCapital = 0;
   let resultado = 0; // utilidad del ejercicio = ingresos - costos - gastos (YTD)
+  // Contribución de cada cuenta al lado correcto de la ecuación contable,
+  // por NATURALEZA (no por su tipo): el activo aporta su saldo NETO DEUDOR y el
+  // pasivo/capital su saldo NETO ACREEDOR. Así una cuenta de contra-activo
+  // (p.ej. 172.01 Depreciación acumulada: activo pero naturaleza acreedora)
+  // resta del activo en lugar de sumarse, y el balance siempre cuadra.
   for (const s of saldos) {
     if (['ingreso'].includes(s.account_type)) resultado += s.ytd;
     else if (['costo', 'gasto'].includes(s.account_type)) resultado -= s.ytd;
     if (s.account_type === 'activo') {
-      if (num(s.saldo) !== 0) activo.push({ code: s.code, name: s.name, saldo: num(s.saldo) });
-      totalActivo += s.saldo;
+      const contrib = s.nature === 'deudora' ? s.saldo : -s.saldo; // saldo neto deudor
+      if (num(contrib) !== 0) activo.push({ code: s.code, name: s.name, saldo: num(contrib) });
+      totalActivo += contrib;
     } else if (s.account_type === 'pasivo') {
-      if (num(s.saldo) !== 0) pasivo.push({ code: s.code, name: s.name, saldo: num(s.saldo) });
-      totalPasivo += s.saldo;
+      const contrib = s.nature === 'acreedora' ? s.saldo : -s.saldo; // saldo neto acreedor
+      if (num(contrib) !== 0) pasivo.push({ code: s.code, name: s.name, saldo: num(contrib) });
+      totalPasivo += contrib;
     } else if (s.account_type === 'capital') {
-      if (num(s.saldo) !== 0) capital.push({ code: s.code, name: s.name, saldo: num(s.saldo) });
-      totalCapital += s.saldo;
+      const contrib = s.nature === 'acreedora' ? s.saldo : -s.saldo; // saldo neto acreedor
+      if (num(contrib) !== 0) capital.push({ code: s.code, name: s.name, saldo: num(contrib) });
+      totalCapital += contrib;
     }
   }
   const capitalConResultado = totalCapital + resultado;

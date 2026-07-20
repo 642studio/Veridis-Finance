@@ -51,6 +51,24 @@ test('Balance General cuadra: activo = pasivo + capital + resultado', () => {
   assert.strictEqual(bg.cuadra, true);
 });
 
+test('Balance General cuadra con contra-activo (depreciación acumulada)', () => {
+  const bg = computeBalanceGeneral({
+    year: 2026, month: 12,
+    saldos: [
+      // Equipo de cómputo (activo deudora) y su depreciación acumulada
+      // (activo pero naturaleza ACREEDORA: contra-activo).
+      { code: '156.01', name: 'Equipo de cómputo', account_type: 'activo', nature: 'deudora', saldo: 36000, ytd: 0 },
+      { code: '172.01', name: 'Depreciación acumulada', account_type: 'activo', nature: 'acreedora', saldo: 900, ytd: 0 },
+      { code: '301.01', name: 'Capital social', account_type: 'capital', nature: 'acreedora', saldo: 35100, ytd: 0 },
+    ],
+  });
+  // activo neto = 36000 - 900 = 35100; capital 35100 → cuadra.
+  assert.strictEqual(bg.total_activo, 35100);
+  assert.strictEqual(bg.cuadra, true);
+  // el contra-activo se reporta como negativo dentro del activo.
+  assert.ok(bg.activo.some((a) => a.code === '172.01' && a.saldo === -900));
+});
+
 test('Balance General reporta descuadre cuando el activo no coincide', () => {
   const bg = computeBalanceGeneral({
     year: 2026, month: 7,
