@@ -124,7 +124,7 @@ async function runDepreciation(organizationId, { year, month, createdBy }) {
         entry_type: 'diario',
         entry_date: `${year}-${String(month).padStart(2, '0')}-28`,
         concept: `Depreciación ${asset.name} (${month}/${year})`,
-        source: 'depreciacion',
+        source: 'depreciation',
         source_ref: sourceRef,
         created_by: createdBy || null,
         lines: [
