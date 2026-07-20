@@ -3,6 +3,9 @@ const ghlService = require('../services/ghlService');
 const satDownloadService = require('../services/satDownloadService');
 const efosService = require('../services/efosService');
 const cfdiStatusService = require('../services/cfdiStatusService');
+const autoPolizaService = require('../services/autoPolizaService');
+const auditoriaService = require('../services/auditoriaService');
+const notificationsService = require('../services/notificationsService');
 
 /**
  * Scheduled maintenance (Vercel Cron). vercel.json schedules a daily GET to
@@ -80,6 +83,14 @@ async function cronRoutes(app) {
     let efosHits = 0;
     let cfdisChecked = 0;
     let cfdisCanceled = 0;
+    // Contabilidad autónoma: genera pólizas del mes en curso desde CFDIs y corre
+    // la auditoría preventiva; si hay errores, levanta una alerta (deduplicada
+    // por mes) para que el contador la vea antes de declarar.
+    const nowD = new Date();
+    const cy = nowD.getUTCFullYear();
+    const cm = nowD.getUTCMonth() + 1;
+    let polizasPosted = 0;
+    let auditErrors = 0;
     for (const org of orgs) {
       try {
         const { hits } = await efosService.check(org.organization_id);
@@ -94,6 +105,29 @@ async function cronRoutes(app) {
       } catch (err) {
         request.log.warn({ org: org.organization_id, err: err.message }, 'cron: validación SAT failed');
       }
+      try {
+        const g = await autoPolizaService.generateForPeriod(org.organization_id, { year: cy, month: cm });
+        polizasPosted += g.posted;
+      } catch (err) {
+        request.log.warn({ org: org.organization_id, err: err.message }, 'cron: auto-póliza failed');
+      }
+      try {
+        const a = await auditoriaService.run(org.organization_id, { year: cy, month: cm });
+        if (a.resumen.error > 0) {
+          auditErrors += a.resumen.error;
+          const criticos = a.hallazgos.filter((h) => h.severidad === 'error').map((h) => h.titulo).join('; ');
+          await notificationsService.notify(org.organization_id, {
+            type: 'contabilidad_auditoria',
+            severity: 'warning',
+            title: `Auditoría contable: ${a.resumen.error} problema(s) en ${cm}/${cy}`,
+            body: criticos,
+            ref_type: 'periodo',
+            ref_id: `${cy}-${String(cm).padStart(2, '0')}`,
+          });
+        }
+      } catch (err) {
+        request.log.warn({ org: org.organization_id, err: err.message }, 'cron: auditoría failed');
+      }
     }
 
     request.log.info(
@@ -107,6 +141,8 @@ async function cronRoutes(app) {
         efos_hits: efosHits,
         cfdis_checked: cfdisChecked,
         cfdis_canceled: cfdisCanceled,
+        polizas_posted: polizasPosted,
+        audit_errors: auditErrors,
       },
       'cron: daily maintenance done'
     );
@@ -120,6 +156,8 @@ async function cronRoutes(app) {
         efos_hits: efosHits,
         cfdis_checked: cfdisChecked,
         cfdis_canceled: cfdisCanceled,
+        polizas_posted: polizasPosted,
+        audit_errors: auditErrors,
       },
     });
   });
