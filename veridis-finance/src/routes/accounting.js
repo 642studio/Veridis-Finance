@@ -6,6 +6,8 @@ const reportes = require('../services/reportesContablesService');
 const contabE = require('../services/contabilidadElectronicaService');
 const fixedAssets = require('../services/fixedAssetsService');
 const auditoria = require('../services/auditoriaService');
+const cierre = require('../services/cierreService');
+const conciliacion = require('../services/conciliacionContableService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -218,6 +220,37 @@ async function accountingRoutes(app) {
     const organizationId = resolveOrganizationId(request);
     const { year, month } = periodQuery.parse(request.query || {});
     reply.send({ data: await auditoria.run(organizationId, { year, month }) });
+  });
+
+  // ---- Cierre y bloqueo de periodos (S13) ----
+  app.get('/accounting/periods', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    reply.send({ data: await cierre.listPeriods(organizationId) });
+  });
+
+  app.post('/accounting/periods/close', { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.body || {});
+    reply.send({ data: await cierre.closePeriod(organizationId, { year, month }) });
+  });
+
+  app.post('/accounting/periods/reopen', { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.body || {});
+    reply.send({ data: await cierre.reopenPeriod(organizationId, { year, month }) });
+  });
+
+  app.post('/accounting/closing', { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year } = z.object({ year: z.coerce.number().int() }).parse(request.body || {});
+    reply.send({ data: await cierre.generateClosing(organizationId, { year, createdBy: request.user?.user_id }) });
+  });
+
+  // ---- Conciliación contable banco↔pólizas↔CFDI (S13) ----
+  app.get('/accounting/conciliacion', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await conciliacion.run(organizationId, { year, month }) });
   });
 }
 
