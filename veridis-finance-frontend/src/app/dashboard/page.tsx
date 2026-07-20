@@ -26,6 +26,7 @@ import {
 } from "@/components/charts/monthly-income-expense-bar-chart";
 import { CashflowProjectionCard } from "@/components/finance/cashflow-projection-card";
 import { OnboardingChecklist } from "@/components/finance/onboarding-checklist";
+import { FiscalPulse } from "@/components/fiscal/fiscal-pulse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNotify } from "@/hooks/use-notify";
@@ -551,6 +552,9 @@ export default function DashboardOverviewPage() {
       </div>
 
       {showLaunchpad ? <Launchpad onDismiss={dismissLaunchpad} /> : null}
+
+      {/* Pulso fiscal (IVA a cargo, cancelaciones, EFOS) */}
+      <FiscalPulse />
 
       {/* KPI row */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
