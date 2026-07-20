@@ -96,8 +96,10 @@ function sourceLabel(source?: string | null) {
 }
 
 function isUncategorized(category?: string | null) {
+  // Alineado con el motor de reclasificación del backend, que solo actúa sobre
+  // categorías nulas/vacías/"uncategorized" (no toca categorías ya asignadas).
   const c = (category || "").trim().toLowerCase();
-  return !c || c === "uncategorized" || c === "sin categoría" || c === "general";
+  return !c || c === "uncategorized" || c === "sin categoría";
 }
 
 function toDateInputValue(date: Date) {
