@@ -94,8 +94,11 @@ async function reopenPeriod(organizationId, { year, month }) {
  * o no hay resultado que cerrar.
  */
 async function generateClosing(organizationId, { year, createdBy }) {
+  // El índice único (organization_id, source, source_ref) incluye pólizas
+  // canceladas, así que una vez generado el cierre su folio queda reservado:
+  // para rehacerlo hay que reabrir/ajustar, no duplicar. Reflejamos eso aquí.
   const existing = await pool.query(
-    `SELECT 1 FROM finance.journal_entries
+    `SELECT status FROM finance.journal_entries
       WHERE organization_id = $1 AND source = 'closing' AND source_ref = $2`,
     [organizationId, `cierre:${year}`]
   );
