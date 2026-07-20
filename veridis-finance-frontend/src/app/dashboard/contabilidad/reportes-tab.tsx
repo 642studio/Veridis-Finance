@@ -14,7 +14,8 @@ type ReportKey =
   | "estado-resultados"
   | "balance-general"
   | "mayor"
-  | "diario";
+  | "diario"
+  | "e-contabilidad";
 
 const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "balanza", label: "Balanza de comprobación" },
@@ -22,7 +23,25 @@ const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "balance-general", label: "Balance General" },
   { key: "mayor", label: "Libro mayor" },
   { key: "diario", label: "Libro diario" },
+  { key: "e-contabilidad", label: "Contabilidad electrónica (SAT)" },
 ];
+
+interface CheckRow {
+  id: string;
+  ok: boolean;
+  level: "ok" | "warning" | "error";
+  message: string;
+}
+interface Validacion {
+  ok: boolean;
+  checks: CheckRow[];
+  cfdi_link: {
+    polizas_total: number;
+    polizas_desde_cfdi: number;
+    cfdis_periodo: number;
+    cfdis_sin_poliza: number;
+  };
+}
 
 interface BalanzaRow {
   code: string;
@@ -106,9 +125,11 @@ export function ReportesTab() {
     setLoading(true);
     setData(null);
     try {
-      const res = await clientApiFetch<{ data: unknown }>(
-        `/api/finance/accounting/reports/${report}?year=${year}&month=${month}`
-      );
+      const path =
+        report === "e-contabilidad"
+          ? `/api/finance/accounting/e-contabilidad/validate?year=${year}&month=${month}`
+          : `/api/finance/accounting/reports/${report}?year=${year}&month=${month}`;
+      const res = await clientApiFetch<{ data: unknown }>(path);
       setData(res.data);
     } catch (error) {
       notify.error({
@@ -124,14 +145,47 @@ export function ReportesTab() {
     load();
   }, [load]);
 
-  const exportCsv = () => {
-    const url = `/api/finance/accounting/reports/export?report=${report}&year=${year}&month=${month}`;
+  const download = (href: string, fallbackName: string) => {
     const a = document.createElement("a");
-    a.href = url;
+    a.href = href;
     a.rel = "noopener";
+    a.download = fallbackName;
     document.body.appendChild(a);
     a.click();
     a.remove();
+  };
+
+  const exportCsv = () => {
+    download(
+      `/api/finance/accounting/reports/export?report=${report}&year=${year}&month=${month}`,
+      `${report}-${year}-${String(month).padStart(2, "0")}.csv`
+    );
+  };
+
+  // Descarga un XML SAT; si el backend responde JSON (p. ej. falta RFC), avisa.
+  const downloadXml = async (doc: "catalogo" | "balanza") => {
+    try {
+      const r = await fetch(
+        `/api/finance/accounting/e-contabilidad/xml?doc=${doc}&year=${year}&month=${month}`,
+        { cache: "no-store" }
+      );
+      const ct = r.headers.get("content-type") || "";
+      if (!r.ok || !ct.includes("xml")) {
+        let msg = "No se pudo generar el XML";
+        try { msg = (await r.json()).error || msg; } catch { /* noop */ }
+        notify.error({ title: "XML no generado", description: msg });
+        return;
+      }
+      const blob = await r.blob();
+      const cd = r.headers.get("content-disposition") || "";
+      const m = cd.match(/filename="?([^"]+)"?/);
+      const name = m?.[1] || `${doc}-${year}-${String(month).padStart(2, "0")}.xml`;
+      const objUrl = URL.createObjectURL(blob);
+      download(objUrl, name);
+      URL.revokeObjectURL(objUrl);
+    } catch {
+      notify.error({ title: "XML no generado", description: "Error de red" });
+    }
   };
 
   return (
@@ -177,9 +231,11 @@ export function ReportesTab() {
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={loading || !data}>
-            ⬇ Exportar CSV
-          </Button>
+          {report !== "e-contabilidad" ? (
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={loading || !data}>
+              ⬇ Exportar CSV
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -207,8 +263,10 @@ export function ReportesTab() {
             <BalanceGeneralView d={data as BalanceGeneral} />
           ) : report === "mayor" ? (
             <MayorView d={data as { cuentas: MayorCuenta[] }} />
-          ) : (
+          ) : report === "diario" ? (
             <DiarioView d={data as { polizas: DiarioPoliza[] }} />
+          ) : (
+            <EContabilidadView d={data as Validacion} onDownload={downloadXml} />
           )}
         </CardContent>
       </Card>
@@ -399,6 +457,65 @@ function MayorView({ d }: { d: { cuentas: MayorCuenta[] } }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function EContabilidadView({
+  d,
+  onDownload,
+}: {
+  d: Validacion;
+  onDownload: (doc: "catalogo" | "balanza") => void;
+}) {
+  const dot = (lvl: CheckRow["level"]) =>
+    lvl === "ok" ? "bg-emerald-500" : lvl === "warning" ? "bg-amber-500" : "bg-red-500";
+  const blockingError = d.checks.some((c) => c.level === "error");
+  const l = d.cfdi_link;
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        {d.checks.map((c) => (
+          <div key={c.id} className="flex items-start gap-2 text-sm">
+            <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", dot(c.level))} />
+            <span className={cn(c.level === "error" && "text-red-600", c.level === "warning" && "text-amber-700")}>
+              {c.message}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+        <p className="mb-1 font-medium">Enlace póliza ↔ CFDI</p>
+        <p className="text-muted-foreground">
+          {l.polizas_desde_cfdi} de {l.polizas_total} póliza(s) provienen de CFDIs ·{" "}
+          {l.cfdis_periodo} CFDI(s) en el periodo ·{" "}
+          {l.cfdis_sin_poliza === 0 ? (
+            <span className="text-emerald-600">sin CFDIs pendientes de póliza</span>
+          ) : (
+            <span className="text-amber-700">{l.cfdis_sin_poliza} CFDI(s) sin póliza</span>
+          )}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => onDownload("catalogo")}>
+          ⬇ Catálogo de cuentas (XML)
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onDownload("balanza")}
+          disabled={blockingError}
+          title={blockingError ? "Corrige los errores antes de generar la balanza" : undefined}
+        >
+          ⬇ Balanza mensual (XML)
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        XML conforme al Anexo 24 del SAT (Contabilidad Electrónica 1.3). El nombre del archivo sigue el formato
+        RFC + año + mes que exige el buzón tributario.
+      </p>
     </div>
   );
 }

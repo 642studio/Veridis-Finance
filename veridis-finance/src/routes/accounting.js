@@ -3,6 +3,7 @@ const { z } = require('zod');
 const accounting = require('../services/accountingService');
 const autoPoliza = require('../services/autoPolizaService');
 const reportes = require('../services/reportesContablesService');
+const contabE = require('../services/contabilidadElectronicaService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -152,6 +153,32 @@ async function accountingRoutes(app) {
     reply.header('Content-Type', 'text/csv; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="${filename}"`);
     reply.send(csv);
+  });
+
+  // ---- Contabilidad electrónica SAT (S11) ----
+  app.get('/accounting/e-contabilidad/validate', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await contabE.validate(organizationId, { year, month }) });
+  });
+
+  app.get('/accounting/e-contabilidad/catalogo.xml', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    const { xml, filename } = await contabE.buildCatalogoXml(organizationId, { year, month });
+    reply.header('Content-Type', 'application/xml; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    reply.send(xml);
+  });
+
+  app.get('/accounting/e-contabilidad/balanza.xml', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month, tipo } = periodQuery.extend({ tipo: z.enum(['N', 'C']).optional() })
+      .parse(request.query || {});
+    const { xml, filename } = await contabE.buildBalanzaXml(organizationId, { year, month, tipoEnvio: tipo || 'N' });
+    reply.header('Content-Type', 'application/xml; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    reply.send(xml);
   });
 }
 
