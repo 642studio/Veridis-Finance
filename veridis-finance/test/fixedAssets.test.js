@@ -40,3 +40,28 @@ test('valor de rescate ≥ costo ⇒ sin depreciación', () => {
   });
   assert.strictEqual(s.length, 0);
 });
+
+const { buildCedula } = require('../src/services/fixedAssetsService');
+
+test('cédula: depreciación acumulada y valor en libros a la fecha de corte', () => {
+  // Equipo de cómputo 30%, costo 36000, adquirido junio → deprecia desde julio (600/mes).
+  const c = buildCedula([
+    { id: '1', name: 'MacBook', cost: 36000, salvage_value: 0, annual_rate: 0.30,
+      method: 'linea_recta', acquisition_date: '2026-06-15', status: 'activo' },
+  ], { year: 2026, month: 8 });
+  const a = c.activos[0];
+  // 36000 × 30% / 12 = 900/mes; jul + ago = 2 meses = 1800 acumulado; valor 34200.
+  assert.strictEqual(a.depreciacion_mes, 900);
+  assert.strictEqual(a.depreciacion_acumulada, 1800);
+  assert.strictEqual(a.valor_en_libros, 34200);
+  assert.strictEqual(c.totales.valor_en_libros, 34200);
+});
+
+test('cédula: antes de iniciar depreciación, acumulada 0 y valor = costo', () => {
+  const c = buildCedula([
+    { id: '1', name: 'Equipo', cost: 10000, salvage_value: 0, annual_rate: 0.10,
+      method: 'linea_recta', acquisition_date: '2026-06-15', status: 'activo' },
+  ], { year: 2026, month: 6 });
+  assert.strictEqual(c.activos[0].depreciacion_acumulada, 0);
+  assert.strictEqual(c.activos[0].valor_en_libros, 10000);
+});

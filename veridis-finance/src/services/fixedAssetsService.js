@@ -150,7 +150,47 @@ async function runDepreciation(organizationId, { year, month, createdBy }) {
   return { assets: assets.length, posted, skipped, errors };
 }
 
+/**
+ * Cédula de depreciación (puro) a una fecha de corte {year, month}: por activo,
+ * costo, depreciación del mes, depreciación acumulada, valor en libros y avance.
+ * Es la cédula que respalda el anexo de activo fijo del ISR.
+ */
+function buildCedula(assets, { year, month }) {
+  const activos = assets.map((a) => {
+    const sched = depreciationSchedule(a, { year, month });
+    const upto = sched.filter((s) => s.year < year || (s.year === year && s.month <= month));
+    const last = upto[upto.length - 1];
+    const delMes = sched.find((s) => s.year === year && s.month === month);
+    const base = num(Number(a.cost) - Number(a.salvage_value || 0));
+    const acumulada = last ? last.acumulada : 0;
+    const valorLibros = last ? last.valor_libros : num(a.cost);
+    return {
+      id: a.id, name: a.name, category: a.category,
+      acquisition_date: a.acquisition_date,
+      cost: num(a.cost), salvage_value: num(a.salvage_value || 0),
+      annual_rate: Number(a.annual_rate),
+      depreciacion_mes: delMes ? delMes.depreciacion : 0,
+      depreciacion_acumulada: num(acumulada),
+      valor_en_libros: num(valorLibros),
+      avance: base > 0 ? Number(((acumulada / base) * 100).toFixed(1)) : 0,
+      status: a.status,
+    };
+  });
+  const totales = activos.reduce((t, a) => ({
+    cost: num(t.cost + a.cost),
+    depreciacion_mes: num(t.depreciacion_mes + a.depreciacion_mes),
+    depreciacion_acumulada: num(t.depreciacion_acumulada + a.depreciacion_acumulada),
+    valor_en_libros: num(t.valor_en_libros + a.valor_en_libros),
+  }), { cost: 0, depreciacion_mes: 0, depreciacion_acumulada: 0, valor_en_libros: 0 });
+  return { year, month, activos, totales };
+}
+
+async function cedula(organizationId, { year, month }) {
+  const assets = await listAssets(organizationId);
+  return buildCedula(assets, { year, month });
+}
+
 module.exports = {
   listAssets, createAsset, runDepreciation, depreciationSchedule,
-  ensureDepreciationAccounts,
+  ensureDepreciationAccounts, cedula, buildCedula,
 };

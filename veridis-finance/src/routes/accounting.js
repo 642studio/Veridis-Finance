@@ -215,6 +215,12 @@ async function accountingRoutes(app) {
     reply.send({ data: await fixedAssets.runDepreciation(organizationId, { year, month, createdBy: request.user?.user_id }) });
   });
 
+  app.get('/accounting/assets/cedula', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await fixedAssets.cedula(organizationId, { year, month }) });
+  });
+
   // ---- Auditoría preventiva (S12) ----
   app.get('/accounting/auditoria', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
     const organizationId = resolveOrganizationId(request);

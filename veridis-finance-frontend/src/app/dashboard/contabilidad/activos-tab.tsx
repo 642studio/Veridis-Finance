@@ -27,6 +27,25 @@ interface Asset {
   asset_account_code: string;
 }
 
+interface CedulaRow {
+  id: string;
+  name: string;
+  cost: number;
+  depreciacion_mes: number;
+  depreciacion_acumulada: number;
+  valor_en_libros: number;
+  avance: number;
+}
+interface Cedula {
+  activos: CedulaRow[];
+  totales: {
+    cost: number;
+    depreciacion_mes: number;
+    depreciacion_acumulada: number;
+    valor_en_libros: number;
+  };
+}
+
 const STATUS_LABELS: Record<string, string> = {
   activo: "Activo",
   baja: "Baja",
@@ -61,11 +80,19 @@ export function ActivosTab() {
   const [category, setCategory] = useState("mobiliario");
   const [acqDate, setAcqDate] = useState(new Date().toISOString().slice(0, 10));
 
+  const [cedula, setCedula] = useState<Cedula | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await clientApiFetch<{ data: Asset[] }>("/api/finance/accounting/assets");
-      setAssets(res.data || []);
+      const [a, c] = await Promise.all([
+        clientApiFetch<{ data: Asset[] }>("/api/finance/accounting/assets"),
+        clientApiFetch<{ data: Cedula }>(
+          `/api/finance/accounting/assets/cedula?year=${genYear}&month=${genMonth}`
+        ),
+      ]);
+      setAssets(a.data || []);
+      setCedula(c.data);
     } catch (error) {
       notify.error({
         title: "No se pudieron cargar los activos",
@@ -74,7 +101,7 @@ export function ActivosTab() {
     } finally {
       setLoading(false);
     }
-  }, [notify]);
+  }, [notify, genYear, genMonth]);
 
   useEffect(() => {
     load();
@@ -127,6 +154,7 @@ export function ActivosTab() {
         title: "Depreciación registrada",
         description: `${d.posted} póliza(s) de ${d.assets} activo(s); ${d.skipped} sin depreciación o ya registradas.`,
       });
+      load();
     } catch (error) {
       notify.error({
         title: "No se pudo depreciar",
@@ -222,6 +250,57 @@ export function ActivosTab() {
           )}
         </CardContent>
       </Card>
+
+      {cedula && cedula.activos.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Cédula de depreciación · {new Date(2000, genMonth - 1, 1).toLocaleDateString("es-MX", { month: "long" })} {genYear}
+            </CardTitle>
+            <CardDescription>
+              Depreciación acumulada y valor en libros a la fecha de corte (respaldo del anexo de ISR).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="py-2">Activo</th>
+                    <th className="py-2 text-right">Costo</th>
+                    <th className="py-2 text-right">Depr. del mes</th>
+                    <th className="py-2 text-right">Depr. acumulada</th>
+                    <th className="py-2 text-right">Valor en libros</th>
+                    <th className="py-2 text-right">Avance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cedula.activos.map((a) => (
+                    <tr key={a.id} className="border-t border-border">
+                      <td className="py-2">{a.name}</td>
+                      <td className="tnum py-2 text-right">{formatCurrency(a.cost)}</td>
+                      <td className="tnum py-2 text-right">{a.depreciacion_mes ? formatCurrency(a.depreciacion_mes) : "—"}</td>
+                      <td className="tnum py-2 text-right">{formatCurrency(a.depreciacion_acumulada)}</td>
+                      <td className="tnum py-2 text-right font-medium">{formatCurrency(a.valor_en_libros)}</td>
+                      <td className="tnum py-2 text-right text-muted-foreground">{a.avance}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-border font-semibold">
+                    <td className="py-2">Totales</td>
+                    <td className="tnum py-2 text-right">{formatCurrency(cedula.totales.cost)}</td>
+                    <td className="tnum py-2 text-right">{formatCurrency(cedula.totales.depreciacion_mes)}</td>
+                    <td className="tnum py-2 text-right">{formatCurrency(cedula.totales.depreciacion_acumulada)}</td>
+                    <td className="tnum py-2 text-right">{formatCurrency(cedula.totales.valor_en_libros)}</td>
+                    <td className="py-2" />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
