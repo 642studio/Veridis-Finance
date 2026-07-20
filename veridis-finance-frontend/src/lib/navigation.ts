@@ -1,5 +1,6 @@
 import {
   BadgeCheck,
+  BookOpen,
   BarChart3,
   BookUser,
   CalendarRange,
@@ -45,6 +46,7 @@ export const NAV_GROUPS: DashboardNavGroup[] = [
       { href: "/dashboard/cfdi", label: "CFDI", icon: FileText },
       { href: "/dashboard/invoices", label: "Facturas", icon: Receipt },
       { href: "/dashboard/impuestos", label: "Impuestos", icon: Landmark },
+      { href: "/dashboard/contabilidad", label: "Contabilidad", icon: BookOpen },
       { href: "/dashboard/nomina", label: "Nómina", icon: Users },
       { href: "/dashboard/sat", label: "Descarga SAT", icon: CloudDownload },
     ],
