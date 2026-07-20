@@ -2,6 +2,7 @@ const { z } = require('zod');
 
 const accounting = require('../services/accountingService');
 const autoPoliza = require('../services/autoPolizaService');
+const reportes = require('../services/reportesContablesService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -103,6 +104,118 @@ async function accountingRoutes(app) {
     }).parse(request.query || {});
     reply.send({ data: await accounting.trialBalance(organizationId, { year, month }) });
   });
+
+  // ---- Reportes contables (S10) ----
+  const periodQuery = z.object({
+    year: z.coerce.number().int(),
+    month: z.coerce.number().int().min(1).max(12),
+  });
+
+  app.get('/accounting/reports/balanza', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await reportes.balanzaComprobacion(organizationId, { year, month }) });
+  });
+
+  app.get('/accounting/reports/mayor', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month, account } = periodQuery.extend({ account: z.string().max(30).optional() })
+      .parse(request.query || {});
+    reply.send({ data: await reportes.libroMayor(organizationId, { year, month, accountCode: account || null }) });
+  });
+
+  app.get('/accounting/reports/diario', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await reportes.libroDiario(organizationId, { year, month }) });
+  });
+
+  app.get('/accounting/reports/estado-resultados', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await reportes.estadoResultados(organizationId, { year, month }) });
+  });
+
+  app.get('/accounting/reports/balance-general', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await reportes.balanceGeneral(organizationId, { year, month }) });
+  });
+
+  // Export CSV (para el contador). ?report=balanza|mayor|diario|estado-resultados|balance-general
+  app.get('/accounting/reports/export', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month, report } = periodQuery.extend({
+      report: z.enum(['balanza', 'mayor', 'diario', 'estado-resultados', 'balance-general']),
+    }).parse(request.query || {});
+    const { csv, filename } = await buildCsv(organizationId, report, { year, month });
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    reply.send(csv);
+  });
+}
+
+// --- Helpers de export CSV ---
+const csvCell = (v) => {
+  const s = v == null ? '' : String(v);
+  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+const csvRow = (arr) => arr.map(csvCell).join(',');
+
+async function buildCsv(organizationId, report, { year, month }) {
+  const per = `${year}-${String(month).padStart(2, '0')}`;
+  if (report === 'balanza') {
+    const d = await reportes.balanzaComprobacion(organizationId, { year, month });
+    const lines = [csvRow(['Cuenta', 'Nombre', 'Saldo inicial', 'Cargos', 'Abonos', 'Saldo final'])];
+    for (const c of d.cuentas) lines.push(csvRow([c.code, c.name, c.saldo_inicial, c.cargos, c.abonos, c.saldo_final]));
+    lines.push(csvRow(['', 'TOTALES', '', d.total_cargos, d.total_abonos, '']));
+    return { csv: lines.join('\n'), filename: `balanza-${per}.csv` };
+  }
+  if (report === 'mayor') {
+    const d = await reportes.libroMayor(organizationId, { year, month });
+    const lines = [csvRow(['Cuenta', 'Nombre', 'Folio', 'Fecha', 'Concepto', 'Cargo', 'Abono', 'Saldo'])];
+    for (const c of d.cuentas) {
+      lines.push(csvRow([c.code, c.name, '', '', 'Saldo inicial', '', '', c.saldo_inicial]));
+      for (const m of c.movimientos) {
+        lines.push(csvRow([c.code, c.name, m.folio, fmtDate(m.fecha), m.concepto, m.cargo, m.abono, m.saldo]));
+      }
+    }
+    return { csv: lines.join('\n'), filename: `libro-mayor-${per}.csv` };
+  }
+  if (report === 'diario') {
+    const d = await reportes.libroDiario(organizationId, { year, month });
+    const lines = [csvRow(['Folio', 'Fecha', 'Tipo', 'Concepto', 'Cuenta', 'Nombre cuenta', 'Cargo', 'Abono'])];
+    for (const p of d.polizas) {
+      for (const l of p.partidas) {
+        lines.push(csvRow([p.folio, fmtDate(p.fecha), p.tipo, p.concepto, l.account_code, l.account_name, l.cargo, l.abono]));
+      }
+    }
+    return { csv: lines.join('\n'), filename: `libro-diario-${per}.csv` };
+  }
+  if (report === 'estado-resultados') {
+    const d = await reportes.estadoResultados(organizationId, { year, month });
+    const lines = [csvRow(['Concepto', 'Del mes', 'Del ejercicio'])];
+    lines.push(csvRow(['Ingresos', d.ingresos.mes, d.ingresos.ejercicio]));
+    lines.push(csvRow(['Costos', d.costos.mes, d.costos.ejercicio]));
+    lines.push(csvRow(['Gastos', d.gastos.mes, d.gastos.ejercicio]));
+    lines.push(csvRow(['Utilidad', d.utilidad.mes, d.utilidad.ejercicio]));
+    return { csv: lines.join('\n'), filename: `estado-resultados-${per}.csv` };
+  }
+  // balance-general
+  const d = await reportes.balanceGeneral(organizationId, { year, month });
+  const lines = [csvRow(['Grupo', 'Cuenta', 'Nombre', 'Saldo'])];
+  for (const a of d.activo) lines.push(csvRow(['Activo', a.code, a.name, a.saldo]));
+  lines.push(csvRow(['Activo', '', 'TOTAL ACTIVO', d.total_activo]));
+  for (const p of d.pasivo) lines.push(csvRow(['Pasivo', p.code, p.name, p.saldo]));
+  lines.push(csvRow(['Pasivo', '', 'TOTAL PASIVO', d.total_pasivo]));
+  for (const c of d.capital) lines.push(csvRow(['Capital', c.code, c.name, c.saldo]));
+  lines.push(csvRow(['Capital', '', 'Resultado del ejercicio', d.resultado_ejercicio]));
+  lines.push(csvRow(['Capital', '', 'TOTAL PASIVO + CAPITAL', d.total_pasivo_capital]));
+  return { csv: lines.join('\n'), filename: `balance-general-${per}.csv` };
+}
+
+function fmtDate(v) {
+  try { return new Date(v).toISOString().slice(0, 10); } catch { return String(v || ''); }
 }
 
 module.exports = accountingRoutes;

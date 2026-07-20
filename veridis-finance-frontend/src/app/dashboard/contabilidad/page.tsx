@@ -15,6 +15,7 @@ import { useNotify } from "@/hooks/use-notify";
 import { ApiClientError, clientApiFetch } from "@/lib/api-client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ReportesTab } from "./reportes-tab";
 
 interface Account {
   id: string;
@@ -53,7 +54,7 @@ const emptyLine: Line = { account_code: "", debit: "", credit: "" };
 export default function ContabilidadPage() {
   const notify = useNotify();
   const { canWrite } = useSession();
-  const [tab, setTab] = useState<"catalogo" | "polizas">("polizas");
+  const [tab, setTab] = useState<"catalogo" | "polizas" | "reportes">("polizas");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,22 +214,24 @@ export default function ContabilidadPage() {
       </div>
 
       <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1 w-fit">
-        {(["polizas", "catalogo"] as const).map((t) => (
+        {(["polizas", "catalogo", "reportes"] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-colors",
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
               tab === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {t === "polizas" ? "Pólizas" : "Catálogo de cuentas"}
+            {t === "polizas" ? "Pólizas" : t === "catalogo" ? "Catálogo de cuentas" : "Reportes"}
           </button>
         ))}
       </div>
 
-      {tab === "catalogo" ? (
+      {tab === "reportes" ? (
+        <ReportesTab />
+      ) : tab === "catalogo" ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Catálogo de cuentas ({accounts.length})</CardTitle>
