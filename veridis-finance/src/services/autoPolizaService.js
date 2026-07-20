@@ -131,7 +131,7 @@ async function generateForPeriod(organizationId, { year, month, createdBy }) {
       // eslint-disable-next-line no-await-in-loop
       await accounting.createEntry(organizationId, {
         entry_type: built.entry_type,
-        entry_date: String(built.date).slice(0, 10),
+        entry_date: new Date(built.date).toISOString().slice(0, 10),
         concept: built.concept,
         source: 'cfdi',
         source_ref: built.uuid,
