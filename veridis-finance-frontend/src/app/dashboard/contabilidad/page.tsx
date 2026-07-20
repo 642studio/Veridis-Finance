@@ -65,6 +65,10 @@ export default function ContabilidadPage() {
   const [entryType, setEntryType] = useState<"ingreso" | "egreso" | "diario">("diario");
   const [concept, setConcept] = useState("");
   const [lines, setLines] = useState<Line[]>([{ ...emptyLine }, { ...emptyLine }]);
+  const [generating, setGenerating] = useState(false);
+  const now = new Date();
+  const [genYear, setGenYear] = useState(now.getFullYear());
+  const [genMonth, setGenMonth] = useState(now.getMonth() + 1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,6 +143,34 @@ export default function ContabilidadPage() {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   };
 
+  const autoGenerate = async () => {
+    setGenerating(true);
+    try {
+      const res = await clientApiFetch<{ data: { invoices: number; posted: number; skipped: number } }>(
+        "/api/finance/accounting/auto-generate",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ year: genYear, month: genMonth }),
+        }
+      );
+      const d = res.data;
+      notify.success({
+        title: "Pólizas generadas desde CFDIs",
+        description: `${d.posted} póliza(s) nueva(s) de ${d.invoices} CFDI(s); ${d.skipped} ya existían o se omitieron.`,
+      });
+      setTab("polizas");
+      load();
+    } catch (error) {
+      notify.error({
+        title: "No se pudieron generar",
+        description: error instanceof ApiClientError ? error.message : "Error",
+      });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -148,7 +180,36 @@ export default function ContabilidadPage() {
             Partida doble: catálogo de cuentas con código agrupador SAT y pólizas balanceadas.
           </p>
         </div>
-        {canWrite ? <Button onClick={() => setOpen(true)}>Nueva póliza</Button> : null}
+        {canWrite ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Mes"
+              className="h-9 rounded-lg border border-border bg-card px-2 text-sm"
+              value={genMonth}
+              onChange={(e) => setGenMonth(Number(e.target.value))}
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(2000, i, 1).toLocaleDateString("es-MX", { month: "long" })}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Año"
+              className="h-9 rounded-lg border border-border bg-card px-2 text-sm"
+              value={genYear}
+              onChange={(e) => setGenYear(Number(e.target.value))}
+            >
+              {[now.getFullYear() - 1, now.getFullYear()].map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <Button variant="outline" onClick={autoGenerate} disabled={generating}>
+              {generating ? "Generando…" : "⚙️ Generar desde CFDIs"}
+            </Button>
+            <Button onClick={() => setOpen(true)}>Nueva póliza</Button>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1 w-fit">

@@ -1,6 +1,7 @@
 const { z } = require('zod');
 
 const accounting = require('../services/accountingService');
+const autoPoliza = require('../services/autoPolizaService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -78,6 +79,19 @@ async function accountingRoutes(app) {
     const ok = await accounting.cancelEntry(organizationId, request.params.id);
     if (!ok) return reply.status(404).send({ error: 'Póliza no encontrada o ya cancelada' });
     reply.send({ ok: true });
+  });
+
+  // ---- Pólizas automáticas desde CFDIs del periodo ----
+  app.post('/accounting/auto-generate', { preHandler: [authenticate, authorize(WRITE)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = z.object({
+      year: z.coerce.number().int(),
+      month: z.coerce.number().int().min(1).max(12),
+    }).parse(request.body || {});
+    const data = await autoPoliza.generateForPeriod(organizationId, {
+      year, month, createdBy: request.user?.user_id,
+    });
+    reply.send({ data });
   });
 
   // ---- Balanza (fundamento; el reporte formal es S10) ----
