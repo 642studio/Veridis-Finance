@@ -7,6 +7,7 @@ import {
   CloudDownload,
   FileText,
   Building2,
+  Gauge,
   Landmark,
   LayoutDashboard,
   Receipt,
@@ -43,6 +44,7 @@ export const NAV_GROUPS: DashboardNavGroup[] = [
   {
     title: "Fiscal",
     items: [
+      { href: "/dashboard/escritorio", label: "Escritorio fiscal", icon: Gauge },
       { href: "/dashboard/cfdi", label: "CFDI", icon: FileText },
       { href: "/dashboard/invoices", label: "Facturas", icon: Receipt },
       { href: "/dashboard/impuestos", label: "Impuestos", icon: Landmark },
