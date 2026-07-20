@@ -28,7 +28,7 @@ async function cronRoutes(app) {
     const { rows } = await pool.query(
       `SELECT id FROM finance.ghl_webhook_events
         WHERE status = 'pending_csf'
-        ORDER BY created_at ASC
+        ORDER BY received_at ASC
         LIMIT 25`
     );
 
