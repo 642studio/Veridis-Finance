@@ -2,6 +2,8 @@ const {
   listCandidates,
   confirmCandidate,
   autoReconcile,
+  reviewList,
+  unreconcile,
 } = require('../controllers/reconciliationController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -11,6 +13,20 @@ async function reconciliationRoutes(app) {
     '/reconciliation/auto',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     autoReconcile
+  );
+
+  // Bandeja de conciliación del periodo (estados + CFDI ligado).
+  app.get(
+    '/reconciliation/review',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER])] },
+    reviewList
+  );
+
+  // Deshacer una conciliación.
+  app.post(
+    '/transactions/:transactionId/unreconcile',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    unreconcile
   );
 
   // Ranked invoice candidates for a bank transaction.

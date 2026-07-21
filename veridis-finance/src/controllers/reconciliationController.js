@@ -54,4 +54,28 @@ async function autoReconcile(request, reply) {
   reply.send({ data });
 }
 
-module.exports = { listCandidates, confirmCandidate, autoReconcile };
+const reviewQuery = z.object({
+  year: z.coerce.number().int(),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
+/** Bandeja de conciliación: movimientos del periodo con estado y CFDI ligado. */
+async function reviewList(request, reply) {
+  const { year, month } = reviewQuery.parse(request.query || {});
+  const organizationId = resolveOrganizationId(request);
+  const data = await reconciliationService.reviewList({ organization_id: organizationId, year, month });
+  reply.send({ data });
+}
+
+/** Deshacer conciliación: libera el CFDI ligado a la transacción. */
+async function unreconcile(request, reply) {
+  const { transactionId } = idParams.parse(request.params);
+  const organizationId = resolveOrganizationId(request);
+  const data = await reconciliationService.unmatch({
+    organization_id: organizationId,
+    transaction_id: transactionId,
+  });
+  reply.send({ data });
+}
+
+module.exports = { listCandidates, confirmCandidate, autoReconcile, reviewList, unreconcile };

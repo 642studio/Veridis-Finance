@@ -11,6 +11,7 @@ import {
   Landmark,
   LayoutDashboard,
   Receipt,
+  Scale,
   Sparkles,
   Store,
   Users,
@@ -36,6 +37,7 @@ export const NAV_GROUPS: DashboardNavGroup[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/dashboard/transactions", label: "Movimientos", icon: Wallet },
+      { href: "/dashboard/conciliacion", label: "Conciliación", icon: Scale },
       { href: "/dashboard/accounts", label: "Cuentas", icon: Landmark },
       { href: "/dashboard/reports", label: "Reportes", icon: BarChart3 },
       { href: "/dashboard/planning", label: "Planeación", icon: CalendarRange },

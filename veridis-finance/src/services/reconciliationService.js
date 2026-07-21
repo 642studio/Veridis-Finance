@@ -317,11 +317,102 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
   return { ...summary, matches };
 }
 
+/**
+ * Estado de conciliación de una transacción (puro). Un movimiento está
+ * conciliado si un CFDI lo referencia (payment_reference = 'bank_txn:<id>').
+ * "parcial" cuando el monto del CFDI no cubre el del movimiento (o viceversa).
+ */
+function reconciliationState(txnAmount, invoiceTotal) {
+  if (invoiceTotal == null) return 'sin_conciliar';
+  const t = money(txnAmount).abs();
+  const i = money(invoiceTotal).abs();
+  const diff = t.minus(i).abs();
+  const rel = i.greaterThan(0) ? Number(diff.dividedBy(i)) : (diff.greaterThan(0) ? 1 : 0);
+  return rel <= AMOUNT_TOLERANCE ? 'conciliado' : 'parcial';
+}
+
+/**
+ * Bandeja de conciliación: movimientos bancarios del periodo con su estado y el
+ * CFDI ligado (si lo hay). Alimenta la vista para confirmar/deshacer.
+ */
+async function reviewList({ organization_id, year, month, limit = 500 }) {
+  const start = `${year}-${String(month).padStart(2, '0')}-01`;
+  const { rows } = await pool.query(
+    `SELECT t.id, t.transaction_date, t.type, t.amount, t.description, t.original_description,
+            t.category, t.match_confidence, t.match_method,
+            i.id AS invoice_id, i.uuid_sat, i.emitter, i.receiver, i.total AS invoice_total,
+            i.direction AS invoice_direction
+       FROM finance.transactions t
+       LEFT JOIN finance.invoices i
+         ON i.organization_id = t.organization_id
+        AND i.payment_reference = 'bank_txn:' || t.id::text
+      WHERE t.organization_id = $1 AND t.deleted_at IS NULL
+        AND t.transaction_date >= $2::date AND t.transaction_date < ($2::date + interval '1 month')
+      ORDER BY t.transaction_date DESC, t.created_at DESC
+      LIMIT $3`,
+    [organization_id, start, limit]
+  );
+
+  let conciliadoN = 0;
+  let pendienteN = 0;
+  let montoConciliado = 0;
+  let montoPendiente = 0;
+  const items = rows.map((r) => {
+    const estado = reconciliationState(r.amount, r.invoice_total);
+    const amount = Number(r.amount);
+    if (estado === 'sin_conciliar') { pendienteN += 1; montoPendiente += amount; }
+    else { conciliadoN += 1; montoConciliado += amount; }
+    return {
+      id: r.id, date: r.transaction_date, type: r.type, amount,
+      concepto: r.description || null,
+      descripcion: r.original_description || r.description || null,
+      categoria: r.category || null,
+      estado,
+      match_confidence: r.match_confidence != null ? Number(r.match_confidence) : null,
+      match_method: r.match_method || null,
+      cfdi: r.invoice_id ? {
+        invoice_id: r.invoice_id, uuid_sat: r.uuid_sat,
+        emitter: r.emitter, receiver: r.receiver, total: Number(r.invoice_total),
+      } : null,
+    };
+  });
+
+  return {
+    year, month,
+    resumen: {
+      total: items.length,
+      conciliados: conciliadoN,
+      sin_conciliar: pendienteN,
+      monto_conciliado: Number(money(montoConciliado).toFixed(2)),
+      monto_pendiente: Number(money(montoPendiente).toFixed(2)),
+      pct_conciliado: items.length ? Math.round((conciliadoN / items.length) * 100) : 0,
+    },
+    items,
+  };
+}
+
+/**
+ * Deshacer una conciliación: regresa el CFDI ligado a 'pending' y limpia la
+ * referencia. Anti-duplicado: al liberar el CFDI vuelve a ser candidato.
+ */
+async function unmatch({ organization_id, transaction_id }) {
+  const { rowCount } = await pool.query(
+    `UPDATE finance.invoices
+        SET status = 'pending', payment_reference = NULL, paid_at = NULL, updated_at = now()
+      WHERE organization_id = $1 AND payment_reference = $2`,
+    [organization_id, `bank_txn:${transaction_id}`]
+  );
+  return { unmatched: rowCount > 0 };
+}
+
 module.exports = {
   scoreMatch,
   findInvoiceCandidates,
   confirmMatch,
   autoReconcile,
+  reviewList,
+  unmatch,
+  reconciliationState,
   AMOUNT_TOLERANCE,
   DATE_WINDOW_DAYS,
 };
