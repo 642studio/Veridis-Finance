@@ -389,6 +389,79 @@ function parseTransactionStartLine(line) {
   };
 }
 
+const SANTANDER_RFC_RE = /\b[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b/;
+
+/**
+ * Extrae la contraparte estructurada de la descripción cruda de Santander:
+ * RFC, nombre del cliente/destino, concepto de pago, clave de rastreo, comercio
+ * (consumos con tarjeta) y monto en USD (moneda extranjera). Puro y testeable.
+ */
+function extractSantanderDetails(rawDescription) {
+  const text = String(rawDescription || '');
+  const up = text.toUpperCase();
+  const out = {
+    counterparty_name: null, counterparty_rfc: null,
+    payment_concept: null, tracking_key: null, merchant: null,
+    usd_amount: null,
+  };
+
+  const rfc = up.match(SANTANDER_RFC_RE);
+  if (rfc) out.counterparty_rfc = rfc[0];
+
+  // Nombre de la contraparte. "DEL/AL CLIENTE X" es el cliente real y gana sobre
+  // "ENVIADO A STP" / "RECIBIDO DE BBVA" (que son el banco o el sistema de pago).
+  const stop = '(?=\\s+(?:A LA CUENTA|DE LA CUENTA|CLAVE DE RASTREO|REF\\b|CONCEPTO|RFC|\\(\\s*\\d|$))';
+  const cliente = up.match(new RegExp(`\\b(?:DEL CLIENTE|AL CLIENTE)\\s+(.+?)${stop}`));
+  const fallback = up.match(new RegExp(`\\b(?:ENVIADO A|RECIBIDO DE)\\s+(.+?)${stop}`));
+  const chosen = (cliente && cliente[1]) || (fallback && fallback[1]) || null;
+  if (chosen) out.counterparty_name = titleCase(chosen.replace(/\(\s*\d\s*\)/g, '').trim());
+
+  // Concepto de pago capturado por el banco (puede ir al final de la línea).
+  const concepto = up.match(/\bCONCEPTO\s+(.+?)(?=\s+RFC\b|\s+CLAVE DE RASTREO|\s+REF\b|\s*$)/);
+  if (concepto && concepto[1]) out.payment_concept = titleCase(concepto[1].trim());
+
+  const clave = up.match(/\bCLAVE DE RASTREO\s+([A-Z0-9]+)/);
+  if (clave) out.tracking_key = clave[1];
+
+  // Consumo con tarjeta: monto en USD.
+  const usd = up.match(/\(MONEDA EXTRANJERA\)\s*([\d,]+\.\d{2})\s*USD/);
+  if (usd) out.usd_amount = Number(usd[1].replace(/,/g, ''));
+
+  // Comercio de un consumo: la línea suele traer "0000000000000 MERCHANT CIUDAD"
+  // o "TCA 0407219T6 MEGACABLE ...". Tomamos el texto tras el bloque de ceros/ID.
+  if (/CONSUMO (?:LOCAL|INTERNACIONAL)/.test(up)) {
+    const m = up.match(/(?:0{6,}|TCA\s+[A-Z0-9]+|GCM\s+\d+)\s+(.+?)(?=\s*\(MONEDA|$)/);
+    if (m && m[1]) out.merchant = titleCase(m[1].trim());
+  }
+
+  return out;
+}
+
+function titleCase(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\b([a-záéíóúñ])/g, (c) => c.toUpperCase())
+    .replace(/\bS\.?a\.? De\.? C\.?v\.?/gi, 'SA de CV')
+    .replace(/\bS De Rl De Cv/gi, 'S de RL de CV')
+    .trim();
+}
+
+/** Concepto humano base (rule-based) a partir de la descripción + contraparte. */
+function cleanConceptFrom(rawDescription, type, details) {
+  const up = String(rawDescription || '').toUpperCase();
+  if (/STRIPE/.test(up)) return 'Depósito Stripe (payout)';
+  if (/ADMINISTRACION RENTA MEMBRESIA/.test(up)) return 'Comisión de manejo de cuenta';
+  if (/I ?V ?A ?POR COMISION/.test(up)) return 'IVA de comisión bancaria';
+  if (details.merchant) return `${type === 'expense' ? 'Compra' : 'Cargo'} ${details.merchant}`;
+  if (details.counterparty_name) {
+    const who = details.counterparty_name;
+    if (type === 'income') return `Pago de ${who}${details.payment_concept ? ` — ${details.payment_concept}` : ''}`;
+    return `Pago a ${who}${details.payment_concept ? ` — ${details.payment_concept}` : ''}`;
+  }
+  if (details.payment_concept) return details.payment_concept;
+  return null;
+}
+
 function inferTypeFromDescription(description) {
   const normalized = normalizeBankText(description);
   const positiveKeywords = [
@@ -500,6 +573,8 @@ function finalizeTransactionBlock(block, previousBalance, bankName) {
     nextBalance
   );
   const type = inferType(rawDescription, resolvedAmount, previousBalance, nextBalance);
+  const details = extractSantanderDetails(rawDescription);
+  const cleanConcept = cleanConceptFrom(rawDescription, type, details);
 
   return {
     transaction: {
@@ -507,9 +582,16 @@ function finalizeTransactionBlock(block, previousBalance, bankName) {
       type,
       amount: Number(resolvedAmount.toFixed(2)),
       concept: trimLength(deriveConcept(rawDescription), 120),
+      clean_concept: cleanConcept ? trimLength(cleanConcept, 160) : null,
       raw_description: rawDescription,
       folio: trimLength(block.folio, 120),
       bank: trimLength(bankName, 80),
+      counterparty_name: details.counterparty_name,
+      counterparty_rfc: details.counterparty_rfc,
+      payment_concept: details.payment_concept,
+      tracking_key: details.tracking_key,
+      merchant: details.merchant,
+      usd_amount: details.usd_amount,
     },
     nextBalance,
   };
@@ -580,21 +662,14 @@ function parseSantanderStatement(rawText) {
         continue;
       }
 
+      // El monto suele venir en la MISMA línea del encabezado, pero el detalle
+      // (RFC / CLIENTE / CONCEPTO / CLAVE DE RASTREO) llega en las líneas de
+      // abajo. Registramos el monto pero dejamos el bloque abierto para acumular
+      // ese detalle; se cierra al llegar la siguiente transacción o el fin.
       const inlineAmount = extractAmountAndBalance(line);
       if (inlineAmount) {
         currentBlock.amount = inlineAmount.amount;
         currentBlock.balance = inlineAmount.balance;
-
-        const finalized = finalizeTransactionBlock(
-          currentBlock,
-          previousBalance,
-          'santander'
-        );
-        if (finalized.transaction) {
-          transactions.push(finalized.transaction);
-          previousBalance = finalized.nextBalance;
-        }
-        currentBlock = null;
       }
 
       continue;
@@ -604,7 +679,10 @@ function parseSantanderStatement(rawText) {
       continue;
     }
 
-    const amountAndBalance = extractAmountAndBalance(line);
+    // Si el monto aún no se conoce (formato con monto en línea posterior), esta
+    // línea puede traerlo. Si el monto ya se fijó en el encabezado, la línea es
+    // detalle y se acumula.
+    const amountAndBalance = currentBlock.amount == null ? extractAmountAndBalance(line) : null;
     if (amountAndBalance) {
       currentBlock.amount = amountAndBalance.amount;
       currentBlock.balance = amountAndBalance.balance;
@@ -647,4 +725,6 @@ function parseSantanderStatement(rawText) {
 
 module.exports = {
   parseSantanderStatement,
+  extractSantanderDetails,
+  cleanConceptFrom,
 };
