@@ -4,6 +4,7 @@ const satDownloadService = require('../services/satDownloadService');
 const efosService = require('../services/efosService');
 const cfdiStatusService = require('../services/cfdiStatusService');
 const autoPolizaService = require('../services/autoPolizaService');
+const bankPolizaService = require('../services/bankPolizaService');
 const auditoriaService = require('../services/auditoriaService');
 const notificationsService = require('../services/notificationsService');
 
@@ -110,6 +111,13 @@ async function cronRoutes(app) {
         polizasPosted += g.posted;
       } catch (err) {
         request.log.warn({ org: org.organization_id, err: err.message }, 'cron: auto-póliza failed');
+      }
+      try {
+        // Pólizas de flujo (cobro/pago) de los movimientos ya conciliados.
+        const bp = await bankPolizaService.generateForPeriod(org.organization_id, { year: cy, month: cm });
+        polizasPosted += bp.posted;
+      } catch (err) {
+        request.log.warn({ org: org.organization_id, err: err.message }, 'cron: póliza de flujo failed');
       }
       try {
         const a = await auditoriaService.run(org.organization_id, { year: cy, month: cm });

@@ -124,6 +124,24 @@ export default function ConciliacionPage() {
     }
   };
 
+  const generarPolizasFlujo = async () => {
+    setBusy(true);
+    try {
+      const res = await clientApiFetch<{ data: { posted: number; conciliados: number } }>(
+        "/api/finance/accounting/bank-polizas",
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ year, month }) }
+      );
+      notify.success({
+        title: "Pólizas de flujo generadas",
+        description: `${res.data.posted} póliza(s) de cobro/pago de ${res.data.conciliados} movimiento(s) conciliado(s).`,
+      });
+    } catch (error) {
+      notify.error({ title: "No se pudieron generar", description: error instanceof ApiClientError ? error.message : "Error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openCandidates = async (id: string) => {
     if (expanded === id) { setExpanded(null); return; }
     setExpanded(id);
@@ -185,9 +203,14 @@ export default function ConciliacionPage() {
             {[now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear()].map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           {canWrite ? (
-            <Button onClick={autoReconcile} disabled={busy || loading}>
-              {busy ? "Conciliando…" : "✨ Conciliar automáticamente"}
-            </Button>
+            <>
+              <Button variant="outline" onClick={generarPolizasFlujo} disabled={busy || loading}>
+                Pólizas de flujo
+              </Button>
+              <Button onClick={autoReconcile} disabled={busy || loading}>
+                {busy ? "Conciliando…" : "✨ Conciliar automáticamente"}
+              </Button>
+            </>
           ) : null}
         </div>
       </div>

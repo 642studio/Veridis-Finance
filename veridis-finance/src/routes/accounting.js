@@ -8,6 +8,7 @@ const fixedAssets = require('../services/fixedAssetsService');
 const auditoria = require('../services/auditoriaService');
 const cierre = require('../services/cierreService');
 const conciliacion = require('../services/conciliacionContableService');
+const bankPoliza = require('../services/bankPolizaService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -257,6 +258,13 @@ async function accountingRoutes(app) {
     const organizationId = resolveOrganizationId(request);
     const { year, month } = periodQuery.parse(request.query || {});
     reply.send({ data: await conciliacion.run(organizationId, { year, month }) });
+  });
+
+  // ---- Pólizas de flujo (cobro/pago) desde movimientos conciliados (S22) ----
+  app.post('/accounting/bank-polizas', { preHandler: [authenticate, authorize(WRITE)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.body || {});
+    reply.send({ data: await bankPoliza.generateForPeriod(organizationId, { year, month, createdBy: request.user?.user_id }) });
   });
 }
 
