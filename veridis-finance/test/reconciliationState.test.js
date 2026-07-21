@@ -20,3 +20,15 @@ test('scoreMatch premia RFC en la descripción del banco', () => {
   assert.strictEqual(m.rfc_match, true);
   assert.ok(m.score >= 0.9);
 });
+
+const { isStripePayout } = require('../src/services/reconciliationService');
+test('payout Stripe se detecta y marca aparte', () => {
+  assert.strictEqual(isStripePayout('ABONO POR TRANSFERENCIA STRIPE 642STUDIO', 'Depósito Stripe (payout)', 'income'), true);
+  assert.strictEqual(isStripePayout('ABONO SPEI DEL CLIENTE STRIPE PAYMENTS MEXICO', null, 'income'), true);
+  assert.strictEqual(isStripePayout('CONSUMO STRIPE', null, 'expense'), false);
+  assert.strictEqual(isStripePayout('ABONO SPEI GRUPO HOTELERO', null, 'income'), false);
+});
+test('reconciliationState marca payout_stripe cuando no hay CFDI', () => {
+  assert.strictEqual(reconciliationState(703.02, null, { descripcion: 'ABONO POR TRANSFERENCIA STRIPE', type: 'income' }), 'payout_stripe');
+  assert.strictEqual(reconciliationState(500, null, { descripcion: 'ABONO SPEI CLIENTE X', type: 'income' }), 'sin_conciliar');
+});

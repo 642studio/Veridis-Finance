@@ -10,7 +10,7 @@ import { ApiClientError, clientApiFetch } from "@/lib/api-client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Estado = "conciliado" | "parcial" | "sin_conciliar";
+type Estado = "conciliado" | "parcial" | "sin_conciliar" | "payout_stripe";
 
 interface Cfdi {
   invoice_id: string;
@@ -35,8 +35,10 @@ interface Review {
     total: number;
     conciliados: number;
     sin_conciliar: number;
+    payouts_stripe: number;
     monto_conciliado: number;
     monto_pendiente: number;
+    monto_payout_stripe: number;
     pct_conciliado: number;
   };
   items: Item[];
@@ -59,11 +61,13 @@ const ESTADO_PILL: Record<Estado, string> = {
   conciliado: "bg-emerald-100 text-emerald-700",
   parcial: "bg-amber-100 text-amber-800",
   sin_conciliar: "bg-muted text-muted-foreground",
+  payout_stripe: "bg-violet-100 text-violet-700",
 };
 const ESTADO_LABEL: Record<Estado, string> = {
   conciliado: "Conciliado",
   parcial: "Parcial",
   sin_conciliar: "Sin conciliar",
+  payout_stripe: "Payout Stripe",
 };
 
 export default function ConciliacionPage() {
@@ -206,7 +210,13 @@ export default function ConciliacionPage() {
           <Card><CardContent className="pt-6">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Conciliado</p>
             <p className="mt-1 text-2xl font-bold tnum text-emerald-600">{formatCurrency(Math.abs(data.resumen.monto_conciliado))}</p>
-            <p className="mt-1 text-xs text-muted-foreground">ligado a facturas</p>
+            {data.resumen.payouts_stripe > 0 ? (
+              <p className="mt-1 text-xs text-violet-700">
+                + {data.resumen.payouts_stripe} payout(s) Stripe · {formatCurrency(Math.abs(data.resumen.monto_payout_stripe))}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">ligado a facturas</p>
+            )}
           </CardContent></Card>
         </div>
       ) : null}

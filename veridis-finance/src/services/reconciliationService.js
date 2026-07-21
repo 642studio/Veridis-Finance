@@ -318,12 +318,25 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
 }
 
 /**
+ * ¿Es un depósito (payout) de Stripe? Puro. Stripe liquida un LOTE de pagos en
+ * un solo depósito neto de comisión, así que no casa 1:1 con un CFDI: se trata
+ * aparte y no debe contar como "sin conciliar".
+ */
+function isStripePayout(descripcion, concepto, type) {
+  if (type !== 'income') return false;
+  return /\bSTRIPE\b/i.test(`${descripcion || ''} ${concepto || ''}`);
+}
+
+/**
  * Estado de conciliación de una transacción (puro). Un movimiento está
  * conciliado si un CFDI lo referencia (payment_reference = 'bank_txn:<id>').
- * "parcial" cuando el monto del CFDI no cubre el del movimiento (o viceversa).
+ * "parcial" cuando el monto del CFDI no cubre el del movimiento; los payouts de
+ * Stripe sin CFDI se marcan aparte.
  */
-function reconciliationState(txnAmount, invoiceTotal) {
-  if (invoiceTotal == null) return 'sin_conciliar';
+function reconciliationState(txnAmount, invoiceTotal, { descripcion, concepto, type } = {}) {
+  if (invoiceTotal == null) {
+    return isStripePayout(descripcion, concepto, type) ? 'payout_stripe' : 'sin_conciliar';
+  }
   const t = money(txnAmount).abs();
   const i = money(invoiceTotal).abs();
   const diff = t.minus(i).abs();
@@ -355,12 +368,19 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
 
   let conciliadoN = 0;
   let pendienteN = 0;
+  let payoutN = 0;
   let montoConciliado = 0;
   let montoPendiente = 0;
+  let montoPayout = 0;
   const items = rows.map((r) => {
-    const estado = reconciliationState(r.amount, r.invoice_total);
+    const estado = reconciliationState(r.amount, r.invoice_total, {
+      descripcion: r.original_description || r.description,
+      concepto: r.description,
+      type: r.type,
+    });
     const amount = Number(r.amount);
     if (estado === 'sin_conciliar') { pendienteN += 1; montoPendiente += amount; }
+    else if (estado === 'payout_stripe') { payoutN += 1; montoPayout += amount; }
     else { conciliadoN += 1; montoConciliado += amount; }
     return {
       id: r.id, date: r.transaction_date, type: r.type, amount,
@@ -377,15 +397,19 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
     };
   });
 
+  // El avance considera "resuelto" = conciliado + payout Stripe (ya explicado).
+  const resueltos = conciliadoN + payoutN;
   return {
     year, month,
     resumen: {
       total: items.length,
       conciliados: conciliadoN,
       sin_conciliar: pendienteN,
+      payouts_stripe: payoutN,
       monto_conciliado: Number(money(montoConciliado).toFixed(2)),
       monto_pendiente: Number(money(montoPendiente).toFixed(2)),
-      pct_conciliado: items.length ? Math.round((conciliadoN / items.length) * 100) : 0,
+      monto_payout_stripe: Number(money(montoPayout).toFixed(2)),
+      pct_conciliado: items.length ? Math.round((resueltos / items.length) * 100) : 0,
     },
     items,
   };
@@ -413,6 +437,7 @@ module.exports = {
   reviewList,
   unmatch,
   reconciliationState,
+  isStripePayout,
   AMOUNT_TOLERANCE,
   DATE_WINDOW_DAYS,
 };
