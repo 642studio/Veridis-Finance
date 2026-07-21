@@ -430,8 +430,15 @@ function extractSantanderDetails(rawDescription) {
   // Comercio de un consumo: la línea suele traer "0000000000000 MERCHANT CIUDAD"
   // o "TCA 0407219T6 MEGACABLE ...". Tomamos el texto tras el bloque de ceros/ID.
   if (/CONSUMO (?:LOCAL|INTERNACIONAL)/.test(up)) {
-    const m = up.match(/(?:0{6,}|TCA\s+[A-Z0-9]+|GCM\s+\d+)\s+(.+?)(?=\s*\(MONEDA|$)/);
-    if (m && m[1]) out.merchant = titleCase(m[1].trim());
+    // Formato: "... <DDMMMYY> <ID> <COMERCIO> <CIUDAD>". El <ID> son ceros o un
+    // código de adquirente (3 letras) + RFC ("CCO 8605231N4 OXXO", "0000... HIGHLEVEL").
+    const m = up.match(/\d{2}[A-Z]{3}\d{2}\s+(?:0{6,}|[A-Z]{3}\s+[A-Z0-9&]{8,14})\s+(.+?)(?=\s*\(MONEDA|$)/);
+    if (m && m[1]) {
+      // Quita la ciudad/estado final (p. ej. "NAVOJOA SON", "CIUDAD DE MEX").
+      out.merchant = titleCase(
+        m[1].replace(/\s+(?:CIUDAD DE MEX|[A-Z]{3,}\s+[A-Z]{2,3})$/, '').trim()
+      );
+    }
   }
 
   return out;
