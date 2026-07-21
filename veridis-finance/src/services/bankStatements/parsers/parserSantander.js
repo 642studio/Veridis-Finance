@@ -446,6 +446,28 @@ function titleCase(s) {
     .trim();
 }
 
+// Categoría base por palabra clave (merchant/concepto). La regla aprendida del
+// tenant o la IA pueden refinarla después; esto evita que llegue "sin categoría".
+const CATEGORY_KEYWORDS = [
+  [/comision venta/i, 'Comisiones sobre ventas'],
+  // Comisión/membresía del banco va ANTES que "renta": "ADMINISTRACION RENTA
+  // MEMBRESIA" es un cargo de manejo de cuenta, no un arrendamiento.
+  [/administracion .*membresia|membresia|i ?v ?a ?por comision|manejo de cuenta|comision bancaria/i, 'Comisiones bancarias'],
+  [/highlevel|clickup|elevenlabs|vercel|supabase|openai|adobe|microsoft|google workspace|notion|slack|zoom|figma|canva|saas|software/i, 'Software y suscripciones'],
+  [/facebook|meta platforms|instagram|payu ?\*?google|google ads|tiktok|ads\b|publicidad/i, 'Publicidad'],
+  [/nomina|n[oó]mina|sueldo|salario/i, 'Nómina'],
+  [/renta|arrendamiento|inmueble/i, 'Renta'],
+  [/megacable|telmex|cfe|izzi|totalplay|internet|telefon|luz|agua|energ[ií]a/i, 'Servicios'],
+  [/\bcomision\b/i, 'Comisiones bancarias'],
+  [/stripe/i, 'Ingresos por servicios'],
+];
+
+function deriveCategoryFrom(rawDescription, details) {
+  const hay = `${rawDescription || ''} ${details.merchant || ''} ${details.payment_concept || ''}`;
+  for (const [re, cat] of CATEGORY_KEYWORDS) if (re.test(hay)) return cat;
+  return null;
+}
+
 /** Concepto humano base (rule-based) a partir de la descripción + contraparte. */
 function cleanConceptFrom(rawDescription, type, details) {
   const up = String(rawDescription || '').toUpperCase();
@@ -575,6 +597,7 @@ function finalizeTransactionBlock(block, previousBalance, bankName) {
   const type = inferType(rawDescription, resolvedAmount, previousBalance, nextBalance);
   const details = extractSantanderDetails(rawDescription);
   const cleanConcept = cleanConceptFrom(rawDescription, type, details);
+  const baseCategory = deriveCategoryFrom(rawDescription, details);
 
   return {
     transaction: {
@@ -582,6 +605,7 @@ function finalizeTransactionBlock(block, previousBalance, bankName) {
       type,
       amount: Number(resolvedAmount.toFixed(2)),
       concept: trimLength(deriveConcept(rawDescription), 120),
+      category: baseCategory ? trimLength(baseCategory, 120) : undefined,
       clean_concept: cleanConcept ? trimLength(cleanConcept, 160) : null,
       raw_description: rawDescription,
       folio: trimLength(block.folio, 120),
@@ -727,4 +751,5 @@ module.exports = {
   parseSantanderStatement,
   extractSantanderDetails,
   cleanConceptFrom,
+  deriveCategoryFrom,
 };

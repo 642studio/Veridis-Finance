@@ -33,3 +33,12 @@ test('SPEI saliente: ENVIADO A + concepto renta', () => {
   assert.ok(/Renta/i.test(d.payment_concept));
   assert.ok(/Pago a Gini/i.test(cleanConceptFrom(raw, 'expense', d)));
 });
+
+const { deriveCategoryFrom } = require('../src/services/bankStatements/parsers/parserSantander');
+test('categoría base por merchant/concepto', () => {
+  assert.strictEqual(deriveCategoryFrom('CONSUMO INTERNACIONAL', { merchant: 'Highlevel Inc' }), 'Software y suscripciones');
+  assert.strictEqual(deriveCategoryFrom('CONSUMO LOCAL', { merchant: 'Facebook Mexico' }), 'Publicidad');
+  assert.strictEqual(deriveCategoryFrom('CARGO TRANSFERENCIA ENLACE Nomina 642', {}), 'Nómina');
+  assert.strictEqual(deriveCategoryFrom('ADMINISTRACION RENTA MEMBRESIA', {}), 'Comisiones bancarias');
+  assert.strictEqual(deriveCategoryFrom('PAGO SPEI', { payment_concept: 'Renta oficina' }), 'Renta');
+});
