@@ -11,6 +11,7 @@ const {
   suppressRecurringRule,
   unsuppressRecurringRule,
   createAutomationTransaction,
+  registerPayment,
 } = require('../controllers/transactionsController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 const {
@@ -49,6 +50,20 @@ async function transactionsRoutes(app) {
       ],
     },
     createTransaction
+  );
+
+  // Registrar un pago manual (flujo en tiempo real): crea el movimiento y, si se
+  // liga a un recibo/factura, lo concilia en un paso (F-B).
+  app.post(
+    '/transactions/register-payment',
+    {
+      preHandler: [
+        authenticate,
+        authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS]),
+        enforceTransactionPlanLimit,
+      ],
+    },
+    registerPayment
   );
   app.get(
     '/transactions',

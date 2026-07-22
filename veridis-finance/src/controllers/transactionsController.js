@@ -7,7 +7,19 @@ const recurringRulesService = require('../services/recurringRulesService');
 const {
   learnRuleFromManualCategorization,
 } = require('../modules/finance/intelligence/classification.service');
+const paymentsService = require('../services/paymentsService');
 const { forbidden, resolveOrganizationId } = require('../middleware/auth');
+
+const registerPaymentSchema = z.object({
+  amount: z.coerce.number().positive(),
+  date: z.coerce.date().optional(),
+  account_id: z.string().uuid().optional().nullable(),
+  client_id: z.string().uuid().optional().nullable(),
+  invoice_id: z.string().uuid().optional().nullable(),
+  method: z.enum(['transferencia', 'deposito', 'efectivo', 'tarjeta', 'stripe', 'otro']).optional(),
+  reference: z.string().trim().max(255).optional().nullable(),
+  concept: z.string().trim().max(500).optional().nullable(),
+});
 
 function countLinkedEntities(value) {
   return [value.member_id, value.client_id, value.vendor_id, value.contact_id].filter(
@@ -479,6 +491,24 @@ async function createAutomationTransaction(request, reply) {
   });
 }
 
+async function registerPayment(request, reply) {
+  const payload = registerPaymentSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const result = await paymentsService.registerPayment({
+    organizationId,
+    userId: request.user?.user_id || null,
+    amount: payload.amount,
+    date: payload.date,
+    accountId: payload.account_id,
+    clientId: payload.client_id,
+    invoiceId: payload.invoice_id,
+    method: payload.method,
+    reference: payload.reference,
+    concept: payload.concept,
+  });
+  reply.status(201).send({ data: result });
+}
+
 module.exports = {
   createTransaction,
   listTransactions,
@@ -492,4 +522,5 @@ module.exports = {
   suppressRecurringRule,
   unsuppressRecurringRule,
   createAutomationTransaction,
+  registerPayment,
 };

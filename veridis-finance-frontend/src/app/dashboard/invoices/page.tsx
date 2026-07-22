@@ -71,6 +71,7 @@ export default function DashboardInvoicesPage() {
   const [markPaidInvoice, setMarkPaidInvoice] = useState<Invoice | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("transferencia");
   const [paymentReference, setPaymentReference] = useState("");
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -320,6 +321,50 @@ export default function DashboardInvoicesPage() {
     [loadInvoices, notify]
   );
 
+  const registerCobro = useCallback(
+    async (
+      invoice: Invoice,
+      opts: { method: string; reference: string; date: string }
+    ) => {
+      setStatusUpdatingId(invoice.id);
+      try {
+        const methodMap: Record<string, string> = {
+          transferencia: "transferencia",
+          deposito: "deposito",
+          efectivo: "efectivo",
+          tarjeta: "tarjeta",
+          stripe: "stripe",
+        };
+        await clientApiFetch<ApiEnvelope<unknown>>(
+          "/api/finance/transactions/register-payment",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              invoice_id: invoice.id,
+              amount: invoice.total,
+              date: opts.date || undefined,
+              method: methodMap[opts.method.toLowerCase()] || "otro",
+              reference: opts.reference || undefined,
+            }),
+          }
+        );
+        await loadInvoices();
+        notify.success({
+          title: "Cobro registrado",
+          description: "Se creó el movimiento en el banco y el recibo quedó conciliado.",
+        });
+      } catch (error) {
+        const message =
+          error instanceof ApiClientError ? error.message : "No se pudo registrar el cobro";
+        notify.error({ title: "Error al registrar cobro", description: message });
+      } finally {
+        setStatusUpdatingId(null);
+      }
+    },
+    [loadInvoices, notify]
+  );
+
   const convertToCfdi = useCallback(
     async (invoice: Invoice) => {
       setStatusUpdatingId(invoice.id);
@@ -488,7 +533,7 @@ export default function DashboardInvoicesPage() {
                   }}
                   disabled={statusUpdatingId === row.id}
                 >
-                  Marcar pagada
+                  Registrar cobro
                 </Button>
               ) : (
                 <Button
@@ -768,29 +813,50 @@ export default function DashboardInvoicesPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Marcar factura como pagada</DialogTitle>
+            <DialogTitle>Registrar cobro</DialogTitle>
             <DialogDescription>
-              Agrega método y referencia de pago (opcional) para tu trazabilidad.
+              Crea el movimiento en el banco (flujo) y concilia el recibo en un paso.
+              {markPaidInvoice
+                ? ` Monto: ${formatCurrency(markPaidInvoice.total)} · ${markPaidInvoice.receiver}.`
+                : ""}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="invoice_payment_method">Método de pago</Label>
-              <Input
-                id="invoice_payment_method"
-                value={paymentMethod}
-                onChange={(event) => setPaymentMethod(event.target.value)}
-                placeholder="transferencia"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="invoice_payment_date">Fecha del pago</Label>
+                <Input
+                  id="invoice_payment_date"
+                  type="date"
+                  value={paymentDate}
+                  onChange={(event) => setPaymentDate(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invoice_payment_method">Método</Label>
+                <select
+                  id="invoice_payment_method"
+                  className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm"
+                  value={paymentMethod}
+                  onChange={(event) => setPaymentMethod(event.target.value)}
+                >
+                  <option value="transferencia">Transferencia</option>
+                  <option value="deposito">Depósito</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta">Tarjeta</option>
+                  <option value="stripe">Stripe</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="invoice_payment_reference">Referencia de pago</Label>
+              <Label htmlFor="invoice_payment_reference">Referencia / comprobante</Label>
               <Input
                 id="invoice_payment_reference"
                 value={paymentReference}
                 onChange={(event) => setPaymentReference(event.target.value)}
-                placeholder="Opcional"
+                placeholder="Clave de rastreo, folio del comprobante… (opcional)"
               />
             </div>
           </div>
@@ -808,15 +874,16 @@ export default function DashboardInvoicesPage() {
                 if (!markPaidInvoice) {
                   return;
                 }
-                await updateInvoiceStatus(markPaidInvoice, "paid", {
-                  payment_method: paymentMethod.trim() || undefined,
-                  payment_reference: paymentReference.trim() || undefined,
+                await registerCobro(markPaidInvoice, {
+                  method: paymentMethod,
+                  reference: paymentReference.trim(),
+                  date: paymentDate,
                 });
                 setMarkPaidInvoice(null);
               }}
               disabled={Boolean(statusUpdatingId)}
             >
-              {statusUpdatingId ? "Guardando…" : "Confirmar pago"}
+              {statusUpdatingId ? "Registrando…" : "Registrar cobro"}
             </Button>
           </DialogFooter>
         </DialogContent>
