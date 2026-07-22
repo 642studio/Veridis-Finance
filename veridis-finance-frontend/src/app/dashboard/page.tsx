@@ -573,17 +573,19 @@ export default function DashboardOverviewPage() {
           loading={isLoading}
         />
         <KpiCard
-          label="Utilidad neta"
+          label="Flujo neto (banco)"
           value={formatCurrency(summary?.net_profit ?? 0)}
           icon={Wallet}
           tone="brand"
+          hint="cobrado − pagado; NO es utilidad"
           loading={isLoading}
         />
         <KpiCard
-          label="Movimientos"
-          value={String(summary?.transaction_count ?? 0)}
+          label="Facturado del mes (CFDI)"
+          value={formatCurrency(summary?.facturado_mes ?? 0)}
           icon={Building2}
           tone="neutral"
+          hint="devengado — incluye lo aún no cobrado"
           loading={isLoading}
         />
         <KpiCard

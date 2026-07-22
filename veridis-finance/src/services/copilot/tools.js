@@ -18,6 +18,7 @@ const autoPoliza = require('../autoPolizaService');
 const bankPoliza = require('../bankPolizaService');
 const fixedAssets = require('../fixedAssetsService');
 const cierre = require('../cierreService');
+const reports = require('../reportsService');
 
 const periodProps = {
   year: { type: 'integer', description: 'Año, p.ej. 2026' },
@@ -170,6 +171,16 @@ const TOOLS = [
     async handler(org, { year, month }) {
       const d = await deducibilidad.gastosSinCfdi(org, { year, month });
       return { resumen: d.resumen, faltantes: d.faltantes.slice(0, 30) };
+    },
+  },
+  {
+    name: 'cuentas_por_cobrar',
+    description: 'Cartera por cobrar: CFDIs emitidos pendientes de cobro por antigüedad (0-30/31-60/61-90/90+ días) y por pagar a proveedores. Úsala cuando pregunten por utilidad, cobranza, cartera o "cuánto me deben".',
+    read: true,
+    input_schema: { type: 'object', properties: {}, required: [] },
+    async handler(org) {
+      const r = await reports.getAgingReport({ organization_id: org });
+      return r;
     },
   },
   {

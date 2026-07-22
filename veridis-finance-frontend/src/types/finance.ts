@@ -261,7 +261,14 @@ export interface MonthlySummary {
   year: number;
   total_income: number;
   total_expense: number;
+  /** Flujo neto del banco (cobrado − pagado). NO es utilidad contable. */
   net_profit: number;
+  /** Traspasos entre cuentas propias (excluidos de ingresos/gastos). */
+  transfers_total?: number;
+  /** Facturado (CFDI emitidos) del mes — devengado. */
+  facturado_mes?: number;
+  /** Cartera por cobrar acumulada (CFDIs emitidos pendientes). */
+  por_cobrar?: number;
   transaction_count: number;
   by_category: CategorySummary[];
 }

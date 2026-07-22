@@ -52,12 +52,31 @@ async function getMonthlyReport({ organization_id, year, month }) {
     values: [organization_id, periodStart, periodEnd],
   };
 
-  const [summaryResult, byCategoryResult] = await Promise.all([
+  // Contexto fiscal: lo FACTURADO del mes (devengado) y la cartera POR COBRAR
+  // acumulada. Sin esto, un flujo negativo se lee como "pérdida" cuando puede
+  // ser cobranza pendiente o pagos en otras cuentas.
+  const fiscalQuery = {
+    text: `
+      SELECT
+        COALESCE(SUM(total) FILTER (
+          WHERE direction = 'issued'
+            AND invoice_date >= $2 AND invoice_date < $3), 0) AS facturado_mes,
+        COALESCE(SUM(total) FILTER (
+          WHERE direction = 'issued' AND status = 'pending'), 0) AS por_cobrar
+      FROM finance.invoices
+      WHERE organization_id = $1 AND uuid_sat IS NOT NULL
+    `,
+    values: [organization_id, periodStart, periodEnd],
+  };
+
+  const [summaryResult, byCategoryResult, fiscalResult] = await Promise.all([
     pool.query(summaryQuery),
     pool.query(byCategoryQuery),
+    pool.query(fiscalQuery),
   ]);
 
   const summary = summaryResult.rows[0];
+  const fiscal = fiscalResult.rows[0];
 
   return {
     organization_id,
@@ -67,6 +86,8 @@ async function getMonthlyReport({ organization_id, year, month }) {
     total_expense: toAmount(summary.total_expense),
     net_profit: toAmount(summary.net_profit),
     transfers_total: toAmount(summary.transfers_total),
+    facturado_mes: toAmount(fiscal.facturado_mes),
+    por_cobrar: toAmount(fiscal.por_cobrar),
     transaction_count: summary.transaction_count,
     by_category: byCategoryResult.rows.map((row) => ({
       category: row.category,
