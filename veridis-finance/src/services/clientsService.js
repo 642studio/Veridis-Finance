@@ -36,6 +36,7 @@ function mapClient(row) {
     phone: row.phone,
     notes: row.notes,
     active: row.active,
+    requires_invoice: row.requires_invoice,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -65,6 +66,7 @@ async function createClient(payload) {
         phone,
         notes,
         active,
+        requires_invoice,
         created_at,
         updated_at
     `,
@@ -103,6 +105,7 @@ async function listClients({ organization_id, active }) {
         phone,
         notes,
         active,
+        requires_invoice,
         created_at,
         updated_at
       FROM finance.clients
@@ -133,6 +136,8 @@ async function updateClient({ organization_id, client_id, patch }) {
     phone: patch.phone === undefined ? undefined : trimOrNull(patch.phone, 60),
     notes: patch.notes === undefined ? undefined : trimOrNull(patch.notes, 2000),
     active: patch.active === undefined ? undefined : Boolean(patch.active),
+    requires_invoice:
+      patch.requires_invoice === undefined ? undefined : Boolean(patch.requires_invoice),
   };
 
   for (const [key, value] of Object.entries(normalized)) {
@@ -166,6 +171,7 @@ async function updateClient({ organization_id, client_id, patch }) {
         phone,
         notes,
         active,
+        requires_invoice,
         created_at,
         updated_at
     `,
@@ -202,6 +208,7 @@ async function getClientById({ organization_id, client_id }) {
         phone,
         notes,
         active,
+        requires_invoice,
         created_at,
         updated_at
       FROM finance.clients

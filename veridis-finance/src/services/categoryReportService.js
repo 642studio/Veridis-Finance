@@ -118,13 +118,24 @@ async function exportCsv({ organizationId, from, to }) {
 }
 
 /**
- * Cartera por cliente (S36): facturas emitidas agrupadas por receptor, con
- * cuánto sigue pendiente y cuántas ya tienen pago conciliado en banco. Sirve
- * para ver la cobranza real (no confundir "emitido" con "cobrado").
+ * Cartera por cliente (S36): facturas emitidas agrupadas por receptor. Separa
+ * dos cosas que NO son lo mismo:
+ *   - "por cobrar (con CFDI)": el cliente requiere factura y su factura tiene RFC.
+ *   - "ventas sin factura": receptor sin RFC, o cliente marcado como que NO
+ *     requiere factura (público en general, anticipos, cobros por CRM/Stripe).
+ *     Eso NO es deuda por cobrar — es informativo.
+ * Un receptor cuenta como "sin factura" si le falta RFC o su cliente tiene
+ * requires_invoice = false (cruce por nombre normalizado con finance.clients).
  */
 async function receivablesByClient({ organizationId }) {
   const { rows } = await pool.query(
-    `SELECT
+    `WITH cli AS (
+        SELECT lower(trim(coalesce(business_name, name))) AS key, bool_and(requires_invoice) AS requires_invoice
+          FROM finance.clients
+         WHERE organization_id = $1
+         GROUP BY 1
+     )
+     SELECT
         COALESCE(NULLIF(TRIM(i.receiver), ''), 'Sin nombre') AS cliente,
         i.receiver_rfc AS rfc,
         COUNT(*)::int AS facturas,
@@ -133,20 +144,37 @@ async function receivablesByClient({ organizationId }) {
         COALESCE(SUM(i.total) FILTER (WHERE i.status = 'pending'), 0)::numeric(14,2) AS por_cobrar,
         COALESCE(SUM(i.total) FILTER (WHERE i.status = 'paid'), 0)::numeric(14,2) AS cobrado,
         MIN(i.invoice_date) FILTER (WHERE i.status = 'pending') AS pendiente_desde,
-        BOOL_OR(i.receiver_rfc IS NULL) AS falta_rfc
+        BOOL_OR(i.receiver_rfc IS NULL) AS falta_rfc,
+        COALESCE(bool_and(c.requires_invoice), true) AS requiere_factura
        FROM finance.invoices i
+       LEFT JOIN cli c ON c.key = lower(trim(i.receiver))
       WHERE i.organization_id = $1 AND i.direction = 'issued'
         AND COALESCE(i.sat_estado, '') <> 'Cancelado'
       GROUP BY 1, 2
       ORDER BY por_cobrar DESC`,
     [organizationId]
   );
-  const totalPorCobrar = rows.reduce((a, r) => a + Number(r.por_cobrar), 0);
+
+  // "sin factura" = pendiente pero sin RFC o cliente que no requiere factura.
+  const enriched = rows.map((r) => {
+    const sinFactura = r.falta_rfc || r.requiere_factura === false;
+    return { ...r, sin_factura: sinFactura };
+  });
+
+  const porCobrarCfdi = enriched
+    .filter((r) => !r.sin_factura)
+    .reduce((a, r) => a + Number(r.por_cobrar), 0);
+  const sinFacturaTotal = enriched
+    .filter((r) => r.sin_factura)
+    .reduce((a, r) => a + Number(r.por_cobrar), 0);
+
   return {
-    clientes: rows,
-    total_por_cobrar: Number(totalPorCobrar.toFixed(2)),
-    clientes_con_saldo: rows.filter((r) => Number(r.por_cobrar) > 0).length,
-    clientes_sin_rfc: rows.filter((r) => r.falta_rfc).length,
+    clientes: enriched,
+    total_por_cobrar_cfdi: Number(porCobrarCfdi.toFixed(2)),
+    total_sin_factura: Number(sinFacturaTotal.toFixed(2)),
+    total_por_cobrar: Number((porCobrarCfdi + sinFacturaTotal).toFixed(2)),
+    clientes_con_saldo: enriched.filter((r) => Number(r.por_cobrar) > 0 && !r.sin_factura).length,
+    clientes_sin_factura: enriched.filter((r) => Number(r.por_cobrar) > 0 && r.sin_factura).length,
   };
 }
 

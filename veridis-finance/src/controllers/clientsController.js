@@ -10,6 +10,7 @@ const baseClientSchema = {
   phone: z.string().trim().max(60).optional().nullable(),
   notes: z.string().trim().max(2000).optional().nullable(),
   active: z.coerce.boolean().optional(),
+  requires_invoice: z.coerce.boolean().optional(),
 };
 
 const createClientSchema = z.object(baseClientSchema);
@@ -22,6 +23,7 @@ const updateClientSchema = z
     phone: baseClientSchema.phone,
     notes: baseClientSchema.notes,
     active: baseClientSchema.active,
+    requires_invoice: baseClientSchema.requires_invoice,
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field is required',
