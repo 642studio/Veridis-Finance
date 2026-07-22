@@ -9,6 +9,7 @@ const pool = require('../../db/pool');
 const { createMessage } = require('./anthropicClient');
 const { toolSpecs, runTool, isWriteTool, getTool } = require('./tools');
 const reconciliation = require('../reconciliationService');
+const usageTracker = require('./usageService');
 
 const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -59,6 +60,7 @@ function textFromContent(content) {
  * Devuelve { reply, tool_calls, usage }.
  */
 async function chat({ organizationId, organizationName, message, history = [], today, context }) {
+  await usageTracker.check(organizationId); // presupuesto por organización (429 si se agotó)
   let system = systemPrompt({ organizationName, today: today || new Date().toISOString().slice(0, 10) });
   // El "mes en curso" puede estar vacío (aún sin estado de cuenta). Dile cuál es
   // el último periodo con datos para que no responda vacíos por defecto.
@@ -93,6 +95,7 @@ async function chat({ organizationId, organizationName, message, history = [], t
     };
 
     if (res.stop_reason !== 'tool_use') {
+      await usageTracker.record(organizationId, usage);
       return { reply: textFromContent(res.content) || 'No encontré nada que responder.', tool_calls: toolCalls, usage };
     }
 
@@ -107,6 +110,7 @@ async function chat({ organizationId, organizationName, message, history = [], t
       const tool = getTool(writeUse.name);
       const resumen = tool.resumen ? tool.resumen(writeUse.input || {}) : tool.description;
       const preText = textFromContent(res.content);
+      await usageTracker.record(organizationId, usage);
       return {
         reply: preText || `Puedo hacerlo: ${resumen}. ¿Confirmas?`,
         tool_calls: toolCalls,
@@ -128,6 +132,7 @@ async function chat({ organizationId, organizationName, message, history = [], t
     messages.push({ role: 'user', content: results });
   }
 
+  await usageTracker.record(organizationId, usage);
   return { reply: 'La consulta fue demasiado compleja. Intenta acotarla (por ejemplo, un cliente o un mes).', tool_calls: toolCalls, usage };
 }
 

@@ -1,6 +1,8 @@
 const { z } = require('zod');
 
 const copilot = require('../services/copilot/copilotService');
+const usageTracker = require('../services/copilot/usageService');
+const pool = require('../db/pool');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const READ = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER];
@@ -27,6 +29,19 @@ async function copilotRoutes(app) {
       context: context || null,
     });
     reply.send({ data });
+  });
+
+  // Bitácora de acciones ejecutadas + uso del mes (transparencia de costo).
+  app.get('/copilot/actions', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { rows } = await pool.query(
+      `SELECT tool, input, status, error_message, created_at
+         FROM finance.copilot_actions
+        WHERE organization_id = $1
+        ORDER BY created_at DESC LIMIT 25`,
+      [organizationId]
+    );
+    reply.send({ data: { actions: rows, usage: await usageTracker.summary(organizationId) } });
   });
 
   // Ejecuta una acción propuesta por el copiloto, ya confirmada por el usuario.

@@ -19,6 +19,24 @@ interface PendingAction {
   resumen: string;
 }
 
+interface AuditRow {
+  tool: string;
+  status: string;
+  created_at: string;
+}
+interface Audit {
+  actions: AuditRow[];
+  usage: { requests_today: number; daily_limit: number; tokens_month: number };
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  generar_polizas_cfdi: "Pólizas desde CFDIs",
+  generar_polizas_flujo: "Pólizas de flujo",
+  conciliar_automaticamente: "Conciliación automática",
+  depreciar_activos: "Depreciación de activos",
+  cerrar_periodo: "Cierre de periodo",
+};
+
 const SUGERENCIAS = [
   "¿Cómo va mi IVA este mes?",
   "Dame un reporte del cliente Rivi Grand Hotel",
@@ -32,7 +50,14 @@ export default function CopilotPage() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [audit, setAudit] = useState<Audit | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    clientApiFetch<{ data: Audit }>("/api/finance/copilot/actions")
+      .then((r) => setAudit(r.data))
+      .catch(() => {});
+  }, [messages]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -165,7 +190,29 @@ export default function CopilotPage() {
       </form>
       <p className="mt-2 text-center text-[11px] text-muted-foreground">
         El copiloto responde solo con tus datos reales. Verifica cifras importantes antes de declarar.
+        {audit ? ` · ${audit.usage.requests_today}/${audit.usage.daily_limit} consultas hoy` : ""}
       </p>
+
+      {audit && audit.actions.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-border bg-card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Acciones ejecutadas por el copiloto
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {audit.actions.slice(0, 8).map((a, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 text-sm">
+                <span>{TOOL_LABELS[a.tool] || a.tool}</span>
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {new Date(a.created_at).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  <span className={a.status === "ok" ? "text-emerald-600" : "text-red-600"}>
+                    {a.status === "ok" ? "✓" : "✗"}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

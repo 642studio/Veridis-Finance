@@ -37,6 +37,17 @@ export function CopilotWidget() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Memoria: el chat sobrevive recargas (localStorage, últimos 30 mensajes).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("vf_copilot_chat");
+      if (saved) setMessages(JSON.parse(saved).slice(-30));
+    } catch { /* corrupto → chat nuevo */ }
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("vf_copilot_chat", JSON.stringify(messages.slice(-30))); } catch { /* lleno */ }
+  }, [messages]);
+
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
@@ -130,9 +141,18 @@ export function CopilotWidget() {
           </div>
           <button
             type="button"
+            onClick={() => { setMessages([]); setPending(null); try { localStorage.removeItem("vf_copilot_chat"); } catch { /* noop */ } }}
+            aria-label="Nueva conversación"
+            title="Nueva conversación"
+            className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <BroomIcon />
+          </button>
+          <button
+            type="button"
             onClick={() => setOpen(false)}
             aria-label="Cerrar"
-            className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <CloseIcon />
           </button>
@@ -240,6 +260,9 @@ function SparkleIcon() {
       <path d="M19 14l.7 1.7 1.8.7-1.8.7L19 19l-.7-1.9-1.8-.7 1.8-.7z" />
     </svg>
   );
+}
+function BroomIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>;
 }
 function CloseIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>;
