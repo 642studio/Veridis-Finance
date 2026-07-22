@@ -11,17 +11,19 @@ const chatSchema = z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string().max(8000),
   })).max(20).optional(),
+  context: z.string().max(120).optional(),
 });
 
 async function copilotRoutes(app) {
   app.post('/copilot/chat', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
     const organizationId = resolveOrganizationId(request);
-    const { message, history } = chatSchema.parse(request.body || {});
+    const { message, history, context } = chatSchema.parse(request.body || {});
     const data = await copilot.chat({
       organizationId,
       organizationName: request.user?.organization_name || null,
       message,
       history: history || [],
+      context: context || null,
     });
     reply.send({ data });
   });

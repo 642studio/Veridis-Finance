@@ -43,6 +43,17 @@ export default function EscritorioFiscalPage() {
   const [data, setData] = useState<Escritorio | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Abre en el último mes con movimientos.
+  useEffect(() => {
+    let alive = true;
+    clientApiFetch<{ data: { year: number; month: number; has_data: boolean } }>(
+      "/api/finance/reconciliation/latest-period"
+    )
+      .then((r) => { if (alive && r.data?.has_data) { setYear(r.data.year); setMonth(r.data.month); } })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {

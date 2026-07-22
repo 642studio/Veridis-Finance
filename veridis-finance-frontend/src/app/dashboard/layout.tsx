@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { ErrorBoundary } from "@/components/common/error-boundary";
+import { CopilotWidget } from "@/components/copilot/copilot-widget";
 import { Navbar } from "@/components/layout/navbar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { SessionProvider } from "@/components/session-provider";
@@ -29,6 +30,7 @@ export default function DashboardLayout({
             </div>
           </main>
         </div>
+        <CopilotWidget />
       </div>
     </SessionProvider>
   );

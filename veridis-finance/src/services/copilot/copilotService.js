@@ -43,8 +43,12 @@ function textFromContent(content) {
  * Una vuelta de conversación. `history` = [{role, content}] previos (texto).
  * Devuelve { reply, tool_calls, usage }.
  */
-async function chat({ organizationId, organizationName, message, history = [], today }) {
-  const system = systemPrompt({ organizationName, today: today || new Date().toISOString().slice(0, 10) });
+async function chat({ organizationId, organizationName, message, history = [], today, context }) {
+  let system = systemPrompt({ organizationName, today: today || new Date().toISOString().slice(0, 10) });
+  if (context) {
+    system += `\n\nCONTEXTO: el usuario está viendo la pantalla "${String(context).slice(0, 80)}". `
+      + 'Si su pregunta es ambigua ("esto", "aquí"), asume que se refiere a esa pantalla.';
+  }
   const messages = [
     ...history
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')

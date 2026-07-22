@@ -416,6 +416,27 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
 }
 
 /**
+ * Último periodo (año/mes) con movimientos bancarios. Para abrir las vistas
+ * donde SÍ hay datos en vez del mes en curso (que puede estar vacío).
+ */
+async function latestPeriod({ organization_id }) {
+  const { rows } = await pool.query(
+    `SELECT EXTRACT(YEAR FROM max(transaction_date))::int AS year,
+            EXTRACT(MONTH FROM max(transaction_date))::int AS month
+       FROM finance.transactions
+      WHERE organization_id = $1 AND deleted_at IS NULL`,
+    [organization_id]
+  );
+  const y = rows[0]?.year;
+  const m = rows[0]?.month;
+  if (!y || !m) {
+    const now = new Date();
+    return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, has_data: false };
+  }
+  return { year: y, month: m, has_data: true };
+}
+
+/**
  * Deshacer una conciliación: regresa el CFDI ligado a 'pending' y limpia la
  * referencia. Anti-duplicado: al liberar el CFDI vuelve a ser candidato.
  */
@@ -435,6 +456,7 @@ module.exports = {
   confirmMatch,
   autoReconcile,
   reviewList,
+  latestPeriod,
   unmatch,
   reconciliationState,
   isStripePayout,

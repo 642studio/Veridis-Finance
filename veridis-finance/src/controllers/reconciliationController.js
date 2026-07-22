@@ -67,6 +67,12 @@ async function reviewList(request, reply) {
   reply.send({ data });
 }
 
+/** Último periodo con movimientos (para abrir las vistas donde hay datos). */
+async function latestPeriod(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  reply.send({ data: await reconciliationService.latestPeriod({ organization_id: organizationId }) });
+}
+
 /** Deshacer conciliación: libera el CFDI ligado a la transacción. */
 async function unreconcile(request, reply) {
   const { transactionId } = idParams.parse(request.params);
@@ -78,4 +84,4 @@ async function unreconcile(request, reply) {
   reply.send({ data });
 }
 
-module.exports = { listCandidates, confirmCandidate, autoReconcile, reviewList, unreconcile };
+module.exports = { listCandidates, confirmCandidate, autoReconcile, reviewList, latestPeriod, unreconcile };

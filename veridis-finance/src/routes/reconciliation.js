@@ -3,6 +3,7 @@ const {
   confirmCandidate,
   autoReconcile,
   reviewList,
+  latestPeriod,
   unreconcile,
 } = require('../controllers/reconciliationController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
@@ -20,6 +21,13 @@ async function reconciliationRoutes(app) {
     '/reconciliation/review',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER])] },
     reviewList
+  );
+
+  // Último periodo con movimientos (para abrir donde hay datos).
+  app.get(
+    '/reconciliation/latest-period',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER])] },
+    latestPeriod
   );
 
   // Deshacer una conciliación.

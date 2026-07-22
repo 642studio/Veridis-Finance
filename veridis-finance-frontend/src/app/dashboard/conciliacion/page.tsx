@@ -76,6 +76,19 @@ export default function ConciliacionPage() {
   const now = useMemo(() => new Date(), []);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+
+  // Abre en el último mes con movimientos (los EDC pueden no incluir el mes en curso).
+  useEffect(() => {
+    let alive = true;
+    clientApiFetch<{ data: { year: number; month: number; has_data: boolean } }>(
+      "/api/finance/reconciliation/latest-period"
+    )
+      .then((r) => {
+        if (alive && r.data?.has_data) { setYear(r.data.year); setMonth(r.data.month); }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const [data, setData] = useState<Review | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
