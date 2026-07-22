@@ -36,6 +36,7 @@ export const NAV_GROUPS: DashboardNavGroup[] = [
     title: "Operación",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/copilot", label: "Copiloto", icon: Sparkles },
       { href: "/dashboard/transactions", label: "Movimientos", icon: Wallet },
       { href: "/dashboard/conciliacion", label: "Conciliación", icon: Scale },
       { href: "/dashboard/accounts", label: "Cuentas", icon: Landmark },

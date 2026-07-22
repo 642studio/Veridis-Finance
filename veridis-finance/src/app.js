@@ -198,6 +198,7 @@ function buildApp() {
   app.register(satRoutes, { prefix: '/api/finance' });
   app.register(fiscalRoutes, { prefix: '/api/finance' });
   app.register(accountingRoutes, { prefix: '/api/finance' });
+  app.register(require('./routes/copilot'), { prefix: '/api/finance' });
   app.register(planningRoutes, { prefix: '/api' });
 
   // Canonical SaaS endpoints requested for entity modules and transactions.
