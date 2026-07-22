@@ -25,11 +25,10 @@ function model() {
  * Una llamada a Messages. `messages` y `tools` en el formato de la API.
  * Devuelve el objeto de respuesta (content[], stop_reason, usage).
  */
-async function createMessage({ system, messages, tools, maxTokens = 1500, temperature = 0 }) {
+async function createMessage({ system, messages, tools, maxTokens = 1500 }) {
   const body = {
     model: model(),
     max_tokens: maxTokens,
-    temperature,
     system,
     messages,
   };
