@@ -2,6 +2,7 @@ const {
   listCandidates,
   confirmCandidate,
   autoReconcile,
+  reconcileByClient,
   reviewList,
   latestPeriod,
   unreconcile,
@@ -14,6 +15,14 @@ async function reconciliationRoutes(app) {
     '/reconciliation/auto',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     autoReconcile
+  );
+
+  // Conciliación por cliente (RFC): desempata facturas idénticas por fecha y
+  // resuelve pagos en bolsa (un depósito que cubre varias facturas).
+  app.post(
+    '/reconciliation/by-client',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    reconcileByClient
   );
 
   // Bandeja de conciliación del periodo (estados + CFDI ligado).

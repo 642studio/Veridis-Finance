@@ -54,6 +54,20 @@ async function autoReconcile(request, reply) {
   reply.send({ data });
 }
 
+async function reconcileByClient(request, reply) {
+  const { max_transactions } = autoSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const data = await reconciliationService.reconcileByClient({
+    organization_id: organizationId,
+    max_transactions: max_transactions || 400,
+  });
+  request.log.info(
+    { source: 'reconcile_by_client', organization_id: organizationId, ...data, details: undefined },
+    'Reconciliation by client (RFC) run'
+  );
+  reply.send({ data });
+}
+
 const reviewQuery = z.object({
   year: z.coerce.number().int(),
   month: z.coerce.number().int().min(1).max(12),
@@ -84,4 +98,4 @@ async function unreconcile(request, reply) {
   reply.send({ data });
 }
 
-module.exports = { listCandidates, confirmCandidate, autoReconcile, reviewList, latestPeriod, unreconcile };
+module.exports = { listCandidates, confirmCandidate, autoReconcile, reconcileByClient, reviewList, latestPeriod, unreconcile };

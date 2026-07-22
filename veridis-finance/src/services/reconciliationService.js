@@ -481,17 +481,142 @@ async function unmatch({ organization_id, transaction_id }) {
   return { unmatched: rowCount > 0 };
 }
 
+/**
+ * Conciliación POR CLIENTE (RFC). Resuelve los dos casos que el matcher 1:1 por
+ * puntaje deja "ambiguos":
+ *   1) Facturas idénticas recurrentes (mismo monto): se emparejan por fecha,
+ *      depósito más viejo → factura pendiente más vieja del mismo RFC. No hay
+ *      que adivinar: el orden cronológico es el desempate natural.
+ *   2) Pagos EN BOLSA: un depósito que cubre 2–4 facturas del mismo cliente
+ *      (subset que suma el monto del depósito, dentro de tolerancia).
+ *
+ * Agrupa por el RFC que viene en el texto del banco y cruza contra las facturas
+ * emitidas pendientes de ese RFC. Solo casa con evidencia dura (RFC en el texto
+ * + monto exacto o suma exacta), así que es seguro correrlo en automático.
+ */
+function amountClose(a, b) {
+  const diff = money(a).minus(money(b)).abs();
+  const base = money(b).abs();
+  if (base.greaterThan(0)) return Number(diff.dividedBy(base)) <= AMOUNT_TOLERANCE;
+  return diff.lessThanOrEqualTo(2);
+}
+
+/** Encuentra un subconjunto (2..maxK) de facturas cuyo total ≈ objetivo. */
+function findSubsetSum(invoices, target, maxK = 4) {
+  const n = invoices.length;
+  // Búsqueda acotada: solo combinaciones pequeñas (2..maxK) para evitar falsos
+  // positivos y mantenerlo rápido. Prefiere las facturas más viejas primero.
+  for (let k = 2; k <= Math.min(maxK, n); k += 1) {
+    const idx = Array.from({ length: k }, (_, i) => i);
+    while (true) {
+      const sum = idx.reduce((a, i) => a.plus(money(invoices[i].total)), money(0));
+      if (amountClose(sum, target)) return idx.map((i) => invoices[i]);
+      // avanzar combinación
+      let p = k - 1;
+      while (p >= 0 && idx[p] === n - k + p) p -= 1;
+      if (p < 0) break;
+      idx[p] += 1;
+      for (let q = p + 1; q < k; q += 1) idx[q] = idx[q - 1] + 1;
+    }
+  }
+  return null;
+}
+
+async function reconcileByClient({ organization_id, max_transactions = 400 }) {
+  // Depósitos sin factura ligada aún, con RFC en el texto.
+  const { rows: txns } = await pool.query(
+    `SELECT t.id, t.amount, t.transaction_date, t.description, t.original_description
+       FROM finance.transactions t
+      WHERE t.organization_id = $1 AND t.deleted_at IS NULL AND t.type = 'income'
+        AND NOT EXISTS (
+          SELECT 1 FROM finance.invoices i
+           WHERE i.organization_id = t.organization_id
+             AND i.payment_reference = 'bank_txn:' || t.id::text
+        )
+      ORDER BY t.transaction_date ASC
+      LIMIT $2`,
+    [organization_id, max_transactions]
+  );
+
+  // Agrupa depósitos por RFC hallado en el texto.
+  const byRfc = new Map();
+  for (const t of txns) {
+    const rfcs = extractRfcs(`${t.description || ''} ${t.original_description || ''}`);
+    for (const rfc of rfcs) {
+      if (!byRfc.has(rfc)) byRfc.set(rfc, []);
+      byRfc.get(rfc).push(t);
+    }
+  }
+
+  let matched1to1 = 0;
+  let matchedLump = 0;
+  const details = [];
+
+  for (const [rfc, deposits] of byRfc) {
+    // Facturas pendientes de ese RFC, más viejas primero.
+    // eslint-disable-next-line no-await-in-loop
+    const { rows: pend } = await pool.query(
+      `SELECT id, total, invoice_date FROM finance.invoices
+        WHERE organization_id = $1 AND direction = 'issued'
+          AND receiver_rfc = $2 AND status = 'pending'
+          AND COALESCE(sat_estado,'') <> 'Cancelado'
+        ORDER BY invoice_date ASC`,
+      [organization_id, rfc]
+    );
+    if (!pend.length) continue;
+    const invoices = [...pend];
+    deposits.sort((a, b) => new Date(a.transaction_date) - new Date(b.transaction_date));
+
+    for (const dep of deposits) {
+      // 1) Exacto 1:1 con la factura pendiente más vieja de igual monto.
+      const i1 = invoices.findIndex((inv) => amountClose(inv.total, dep.amount));
+      if (i1 >= 0) {
+        const inv = invoices.splice(i1, 1)[0];
+        // eslint-disable-next-line no-await-in-loop
+        await confirmMatch({ organization_id, transaction_id: dep.id, invoice_id: inv.id });
+        matched1to1 += 1;
+        details.push({ rfc, deposit: dep.id, invoices: [inv.id], type: '1:1', amount: Number(dep.amount) });
+        continue;
+      }
+      // 2) Pago en bolsa: subconjunto de facturas que suma el depósito.
+      const subset = findSubsetSum(invoices, dep.amount, 4);
+      if (subset) {
+        for (const inv of subset) {
+          const at = invoices.indexOf(inv);
+          if (at >= 0) invoices.splice(at, 1);
+          // eslint-disable-next-line no-await-in-loop
+          await confirmMatch({ organization_id, transaction_id: dep.id, invoice_id: inv.id });
+        }
+        matchedLump += 1;
+        details.push({ rfc, deposit: dep.id, invoices: subset.map((s) => s.id), type: 'bolsa', amount: Number(dep.amount) });
+      }
+    }
+  }
+
+  return {
+    scanned: txns.length,
+    clientes: byRfc.size,
+    matched_1a1: matched1to1,
+    matched_bolsa: matchedLump,
+    invoices_conciliadas: details.reduce((a, d) => a + d.invoices.length, 0),
+    details: details.slice(0, 100),
+  };
+}
+
 module.exports = {
   scoreMatch,
   findInvoiceCandidates,
   confirmMatch,
   autoReconcile,
+  reconcileByClient,
   reviewList,
   latestPeriod,
   unmatch,
   reconciliationState,
   isStripePayout,
   noRequiereFactura,
+  findSubsetSum,
+  amountClose,
   AMOUNT_TOLERANCE,
   DATE_WINDOW_DAYS,
 };
