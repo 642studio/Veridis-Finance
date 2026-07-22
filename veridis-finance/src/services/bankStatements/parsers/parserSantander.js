@@ -453,8 +453,10 @@ function titleCase(s) {
     .trim();
 }
 
-// Categoría base por palabra clave (merchant/concepto). La regla aprendida del
-// tenant o la IA pueden refinarla después; esto evita que llegue "sin categoría".
+// Categoría base por palabra clave (merchant/concepto), en la taxonomía
+// canónica (ver categoryTaxonomy.js). La regla aprendida del tenant o la IA
+// pueden refinarla; esto evita que llegue "sin categoría". Solo aplica a EGRESOS
+// salvo Stripe; los abonos se resuelven aparte (casi siempre "Ventas y servicios").
 const CATEGORY_KEYWORDS = [
   // Traspasos entre cuentas propias: ni ingreso ni gasto — categoría neutral
   // que el dashboard excluye de los totales.
@@ -465,11 +467,12 @@ const CATEGORY_KEYWORDS = [
   [/administracion .*membresia|membresia|i ?v ?a ?por comision|manejo de cuenta|comision bancaria/i, 'Comisiones bancarias'],
   [/highlevel|clickup|elevenlabs|vercel|supabase|openai|adobe|microsoft|google workspace|notion|slack|zoom|figma|canva|saas|software/i, 'Software y suscripciones'],
   [/facebook|meta platforms|instagram|payu ?\*?google|google ads|tiktok|ads\b|publicidad/i, 'Publicidad'],
-  [/nomina|n[oó]mina|sueldo|salario/i, 'Nómina'],
+  [/nomina|n[oó]mina|sueldo|salario|freelance/i, 'Nómina y freelancers'],
+  [/pago (?:de )?credito|amortizacion credito|tarjeta de credito|prestamo/i, 'Pago de créditos'],
   [/renta|arrendamiento|inmueble/i, 'Renta'],
   [/megacable|telmex|cfe|izzi|totalplay|internet|telefon|luz|agua|energ[ií]a/i, 'Servicios'],
   [/\bcomision\b/i, 'Comisiones bancarias'],
-  [/stripe/i, 'Ingresos por servicios'],
+  [/stripe/i, 'Ventas y servicios'],
 ];
 
 function deriveCategoryFrom(rawDescription, details) {

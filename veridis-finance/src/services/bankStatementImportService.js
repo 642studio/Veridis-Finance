@@ -5,6 +5,7 @@ const {
   normalizeDescription,
 } = require('../modules/finance/intelligence/classification.service');
 const { getDefaultAccount, getOrCreateBankAccountByNumber } = require('./financeAccountsService');
+const { mapLegacyCategory, REVIEW_CATEGORY } = require('./categoryTaxonomy');
 
 function notFound(message) {
   const error = new Error(message);
@@ -144,8 +145,12 @@ function normalizeImportedTransaction(transaction, fallbackBank) {
   const amount = normalizeMoney(transaction?.amount);
   const transactionDate = parseDate(transaction?.transaction_date);
   const rawDescription = trimLength(transaction?.raw_description, 500);
-  const category =
-    trimLength(transaction?.category || transaction?.concept, 120) || 'uncategorized';
+  // Categoría canónica (ver categoryTaxonomy.js): la del parser si viene, si no
+  // el default por tipo — ingreso = "Ventas y servicios", gasto = "Por revisar".
+  const rawCategory = trimLength(transaction?.category, 120);
+  const category = rawCategory
+    ? mapLegacyCategory(rawCategory, type)
+    : (type === 'income' ? 'Ventas y servicios' : REVIEW_CATEGORY);
 
   if (!type || !amount || !transactionDate || !rawDescription || !category) {
     return null;

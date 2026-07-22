@@ -38,7 +38,7 @@ const { deriveCategoryFrom } = require('../src/services/bankStatements/parsers/p
 test('categoría base por merchant/concepto', () => {
   assert.strictEqual(deriveCategoryFrom('CONSUMO INTERNACIONAL', { merchant: 'Highlevel Inc' }), 'Software y suscripciones');
   assert.strictEqual(deriveCategoryFrom('CONSUMO LOCAL', { merchant: 'Facebook Mexico' }), 'Publicidad');
-  assert.strictEqual(deriveCategoryFrom('CARGO TRANSFERENCIA ENLACE Nomina 642', {}), 'Nómina');
+  assert.strictEqual(deriveCategoryFrom('CARGO TRANSFERENCIA ENLACE Nomina 642', {}), 'Nómina y freelancers');
   assert.strictEqual(deriveCategoryFrom('ADMINISTRACION RENTA MEMBRESIA', {}), 'Comisiones bancarias');
   assert.strictEqual(deriveCategoryFrom('PAGO SPEI', { payment_concept: 'Renta oficina' }), 'Renta');
 });

@@ -1,6 +1,7 @@
 const {
   getCashflowProjection,
   reclassifyTransactions,
+  recategorizeReview,
 } = require('../controllers/intelligenceController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -27,6 +28,19 @@ async function intelligenceRoutes(app) {
       ],
     },
     reclassifyTransactions
+  );
+
+  // Re-categoriza los gastos en "Por revisar" (reglas + IA) a la taxonomía
+  // canónica. Write -> excluye viewer.
+  app.post(
+    '/intelligence/recategorize-review',
+    {
+      preHandler: [
+        authenticate,
+        authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS]),
+      ],
+    },
+    recategorizeReview
   );
 }
 

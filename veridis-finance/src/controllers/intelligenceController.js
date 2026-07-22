@@ -4,6 +4,9 @@ const {
 const {
   reclassifyUncategorizedTransactions,
 } = require('../services/intelligenceReclassifyService');
+const {
+  reclassifyReviewExpenses,
+} = require('../services/categoryReclassifyService');
 const { resolveOrganizationId } = require('../middleware/auth');
 
 async function getCashflowProjection(request, reply) {
@@ -89,7 +92,33 @@ async function reclassifyTransactions(request, reply) {
   }
 }
 
+async function recategorizeReview(request, reply) {
+  const organizationId = resolveOrganizationId(request);
+  const userId = request.user?.user_id;
+  const limit = request.body?.limit ?? request.query?.limit;
+  const apply = request.body?.apply !== false; // por defecto aplica
+  const useAI = request.body?.use_ai !== false; // por defecto usa IA
+
+  try {
+    const summary = await reclassifyReviewExpenses({
+      organizationId, limit, apply, useAI,
+    });
+    request.log.info(
+      { organization_id: organizationId, user_id: userId, ...summary, changes: undefined },
+      'Recategorización de "Por revisar" completada'
+    );
+    return reply.send({ data: summary });
+  } catch (error) {
+    request.log.error(
+      { err: error, organization_id: organizationId, user_id: userId },
+      'Recategorización de "Por revisar" falló'
+    );
+    throw error;
+  }
+}
+
 module.exports = {
   getCashflowProjection,
   reclassifyTransactions,
+  recategorizeReview,
 };
