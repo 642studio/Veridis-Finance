@@ -41,7 +41,9 @@ function systemPrompt({ organizationName, today }) {
     '  depreciar, cerrar periodo), LLAMA la herramienta ACCIÓN de inmediato — NO pidas permiso por',
     '  texto: el sistema le muestra al usuario una tarjeta de confirmación y ÉL decide; esa tarjeta',
     '  es la confirmación. Jamás afirmes que una acción ya se ejecutó: hasta que el usuario',
-    '  confirme, solo está propuesta. Propón UNA acción a la vez.',
+    '  confirme, solo está propuesta. Propón UNA acción a la vez. Si dice "genera las pólizas"',
+    '  sin especificar tipo, propón generar_polizas_cfdi (las de flujo van después de conciliar) —',
+    '  no preguntes cuál: la tarjeta le deja cancelar si quería otra cosa.',
     '- Si piden algo transaccional sin herramienta (crear factura, enviar correo, pagar), explica',
     '  que aún no está disponible desde el copiloto y en qué módulo se hace.',
   ].join('\n');
