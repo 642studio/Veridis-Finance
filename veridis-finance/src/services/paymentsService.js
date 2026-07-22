@@ -90,14 +90,24 @@ async function registerPayment({
     notes: reference ? `Ref: ${reference}` : null,
   }, { actor_user_id: userId || null });
 
-  // 2) Si se ligó a un recibo/factura, concilia (paga + enlaza).
+  // 2) Si se ligó a un recibo/factura, concilia (paga + enlaza). Atomicidad
+  // cross-service: si la conciliación falla, revierte el movimiento recién
+  // creado (soft-delete) para no dejar dinero registrado sin su factura.
   let reconciled = null;
   if (invoiceId) {
-    reconciled = await reconciliation.confirmMatch({
-      organization_id: organizationId,
-      transaction_id: txn.id,
-      invoice_id: invoiceId,
-    });
+    try {
+      reconciled = await reconciliation.confirmMatch({
+        organization_id: organizationId,
+        transaction_id: txn.id,
+        invoice_id: invoiceId,
+      });
+    } catch (err) {
+      await transactionsService.deleteTransaction({
+        organization_id: organizationId, transaction_id: txn.id,
+        actor_user_id: userId || null, audit_source: 'rollback_pago',
+      }).catch(() => {});
+      throw err;
+    }
   }
 
   return {

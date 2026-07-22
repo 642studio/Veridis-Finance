@@ -498,7 +498,8 @@ async function unmatch({ organization_id, transaction_id }) {
   const { rowCount } = await pool.query(
     `UPDATE finance.invoices
         SET status = 'pending', payment_reference = NULL, paid_at = NULL, updated_at = now()
-      WHERE organization_id = $1 AND payment_reference = $2`,
+      WHERE organization_id = $1 AND payment_reference = $2
+        AND status = 'paid'`,
     [organization_id, `bank_txn:${transaction_id}`]
   );
   return { unmatched: rowCount > 0 };
@@ -601,17 +602,27 @@ async function reconcileByClient({ organization_id, max_transactions = 400 }) {
         details.push({ rfc, deposit: dep.id, invoices: [inv.id], type: '1:1', amount: Number(dep.amount) });
         continue;
       }
-      // 2) Pago en bolsa: subconjunto de facturas que suma el depósito.
+      // 2) Pago en bolsa: subconjunto de facturas que suma el depósito. Se
+      // marcan pagadas en UNA sola UPDATE (atómico): o todas o ninguna, para no
+      // dejar medio depósito aplicado si algo falla a media lista.
       const subset = findSubsetSum(invoices, dep.amount, 4);
       if (subset) {
-        for (const inv of subset) {
-          const at = invoices.indexOf(inv);
-          if (at >= 0) invoices.splice(at, 1);
-          // eslint-disable-next-line no-await-in-loop
-          await confirmMatch({ organization_id, transaction_id: dep.id, invoice_id: inv.id });
+        const ids = subset.map((s) => s.id);
+        // eslint-disable-next-line no-await-in-loop
+        const { rowCount } = await pool.query(
+          `UPDATE finance.invoices
+              SET status = 'paid', payment_reference = $3, paid_at = now(), updated_at = now()
+            WHERE organization_id = $1 AND id = ANY($2::uuid[]) AND status = 'pending'`,
+          [organization_id, ids, `bank_txn:${dep.id}`]
+        );
+        if (rowCount === ids.length) {
+          for (const inv of subset) {
+            const at = invoices.indexOf(inv);
+            if (at >= 0) invoices.splice(at, 1);
+          }
+          matchedLump += 1;
+          details.push({ rfc, deposit: dep.id, invoices: ids, type: 'bolsa', amount: Number(dep.amount) });
         }
-        matchedLump += 1;
-        details.push({ rfc, deposit: dep.id, invoices: subset.map((s) => s.id), type: 'bolsa', amount: Number(dep.amount) });
       }
     }
   }

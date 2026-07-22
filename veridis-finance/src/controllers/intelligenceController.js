@@ -4,10 +4,21 @@ const {
 const {
   reclassifyUncategorizedTransactions,
 } = require('../services/intelligenceReclassifyService');
+const { z } = require('zod');
 const {
   reclassifyReviewExpenses,
 } = require('../services/categoryReclassifyService');
 const { resolveOrganizationId } = require('../middleware/auth');
+
+const reclassifySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  min_confidence: z.coerce.number().min(0).max(1).optional(),
+});
+const recategorizeSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  apply: z.coerce.boolean().optional(),
+  use_ai: z.coerce.boolean().optional(),
+});
 
 async function getCashflowProjection(request, reply) {
   const organizationId = resolveOrganizationId(request);
@@ -52,9 +63,9 @@ async function reclassifyTransactions(request, reply) {
   const organizationId = resolveOrganizationId(request);
   const userId = request.user?.user_id;
 
-  const limit = request.body?.limit ?? request.query?.limit;
-  const minConfidence =
-    request.body?.min_confidence ?? request.query?.min_confidence;
+  const parsed = reclassifySchema.parse({ ...(request.body || {}), ...(request.query || {}) });
+  const limit = parsed.limit;
+  const minConfidence = parsed.min_confidence;
 
   request.log.info(
     {
@@ -95,9 +106,10 @@ async function reclassifyTransactions(request, reply) {
 async function recategorizeReview(request, reply) {
   const organizationId = resolveOrganizationId(request);
   const userId = request.user?.user_id;
-  const limit = request.body?.limit ?? request.query?.limit;
-  const apply = request.body?.apply !== false; // por defecto aplica
-  const useAI = request.body?.use_ai !== false; // por defecto usa IA
+  const parsed = recategorizeSchema.parse({ ...(request.body || {}), ...(request.query || {}) });
+  const limit = parsed.limit;
+  const apply = parsed.apply !== false; // por defecto aplica
+  const useAI = parsed.use_ai !== false; // por defecto usa IA
 
   try {
     const summary = await reclassifyReviewExpenses({

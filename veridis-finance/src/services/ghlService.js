@@ -795,11 +795,26 @@ async function dismissPending(organizationId, eventId) {
   return rows[0] || null;
 }
 
-/** Re-run stamping for a stored event (after the CSF was uploaded). */
-async function retryPending(eventId) {
+/** Re-run stamping for a stored event (after the CSF was uploaded).
+ * organizationId acota el evento al tenant (obligatorio desde una ruta de
+ * usuario, para no permitir reintentar eventos de OTRA organización — IDOR).
+ * El cron (contexto de sistema) lo llama sin org para barrer todos. */
+async function retryPending(eventId, organizationId = null) {
+  const params = [eventId];
+  let scope = '';
+  if (organizationId) {
+    const install = await getInstallForOrg(organizationId);
+    if (!install) {
+      const err = new Error('CRM no conectado para esta organización');
+      err.statusCode = 404;
+      throw err;
+    }
+    params.push(install.location_id);
+    scope = ' AND location_id = $2';
+  }
   const { rows } = await pool.query(
-    `SELECT * FROM finance.ghl_webhook_events WHERE id = $1`,
-    [eventId]
+    `SELECT * FROM finance.ghl_webhook_events WHERE id = $1${scope}`,
+    params
   );
   const ev = rows[0];
   if (!ev) {

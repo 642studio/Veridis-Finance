@@ -109,9 +109,9 @@ async function ghlRoutes(app) {
     '/integrations/crm/pending/:id/retry',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
     async (request, reply) => {
-      resolveOrganizationId(request);
+      const organizationId = resolveOrganizationId(request);
       try {
-        const result = await ghlService.retryPending(request.params.id);
+        const result = await ghlService.retryPending(request.params.id, organizationId);
         reply.send(result);
       } catch (err) {
         reply
