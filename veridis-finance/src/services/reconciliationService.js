@@ -325,17 +325,31 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
 }
 
 /**
- * ¿Este movimiento NO requiere factura? Puro. No todo lo que pasa por el banco
- * lleva CFDI de contraparte: traspasos entre cuentas propias, nómina (su CFDI
- * es de nómina, va en otro módulo) y comisiones sobre ventas a socios. Marcarlos
- * "sin conciliar" para siempre sería ruido — tienen su propio estado.
+ * ¿Este movimiento NO requiere un CFDI de contraparte? Puro. No todo lo que pasa
+ * por el banco lleva factura: traspasos, retiros del socio, nómina, comisiones
+ * bancarias (el banco emite su CFDI), pagos de crédito. Marcarlos "sin conciliar"
+ * para siempre es ruido — se resuelven con su propia razón. Devuelve la razón o
+ * null (sí requiere CFDI). Usa las categorías canónicas ya limpias.
  */
-function noRequiereFactura(descripcion, concepto, categoria) {
+const NO_CFDI_EXPENSE_CATEGORIES = {
+  'Traspaso interno': 'traspaso',
+  'Retiros de socio': 'retiro_socio',
+  'Comisiones bancarias': 'cfdi_del_banco',
+  'Pago de créditos': 'pago_credito',
+  'Nómina y freelancers': 'nomina',
+  'Comisiones sobre ventas': 'comision_venta',
+};
+
+function noRequiereFactura(descripcion, concepto, categoria, type) {
+  const cat = String(categoria || '');
+  if (cat === 'Traspaso interno') return 'traspaso';
+  // Solo egresos: por categoría canónica (fuente confiable tras la limpieza).
+  if (type !== 'income' && Object.prototype.hasOwnProperty.call(NO_CFDI_EXPENSE_CATEGORIES, cat)) {
+    return NO_CFDI_EXPENSE_CATEGORIES[cat];
+  }
+  // Respaldo por texto (movimientos aún sin categoría canónica).
   const hay = `${descripcion || ''} ${concepto || ''}`.toLowerCase();
-  // Traspaso: SOLO la categoría explícita o texto inequívoco de cuenta propia —
-  // "traspaso a otros bancos" puede ser un pago real de un tercero.
-  if (String(categoria || '') === 'Traspaso interno'
-    || /traspaso entre cuentas|cuentas propias|mismo titular/.test(hay)) return 'traspaso';
+  if (/traspaso entre cuentas|cuentas propias|mismo titular/.test(hay)) return 'traspaso';
   if (/n[oó]mina|sueldo|salario/.test(hay)) return 'nomina';
   if (/comision(es)? (sobre )?venta/.test(hay)) return 'comision_venta';
   return null;
@@ -360,7 +374,7 @@ function isStripePayout(descripcion, concepto, type) {
 function reconciliationState(txnAmount, invoiceTotal, { descripcion, concepto, type, categoria } = {}) {
   if (invoiceTotal == null) {
     if (isStripePayout(descripcion, concepto, type)) return 'payout_stripe';
-    if (noRequiereFactura(descripcion, concepto, categoria)) return 'sin_factura_ok';
+    if (noRequiereFactura(descripcion, concepto, categoria, type)) return 'sin_factura_ok';
     return 'sin_conciliar';
   }
   const t = money(txnAmount).abs();
@@ -411,12 +425,16 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
     else if (estado === 'payout_stripe') { payoutN += 1; montoPayout += amount; }
     else if (estado === 'sin_factura_ok') { sinFacturaN += 1; }
     else { conciliadoN += 1; montoConciliado += amount; }
+    const motivoSinFactura = estado === 'sin_factura_ok'
+      ? noRequiereFactura(r.original_description || r.description, r.description, r.category, r.type)
+      : null;
     return {
       id: r.id, date: r.transaction_date, type: r.type, amount,
       concepto: r.description || null,
       descripcion: r.original_description || r.description || null,
       categoria: r.category || null,
       estado,
+      motivo_sin_factura: motivoSinFactura,
       match_confidence: r.match_confidence != null ? Number(r.match_confidence) : null,
       match_method: r.match_method || null,
       cfdi: r.invoice_id ? {

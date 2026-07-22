@@ -138,4 +138,49 @@ async function sync({ organizationId }) {
   };
 }
 
-module.exports = { sync, normName };
+/** Infiere el tipo de proveedor por palabra clave del nombre. */
+function inferVendorType(name) {
+  const n = String(name || '').toLowerCase();
+  if (/meta|facebook|google ads|tiktok|\bads\b|publicidad/.test(n)) return 'ads';
+  if (/amazon|google|microsoft|adobe|software|cloud|vercel|supabase|openai|clickup/.test(n)) return 'software';
+  if (/gini|mobilia|inmobil|renta|arrenda/.test(n)) return 'rent';
+  if (/telefon|cable|megacable|telmex|cfe|izzi|internet|gasolin|energia|luz|agua/.test(n)) return 'utilities';
+  return 'other';
+}
+
+/**
+ * Siembra el directorio de PROVEEDORES (a quién le pagamos) desde los emisores
+ * de los CFDIs recibidos. La tabla vendors no guarda RFC, así que dedup por
+ * nombre normalizado. Idempotente.
+ */
+async function syncVendors({ organizationId }) {
+  const { rows: emisores } = await pool.query(
+    `SELECT emitter AS name, COUNT(*)::int AS cfdis, SUM(total)::numeric(14,2) AS monto
+       FROM finance.invoices
+      WHERE organization_id = $1 AND direction = 'received'
+        AND emitter IS NOT NULL AND length(trim(emitter)) > 0
+      GROUP BY emitter
+      ORDER BY monto DESC`,
+    [organizationId]
+  );
+  const { rows: existing } = await pool.query(
+    `SELECT name FROM finance.vendors WHERE organization_id = $1`, [organizationId]
+  );
+  const have = new Set(existing.map((r) => normName(r.name)));
+  let created = 0;
+  for (const e of emisores) {
+    const key = normName(e.name);
+    if (!key || have.has(key)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await pool.query(
+      `INSERT INTO finance.vendors (organization_id, name, type, active)
+       VALUES ($1, $2, $3, true)`,
+      [organizationId, e.name, inferVendorType(e.name)]
+    );
+    have.add(key);
+    created += 1;
+  }
+  return { emisores: emisores.length, vendors_created: created, vendors_total: have.size };
+}
+
+module.exports = { sync, syncVendors, normName, inferVendorType };

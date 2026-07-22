@@ -49,7 +49,7 @@ export const NAV_GROUPS: DashboardNavGroup[] = [
     items: [
       { href: "/dashboard/escritorio", label: "Escritorio fiscal", icon: Gauge },
       { href: "/dashboard/cfdi", label: "CFDI", icon: FileText },
-      { href: "/dashboard/invoices", label: "Facturas", icon: Receipt },
+      { href: "/dashboard/invoices", label: "Recibos", icon: Receipt },
       { href: "/dashboard/impuestos", label: "Impuestos", icon: Landmark },
       { href: "/dashboard/contabilidad", label: "Contabilidad", icon: BookOpen },
       { href: "/dashboard/nomina", label: "Nómina", icon: Users },

@@ -4,7 +4,8 @@ const {
   updateVendor,
   deleteVendor,
 } = require('../controllers/vendorsController');
-const { authenticate, authorize, ROLES } = require('../middleware/auth');
+const clientDirectory = require('../services/clientDirectoryService');
+const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 async function vendorsRoutes(app) {
   app.get(
@@ -16,6 +17,16 @@ async function vendorsRoutes(app) {
       ],
     },
     listVendors
+  );
+
+  // Siembra proveedores desde los emisores de CFDIs recibidos (S39).
+  app.post(
+    '/vendors/sync',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])] },
+    async (request) => {
+      const organizationId = resolveOrganizationId(request);
+      return { data: await clientDirectory.syncVendors({ organizationId }) };
+    }
   );
 
   app.post(

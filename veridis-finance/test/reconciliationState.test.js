@@ -44,6 +44,16 @@ test('traspasos (solo criterio estricto), nómina y comisiones de venta no requi
   assert.strictEqual(noRequiereFactura(null, 'Comision venta RIVI Rojas', null), 'comision_venta');
   assert.strictEqual(noRequiereFactura('ABONO SPEI CLIENTE X CONCEPTO F 1', null, 'sales'), null);
 });
+test('categorías canónicas de egreso que no requieren CFDI (S37)', () => {
+  assert.strictEqual(noRequiereFactura('DISP ATM', null, 'Retiros de socio', 'expense'), 'retiro_socio');
+  assert.strictEqual(noRequiereFactura('IVA POR COMISION', null, 'Comisiones bancarias', 'expense'), 'cfdi_del_banco');
+  assert.strictEqual(noRequiereFactura('PAGO CREDITO', null, 'Pago de créditos', 'expense'), 'pago_credito');
+  assert.strictEqual(noRequiereFactura('Pago a Adrian', null, 'Nómina y freelancers', 'expense'), 'nomina');
+  // Un INGRESO en esas categorías NO se exime (podría necesitar CFDI emitido).
+  assert.strictEqual(noRequiereFactura('x', null, 'Retiros de socio', 'income'), null);
+  // Un gasto deducible normal (Proveedores) SÍ requiere CFDI.
+  assert.strictEqual(noRequiereFactura('Compra X', null, 'Proveedores', 'expense'), null);
+});
 test('estado sin_factura_ok para movimientos que no llevan CFDI', () => {
   assert.strictEqual(reconciliationState(9500, null, { descripcion: 'CARGO ENLACE Nomina 642', type: 'expense' }), 'sin_factura_ok');
   // Traspaso de tercero: sigue siendo sin_conciliar (podría merecer CFDI).
