@@ -58,6 +58,27 @@ import type {
   Vendor,
 } from "@/types/finance";
 
+type CategoryCatalog = {
+  income: string[];
+  expense: string[];
+  neutral: string[];
+  review: string;
+};
+
+type CategoryBreakdownItem = { category: string; count: number; total: number };
+type CategoryBreakdown = {
+  year: number;
+  month: number;
+  income: CategoryBreakdownItem[];
+  expense: CategoryBreakdownItem[];
+  income_total: number;
+  expense_total: number;
+  net: number;
+  transfers_total: number;
+  review_count: number;
+  review_total: number;
+};
+
 const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 const SORT_BY_OPTIONS = [
   { value: "transaction_date", label: "Fecha" },
@@ -175,6 +196,9 @@ export default function DashboardTransactionsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [canonicalCategories, setCanonicalCategories] = useState<string[]>([]);
+  const [breakdown, setBreakdown] = useState<CategoryBreakdown | null>(null);
+  const [isRecategorizing, setIsRecategorizing] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -373,6 +397,7 @@ export default function DashboardTransactionsPage() {
         membersResponse,
         clientsResponse,
         vendorsResponse,
+        catalogResponse,
       ] = await Promise.all([
         clientApiFetch<ApiEnvelope<Account[]>>("/api/finance/accounts?status=active"),
         clientApiFetch<ApiEnvelope<Contact[]>>("/api/finance/contacts?status=active"),
@@ -380,6 +405,9 @@ export default function DashboardTransactionsPage() {
         clientApiFetch<ApiEnvelope<Member[]>>("/api/finance/members?active=true"),
         clientApiFetch<ApiEnvelope<Client[]>>("/api/finance/clients?active=true"),
         clientApiFetch<ApiEnvelope<Vendor[]>>("/api/finance/vendors?active=true"),
+        clientApiFetch<ApiEnvelope<CategoryCatalog>>("/api/finance/categories/catalog").catch(
+          () => null
+        ),
       ]);
 
       setAccounts(accountsResponse.data);
@@ -388,6 +416,15 @@ export default function DashboardTransactionsPage() {
       setMembers(membersResponse.data);
       setClients(clientsResponse.data);
       setVendors(vendorsResponse.data);
+      if (catalogResponse?.data) {
+        const c = catalogResponse.data;
+        setCanonicalCategories([
+          ...(c.income || []),
+          ...(c.expense || []),
+          ...(c.neutral || []),
+          ...(c.review ? [c.review] : []),
+        ]);
+      }
     } catch (error) {
       const message =
         error instanceof ApiClientError ? error.message : "Could not load entities";
@@ -877,6 +914,58 @@ export default function DashboardTransactionsPage() {
     await runBulkPatch({ category: nextCategory }, "Category");
   };
 
+  const loadBreakdown = useCallback(async () => {
+    try {
+      const now = new Date();
+      const year = fromDate ? new Date(fromDate).getUTCFullYear() : now.getUTCFullYear();
+      const month = fromDate ? new Date(fromDate).getUTCMonth() + 1 : now.getUTCMonth() + 1;
+      const res = await clientApiFetch<ApiEnvelope<CategoryBreakdown>>(
+        `/api/finance/report/category-breakdown?year=${year}&month=${month}`
+      );
+      setBreakdown(res.data);
+    } catch {
+      setBreakdown(null);
+    }
+  }, [fromDate]);
+
+  useEffect(() => {
+    loadBreakdown();
+  }, [loadBreakdown]);
+
+  const runRecategorize = async () => {
+    setIsRecategorizing(true);
+    try {
+      let remaining = Infinity;
+      let totalApplied = 0;
+      // El endpoint es idempotente y acota el trabajo de IA por llamada; se
+      // invoca en bucle hasta que ya no queden por resolver (o tope de vueltas).
+      for (let i = 0; i < 8; i += 1) {
+        const res = await clientApiFetch<ApiEnvelope<{ applied: number; remaining: number; scanned: number }>>(
+          "/api/finance/intelligence/recategorize-review",
+          { method: "POST", body: JSON.stringify({ limit: 60, apply: true, use_ai: true }) }
+        );
+        totalApplied += res.data?.applied || 0;
+        remaining = res.data?.remaining ?? 0;
+        if (!res.data?.scanned || (res.data.applied === 0 && res.data.scanned < 60)) break;
+        if (remaining === 0) break;
+      }
+      notify.success({
+        title: "Re-categorización lista",
+        description: `${totalApplied} gasto(s) clasificados. ${
+          Number.isFinite(remaining) ? `${remaining} siguen en "Por revisar".` : ""
+        }`,
+      });
+      await Promise.all([loadTransactions(), loadBreakdown()]);
+    } catch (error) {
+      notify.error({
+        title: "No se pudo re-categorizar",
+        description: error instanceof ApiClientError ? error.message : "Intenta de nuevo.",
+      });
+    } finally {
+      setIsRecategorizing(false);
+    }
+  };
+
   const runBulkDelete = async () => {
     const selectedRows = transactions.filter((transaction) =>
       selectedTransactionIds.includes(transaction.id)
@@ -1325,6 +1414,89 @@ export default function DashboardTransactionsPage() {
 
   return (
     <div className="space-y-6">
+      {breakdown ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <div>
+              <CardTitle>
+                Verificación de categorías —{" "}
+                {new Date(breakdown.year, breakdown.month - 1, 1).toLocaleDateString("es-MX", {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Flujo del banco (no es utilidad). Los traspasos entre cuentas propias no cuentan.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={runRecategorize}
+              disabled={isRecategorizing || breakdown.review_count === 0}
+            >
+              {isRecategorizing ? "Re-categorizando…" : "Re-categorizar con IA"}
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border border-border/60 p-3">
+                <p className="text-xs text-muted-foreground">Ingresos (flujo)</p>
+                <p className="text-lg font-semibold text-emerald-600">
+                  {formatCurrency(breakdown.income_total)}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 p-3">
+                <p className="text-xs text-muted-foreground">Gastos (flujo)</p>
+                <p className="text-lg font-semibold text-rose-600">
+                  {formatCurrency(breakdown.expense_total)}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 p-3">
+                <p className="text-xs text-muted-foreground">Flujo neto</p>
+                <p
+                  className={`text-lg font-semibold ${
+                    breakdown.net >= 0 ? "text-emerald-600" : "text-rose-600"
+                  }`}
+                >
+                  {formatCurrency(breakdown.net)}
+                </p>
+              </div>
+              <div
+                className={`rounded-lg border p-3 ${
+                  breakdown.review_count > 0
+                    ? "border-amber-400/70 bg-amber-50/60 dark:bg-amber-950/20"
+                    : "border-border/60"
+                }`}
+              >
+                <p className="text-xs text-muted-foreground">Por revisar</p>
+                <p className="text-lg font-semibold text-amber-600">
+                  {breakdown.review_count}{" "}
+                  <span className="text-xs font-normal">({formatCurrency(breakdown.review_total)})</span>
+                </p>
+              </div>
+            </div>
+            {breakdown.expense.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {breakdown.expense.slice(0, 12).map((item) => (
+                  <span
+                    key={item.category}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs ${
+                      item.category === "Por revisar"
+                        ? "border-amber-400/70 text-amber-700 dark:text-amber-400"
+                        : "border-border/60 text-muted-foreground"
+                    }`}
+                  >
+                    {item.category}
+                    <span className="font-medium text-foreground">{formatCurrency(item.total)}</span>
+                    <span className="text-muted-foreground">· {item.count}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader className="sticky top-2 z-20 flex flex-row items-center justify-between gap-3 border-b border-border/70 bg-card/95 backdrop-blur">
           <CardTitle>Movimientos</CardTitle>
@@ -1616,6 +1788,9 @@ export default function DashboardTransactionsPage() {
               disabled={selectedCount === 0 || isBulkApplying || isBulkDeleting}
             />
             <datalist id="bulk-category-options">
+              {canonicalCategories.map((name) => (
+                <option key={`canon-${name}`} value={name} />
+              ))}
               {categories.map((item) => (
                 <option key={item.id} value={item.name} />
               ))}
