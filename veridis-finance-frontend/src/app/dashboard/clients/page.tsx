@@ -23,6 +23,23 @@ import { useNotify } from "@/hooks/use-notify";
 import { ApiClientError, clientApiFetch } from "@/lib/api-client";
 import { findBestContactMatchId } from "@/lib/contact-matching";
 import type { ApiEnvelope, Client, Contact } from "@/types/finance";
+import { formatCurrency } from "@/lib/format";
+
+type ReceivableClient = {
+  cliente: string;
+  rfc: string | null;
+  facturas: number;
+  pendientes: number;
+  por_cobrar: number;
+  pendiente_desde: string | null;
+  falta_rfc: boolean;
+};
+type ReceivablesByClient = {
+  clientes: ReceivableClient[];
+  total_por_cobrar: number;
+  clientes_con_saldo: number;
+  clientes_sin_rfc: number;
+};
 
 interface ClientFormState {
   name: string;
@@ -203,6 +220,9 @@ export default function DashboardClientsPage() {
   const [form, setForm] = useState<ClientFormState>(EMPTY_FORM);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [receivables, setReceivables] = useState<ReceivablesByClient | null>(null);
+  const [csfLinkClientId, setCsfLinkClientId] = useState<string | null>(null);
 
   const loadContacts = useCallback(async () => {
     if (shouldRedirectToContacts) {
@@ -384,6 +404,68 @@ export default function DashboardClientsPage() {
     }
   };
 
+  const loadReceivables = useCallback(async () => {
+    try {
+      const res = await clientApiFetch<ApiEnvelope<ReceivablesByClient>>(
+        "/api/finance/report/receivables-by-client"
+      );
+      setReceivables(res.data);
+    } catch {
+      setReceivables(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReceivables();
+  }, [loadReceivables]);
+
+  const runSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await clientApiFetch<ApiEnvelope<{ clients_created: number; receivers_upserted: number; crm_enriched: number }>>(
+        "/api/finance/clients/sync",
+        { method: "POST" }
+      );
+      notify.success({
+        title: "Directorio sincronizado",
+        description: `${res.data.clients_created} cliente(s) nuevos, ${res.data.receivers_upserted} receptor(es) fiscales, ${res.data.crm_enriched} enriquecidos del CRM.`,
+      });
+      await Promise.all([loadClients(), loadReceivables()]);
+    } catch (error) {
+      notify.error({
+        title: "No se pudo sincronizar",
+        description: error instanceof ApiClientError ? error.message : "Intenta de nuevo.",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const copyCsfLink = async (client: Client) => {
+    setCsfLinkClientId(client.id);
+    try {
+      const params = new URLSearchParams({
+        client_id: client.id,
+        name: client.business_name || client.name,
+      });
+      const res = await clientApiFetch<ApiEnvelope<{ url: string }>>(
+        `/api/finance/receivers/csf-link?${params.toString()}`
+      );
+      await navigator.clipboard.writeText(res.data.url).catch(() => {});
+      notify.success({
+        title: "Link de CSF copiado",
+        description: "Pégalo y mándaselo al cliente para que suba su Constancia.",
+      });
+    } catch (error) {
+      notify.error({
+        title: "No se pudo generar el link",
+        description: error instanceof ApiClientError ? error.message : "Intenta de nuevo.",
+      });
+    } finally {
+      setCsfLinkClientId(null);
+    }
+  };
+
   const activeCount = useMemo(
     () => clients.filter((client) => client.active).length,
     [clients]
@@ -409,9 +491,71 @@ export default function DashboardClientsPage() {
 
   return (
     <div className="space-y-6">
+      {receivables ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <div>
+              <CardTitle>Cartera por cliente</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Facturado y pendiente de cobro (no confundir con lo cobrado en banco).
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-semibold text-amber-600">
+                {formatCurrency(receivables.total_por_cobrar)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {receivables.clientes_con_saldo} clientes con saldo ·{" "}
+                {receivables.clientes_sin_rfc} sin RFC
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>RFC</TableHead>
+                  <TableHead className="text-right">Por cobrar</TableHead>
+                  <TableHead className="text-right">Facturas</TableHead>
+                  <TableHead>Desde</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {receivables.clientes
+                  .filter((c) => c.por_cobrar > 0)
+                  .slice(0, 12)
+                  .map((c) => (
+                    <TableRow key={`${c.cliente}-${c.rfc || "sinrfc"}`}>
+                      <TableCell className="font-medium">{c.cliente}</TableCell>
+                      <TableCell>
+                        {c.falta_rfc || !c.rfc ? (
+                          <Badge variant="secondary" className="text-amber-600">
+                            Falta RFC/CSF
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{c.rfc}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {formatCurrency(c.por_cobrar)}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {c.pendientes}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {c.pendiente_desde ? String(c.pendiente_desde).slice(0, 10) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>Clients</CardTitle>
+          <CardTitle>Clientes</CardTitle>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
@@ -419,11 +563,14 @@ export default function DashboardClientsPage() {
                 checked={showInactive}
                 onChange={(event) => setShowInactive(event.target.checked)}
               />
-              Show inactive
+              Ver inactivos
             </label>
+            <Button variant="outline" onClick={runSync} disabled={isSyncing}>
+              {isSyncing ? "Sincronizando…" : "Sincronizar desde facturas + CRM"}
+            </Button>
             <Button onClick={openCreateModal}>
               <Plus className="mr-2 h-4 w-4" />
-              Add client
+              Agregar cliente
             </Button>
           </div>
         </CardHeader>
@@ -497,7 +644,15 @@ export default function DashboardClientsPage() {
                             onClick={() => openEditModal(client)}
                           >
                             <Edit3 className="mr-1 h-3.5 w-3.5" />
-                            Edit
+                            Editar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => copyCsfLink(client)}
+                            disabled={csfLinkClientId === client.id}
+                          >
+                            {csfLinkClientId === client.id ? "Generando…" : "Copiar link CSF"}
                           </Button>
                           <Button
                             size="sm"
