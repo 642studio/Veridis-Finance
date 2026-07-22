@@ -1,4 +1,5 @@
 const pool = require('../db/pool');
+const diotService = require('./diotService');
 
 function toAmount(value) {
   return Number.parseFloat(value || '0');
@@ -105,54 +106,46 @@ async function getMonthlyReport({ organization_id, year, month }) {
  * invoices uploaded before it lack RFC/taxes and are reported under
  * `unclassified_count` so the accountant knows the coverage.
  */
+/**
+ * DIOT report. FUENTE ÚNICA DE VERDAD: delega en diotService.generate (que
+ * clasifica tipo de tercero/operación y desglosa IVA por tasa) y mapea su salida
+ * al contrato {suppliers[]} que consume la pantalla de Reportes. Antes había una
+ * segunda implementación aquí que hardcodeaba 04/85 y divergía de la fiscal.
+ */
 async function getDiotReport({ organization_id, year, month }) {
-  const { rows } = await pool.query(
-    `
-      SELECT
-        emitter_rfc,
-        max(emitter) AS emitter_name,
-        count(*)::int AS invoice_count,
-        COALESCE(SUM(subtotal), 0) AS base_total,
-        COALESCE(SUM((taxes->>'total_trasladados')::numeric), 0) AS iva_trasladado,
-        COALESCE(SUM((taxes->>'total_retenidos')::numeric), 0) AS iva_retenido,
-        COALESCE(SUM(total), 0) AS total
-      FROM finance.invoices
-      WHERE organization_id = $1
+  const data = await diotService.generate(organization_id, { year, month });
+
+  const { rows: missing } = await pool.query(
+    `SELECT count(*)::int AS unclassified_count
+       FROM finance.invoices
+      WHERE organization_id = $1 AND direction = 'received'
         AND date_part('year', invoice_date) = $2
         AND date_part('month', invoice_date) = $3
-        AND emitter_rfc IS NOT NULL
-        AND direction = 'received'
-      GROUP BY emitter_rfc
-      ORDER BY total DESC
-    `,
+        AND emitter_rfc IS NULL`,
     [organization_id, year, month]
   );
 
-  const { rows: missing } = await pool.query(
-    `
-      SELECT count(*)::int AS unclassified_count
-      FROM finance.invoices
-      WHERE organization_id = $1
-        AND date_part('year', invoice_date) = $2
-        AND date_part('month', invoice_date) = $3
-        AND emitter_rfc IS NULL
-    `,
-    [organization_id, year, month]
-  );
+  const suppliers = data.proveedores.map((r) => {
+    const baseTotal = Number((r.valor_16 + r.valor_8 + r.valor_0 + r.exentos).toFixed(2));
+    const ivaTrasladado = Number((r.iva_16 + r.iva_8).toFixed(2));
+    return {
+      rfc: r.rfc,
+      name: r.proveedor,
+      invoice_count: r.count,
+      tipo_tercero: r.tipo_tercero,
+      tipo_operacion: r.tipo_operacion,
+      base_total: baseTotal,
+      iva_trasladado: ivaTrasladado,
+      iva_retenido: Number(r.iva_retenido),
+      total: Number((baseTotal + ivaTrasladado).toFixed(2)),
+    };
+  });
 
   return {
     year,
     month,
-    suppliers: rows.map((row) => ({
-      rfc: row.emitter_rfc,
-      name: row.emitter_name,
-      invoice_count: row.invoice_count,
-      base_total: Number(row.base_total),
-      iva_trasladado: Number(row.iva_trasladado),
-      iva_retenido: Number(row.iva_retenido),
-      total: Number(row.total),
-    })),
-    // Invoices uploaded before the structured parser; re-upload to include them.
+    suppliers,
+    // Facturas subidas antes del parser estructurado; re-súbelas para incluirlas.
     unclassified_count: missing[0]?.unclassified_count || 0,
   };
 }
@@ -178,24 +171,16 @@ async function getDiotReport({ organization_id, year, month }) {
  * can't go in the DIOT; they stay in the report's unclassified_count.
  */
 async function getDiotBatchFile({ organization_id, year, month }) {
-  const report = await getDiotReport({ organization_id, year, month });
-
-  const lines = report.suppliers
-    .filter((s) => s.rfc)
-    .map((s) => {
-      const fields = new Array(23).fill('');
-      fields[0] = '04';
-      fields[1] = '85';
-      fields[2] = String(s.rfc).trim().toUpperCase();
-      fields[7] = String(Math.round(s.base_total || 0));
-      fields[16] = s.iva_retenido ? String(Math.round(s.iva_retenido)) : '';
-      return fields.join('|');
-    });
-
+  // Delega en diotService (mismo layout batch del SAT que la ruta fiscal).
+  const [{ txt, filename }, report] = await Promise.all([
+    diotService.exportBatch(organization_id, { year, month }),
+    getDiotReport({ organization_id, year, month }),
+  ]);
+  const content = txt ? `${txt}\r\n` : '';
   return {
-    filename: `DIOT_${year}_${String(month).padStart(2, '0')}.txt`,
-    content: lines.join('\r\n') + (lines.length ? '\r\n' : ''),
-    supplier_count: lines.length,
+    filename: filename || `DIOT_${year}_${String(month).padStart(2, '0')}.txt`,
+    content,
+    supplier_count: report.suppliers.filter((s) => s.rfc).length,
     unclassified_count: report.unclassified_count,
   };
 }

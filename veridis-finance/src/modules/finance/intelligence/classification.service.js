@@ -296,7 +296,14 @@ function detectMemberFromDescription(normalizedDescription, members) {
 }
 
 function safeDbTableError(error) {
-  return error?.code === '42P01' || error?.code === '42703';
+  const swallow = error?.code === '42P01' || error?.code === '42703';
+  if (swallow) {
+    // Degradación graceful (tabla/columna opcional ausente). Se loggea para
+    // detectar drift de esquema en vez de fallar silenciosamente.
+    // eslint-disable-next-line no-console
+    console.warn(`[classification] esquema faltante (${error.code}): ${String(error.message || '').slice(0, 160)}`);
+  }
+  return swallow;
 }
 
 async function listActiveMembers(db, organizationId) {

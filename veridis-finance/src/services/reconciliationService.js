@@ -19,6 +19,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const AMOUNT_TOLERANCE = 0.02; // 2%
 const DATE_WINDOW_DAYS = 45;
 
+// Convención única para ligar una factura a su movimiento bancario. La misma
+// cadena se referencia en SQL como 'bank_txn:'||t.id (reviewList, bankPoliza);
+// centralizar la construcción evita drift de formato entre servicios.
+const BANK_TXN_PREFIX = 'bank_txn:';
+function bankTxnRef(txnId) {
+  return `${BANK_TXN_PREFIX}${txnId}`;
+}
+
 function normalizeTokens(text) {
   return String(text || '')
     .normalize('NFD')
@@ -188,7 +196,7 @@ async function confirmMatch({ organization_id, transaction_id, invoice_id }) {
     organization_id,
     invoice_id,
     status: 'paid',
-    payment_reference: `bank_txn:${transaction_id}`,
+    payment_reference: bankTxnRef(transaction_id),
   });
 }
 
@@ -304,7 +312,7 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
         invoice_id: best.inv.id,
         status: 'paid',
         payment_method: 'conciliacion_auto',
-        payment_reference: `bank_txn:${txn.id}`,
+        payment_reference: bankTxnRef(txn.id),
       });
       usedInvoices.add(best.inv.id);
       summary.matched += 1;
@@ -500,7 +508,7 @@ async function unmatch({ organization_id, transaction_id }) {
         SET status = 'pending', payment_reference = NULL, paid_at = NULL, updated_at = now()
       WHERE organization_id = $1 AND payment_reference = $2
         AND status = 'paid'`,
-    [organization_id, `bank_txn:${transaction_id}`]
+    [organization_id, bankTxnRef(transaction_id)]
   );
   return { unmatched: rowCount > 0 };
 }
@@ -613,7 +621,7 @@ async function reconcileByClient({ organization_id, max_transactions = 400 }) {
           `UPDATE finance.invoices
               SET status = 'paid', payment_reference = $3, paid_at = now(), updated_at = now()
             WHERE organization_id = $1 AND id = ANY($2::uuid[]) AND status = 'pending'`,
-          [organization_id, ids, `bank_txn:${dep.id}`]
+          [organization_id, ids, bankTxnRef(dep.id)]
         );
         if (rowCount === ids.length) {
           for (const inv of subset) {
