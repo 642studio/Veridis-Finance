@@ -106,18 +106,23 @@ async function cronRoutes(app) {
       } catch (err) {
         request.log.warn({ org: org.organization_id, err: err.message }, 'cron: validación SAT failed');
       }
-      try {
-        const g = await autoPolizaService.generateForPeriod(org.organization_id, { year: cy, month: cm });
-        polizasPosted += g.posted;
-      } catch (err) {
-        request.log.warn({ org: org.organization_id, err: err.message }, 'cron: auto-póliza failed');
-      }
-      try {
-        // Pólizas de flujo (cobro/pago) de los movimientos ya conciliados.
-        const bp = await bankPolizaService.generateForPeriod(org.organization_id, { year: cy, month: cm });
-        polizasPosted += bp.posted;
-      } catch (err) {
-        request.log.warn({ org: org.organization_id, err: err.message }, 'cron: póliza de flujo failed');
+      // Generación automática de pólizas: APAGADA por defecto. Las pólizas se
+      // generan solo cuando el usuario lo pide (botón "Generar desde CFDIs",
+      // conciliación o copiloto con confirmación). Prende con AUTO_POLIZAS=1.
+      if (String(process.env.AUTO_POLIZAS || '') === '1') {
+        try {
+          const g = await autoPolizaService.generateForPeriod(org.organization_id, { year: cy, month: cm });
+          polizasPosted += g.posted;
+        } catch (err) {
+          request.log.warn({ org: org.organization_id, err: err.message }, 'cron: auto-póliza failed');
+        }
+        try {
+          // Pólizas de flujo (cobro/pago) de los movimientos ya conciliados.
+          const bp = await bankPolizaService.generateForPeriod(org.organization_id, { year: cy, month: cm });
+          polizasPosted += bp.posted;
+        } catch (err) {
+          request.log.warn({ org: org.organization_id, err: err.message }, 'cron: póliza de flujo failed');
+        }
       }
       try {
         const a = await auditoriaService.run(org.organization_id, { year: cy, month: cm });
