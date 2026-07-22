@@ -18,6 +18,7 @@ const autoPoliza = require('../autoPolizaService');
 const bankPoliza = require('../bankPolizaService');
 const fixedAssets = require('../fixedAssetsService');
 const cierre = require('../cierreService');
+const recat = require('../categoryReclassifyService');
 const reports = require('../reportsService');
 
 const periodProps = {
@@ -241,6 +242,15 @@ const WRITE_TOOLS = [
     resumen: ({ year, month }) => `Registrar la depreciación de activos fijos de ${month}/${year}`,
     handler: (org, { year, month }, userId) => fixedAssets.runDepreciation(org, { year, month, createdBy: userId }),
     formatResult: (r) => `✅ Depreciación: ${r.posted} póliza(s) nueva(s) de ${r.assets} activo(s); ${r.skipped} sin depreciación o ya registradas.`,
+  },
+  {
+    name: 'recategorizar_gastos',
+    description: 'ACCIÓN (requiere confirmación): re-categoriza los gastos en "Por revisar" con reglas + IA a la taxonomía canónica (nómina, proveedores, retiros de socio, etc.). No cambia montos.',
+    write: true,
+    input_schema: { type: 'object', properties: { limit: { type: 'integer', description: 'Máximo de movimientos a revisar (default 60).' } }, required: [] },
+    resumen: () => 'Re-categorizar los gastos en "Por revisar" con reglas + IA',
+    handler: (org, { limit }) => recat.reclassifyReviewExpenses({ organizationId: org, limit: limit || 60, apply: true, useAI: true }),
+    formatResult: (r) => `✅ Re-categorización: ${r.applied} gasto(s) clasificados (${r.byRule} por regla, ${r.byAI} por IA) de ${r.scanned} revisados; ${r.remaining} siguen en "Por revisar".`,
   },
   {
     name: 'cerrar_periodo',
