@@ -104,13 +104,18 @@ function scoreMatch(transaction, invoice) {
 
 async function getTransaction({ organization_id, transaction_id }) {
   const { rows } = await pool.query(
-    `SELECT id, amount, transaction_date, type, description, entity
+    `SELECT id, amount, transaction_date, type, description, original_description, entity
        FROM finance.transactions
       WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
       LIMIT 1`,
     [organization_id, transaction_id]
   );
   return rows[0] || null;
+}
+
+/** Texto de matching: concepto limpio + crudo del banco (el crudo trae el RFC). */
+function matchText(txn) {
+  return [txn.description, txn.original_description, txn.entity].filter(Boolean).join(' ');
 }
 
 /**
@@ -158,7 +163,7 @@ async function findInvoiceCandidates({ organization_id, transaction_id, limit = 
       total: Number(inv.total),
       invoice_date: inv.invoice_date,
       match: scoreMatch(
-        { amount: txn.amount, date: txn.transaction_date, description: txn.description || txn.entity },
+        { amount: txn.amount, date: txn.transaction_date, description: matchText(txn) },
         inv
       ),
     }))
@@ -204,9 +209,11 @@ const AUTO_MIN_GAP = 0.08;
 async function autoReconcile({ organization_id, max_transactions = 100 }) {
   const deadline = Date.now() + 25000;
 
-  // Transactions not yet referenced by any invoice payment.
+  // Movimientos aún sin CFDI ligado, del MÁS VIEJO al más nuevo (los pagos
+  // históricos son justo donde vive la cartera sin conciliar). Keyset para
+  // poder recorrer TODO el historial en llamadas sucesivas bajo el deadline.
   const { rows: txns } = await pool.query(
-    `SELECT t.id, t.amount, t.transaction_date, t.type, t.description, t.entity
+    `SELECT t.id, t.amount, t.transaction_date, t.type, t.description, t.original_description, t.entity
        FROM finance.transactions t
       WHERE t.organization_id = $1
         AND t.deleted_at IS NULL
@@ -215,7 +222,7 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
            WHERE i.organization_id = t.organization_id
              AND i.payment_reference = 'bank_txn:' || t.id::text
         )
-      ORDER BY t.transaction_date DESC
+      ORDER BY t.transaction_date ASC
       LIMIT $2`,
     [organization_id, max_transactions]
   );
@@ -255,7 +262,7 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
       .map((inv) => ({
         inv,
         match: scoreMatch(
-          { amount: txn.amount, date: txn.transaction_date, description: txn.description || txn.entity },
+          { amount: txn.amount, date: txn.transaction_date, description: matchText(txn) },
           inv
         ),
       }))
