@@ -219,6 +219,7 @@ export default function DashboardTransactionsPage() {
   const [queryText, setQueryText] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [sortBy, setSortBy] = useState<(typeof SORT_BY_OPTIONS)[number]["value"]>(
@@ -1388,6 +1389,41 @@ export default function DashboardTransactionsPage() {
     return null;
   }, [clients, members, selectedClientId, selectedMemberId, selectedVendorId, vendors]);
 
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (selectedContactId !== "all") n += 1;
+    if (selectedAccountId !== "all") n += 1;
+    if (selectedStatus !== "all") n += 1;
+    if (selectedSource !== "all") n += 1;
+    if (queryText.trim()) n += 1;
+    if (fromDate || toDate) n += 1;
+    if (legacyEntityFilterLabel) n += 1;
+    return n;
+  }, [
+    selectedContactId,
+    selectedAccountId,
+    selectedStatus,
+    selectedSource,
+    queryText,
+    fromDate,
+    toDate,
+    legacyEntityFilterLabel,
+  ]);
+
+  const clearAllFilters = () => {
+    setSelectedMemberId("all");
+    setSelectedClientId("all");
+    setSelectedVendorId("all");
+    setSelectedContactId("all");
+    setSelectedAccountId("all");
+    setSelectedStatus("all");
+    setSelectedSource("all");
+    setQueryText("");
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+  };
+
   const [isAutoReconciling, setIsAutoReconciling] = useState(false);
   const runAutoReconcile = async () => {
     setIsAutoReconciling(true);
@@ -1498,17 +1534,70 @@ export default function DashboardTransactionsPage() {
         </Card>
       ) : null}
       <Card>
-        <CardHeader className="sticky top-2 z-20 flex flex-row items-center justify-between gap-3 border-b border-border/70 bg-card/95 backdrop-blur">
-          <CardTitle>Movimientos</CardTitle>
-          <div className="flex flex-wrap items-center gap-2 md:justify-end">
-            <Button
-              variant="outline"
-              onClick={runAutoReconcile}
-              disabled={isAutoReconciling}
-            >
-              {isAutoReconciling ? "Conciliando…" : "Conciliar automático"}
-            </Button>
-            <Button onClick={() => setIsCreateOpen(true)}>Nuevo movimiento</Button>
+        <CardHeader className="sticky top-2 z-20 flex flex-col gap-3 border-b border-border/70 bg-card/95 backdrop-blur">
+          <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+            <CardTitle>Movimientos</CardTitle>
+            <div className="flex flex-wrap items-center gap-2 md:justify-end">
+              <Button
+                variant="outline"
+                onClick={runAutoReconcile}
+                disabled={isAutoReconciling}
+              >
+                {isAutoReconciling ? "Conciliando…" : "Conciliar automático"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={exportTransactionsCsv}
+                disabled={isLoading || isExporting}
+              >
+                {isExporting ? "Exportando…" : "Exportar CSV"}
+              </Button>
+              <Button variant="secondary" onClick={() => setIsBankUploadOpen(true)}>
+                Subir estado de cuenta
+              </Button>
+              <Button variant="outline" onClick={categorizeWithAI} disabled={isCategorizing}>
+                {isCategorizing ? "Categorizando…" : "✨ Categorizar con IA"}
+              </Button>
+              <Button onClick={() => setIsCreateOpen(true)}>Nuevo movimiento</Button>
+              <Button
+                variant={showFilters ? "secondary" : "outline"}
+                onClick={() => setShowFilters((value) => !value)}
+              >
+                Filtros{activeFilterCount ? ` · ${activeFilterCount}` : ""}
+              </Button>
+            </div>
+          </div>
+          {activeFilterCount > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {queryText.trim() ? (
+                <Badge variant="secondary">Búsqueda: “{queryText.trim()}”</Badge>
+              ) : null}
+              {selectedStatus !== "all" ? (
+                <Badge variant="secondary">Estatus: {selectedStatus}</Badge>
+              ) : null}
+              {selectedSource !== "all" ? (
+                <Badge variant="secondary">Origen: {sourceLabel(selectedSource)}</Badge>
+              ) : null}
+              {selectedAccountId !== "all" ? (
+                <Badge variant="secondary">
+                  Cuenta: {accounts.find((a) => a.id === selectedAccountId)?.name || "—"}
+                </Badge>
+              ) : null}
+              {legacyEntityFilterLabel ? (
+                <Badge variant="secondary">{legacyEntityFilterLabel}</Badge>
+              ) : null}
+              {fromDate || toDate ? (
+                <Badge variant="secondary">
+                  {fromDate || "…"} → {toDate || "…"}
+                </Badge>
+              ) : null}
+              <Button variant="ghost" size="sm" onClick={clearAllFilters}>
+                Limpiar filtros
+              </Button>
+            </div>
+          ) : null}
+          {showFilters ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-background/40 p-3">
             <select
               className="h-9 min-w-[220px] rounded-lg border border-border bg-card px-3 text-sm"
               value={selectedContactId}
@@ -1729,20 +1818,8 @@ export default function DashboardTransactionsPage() {
             >
               Limpiar filtros
             </Button>
-            <Button
-              variant="outline"
-              onClick={exportTransactionsCsv}
-              disabled={isLoading || isExporting}
-            >
-              {isExporting ? "Exportando…" : "Exportar CSV"}
-            </Button>
-            <Button variant="secondary" onClick={() => setIsBankUploadOpen(true)}>
-              Subir estado de cuenta
-            </Button>
-            <Button variant="outline" onClick={categorizeWithAI} disabled={isCategorizing}>
-              {isCategorizing ? "Categorizando…" : "✨ Categorizar con IA"}
-            </Button>
           </div>
+          ) : null}
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-background/40 p-3">

@@ -33,12 +33,15 @@ type ReceivableClient = {
   por_cobrar: number;
   pendiente_desde: string | null;
   falta_rfc: boolean;
+  sin_factura: boolean;
 };
 type ReceivablesByClient = {
   clientes: ReceivableClient[];
   total_por_cobrar: number;
+  total_por_cobrar_cfdi: number;
+  total_sin_factura: number;
   clientes_con_saldo: number;
-  clientes_sin_rfc: number;
+  clientes_sin_factura: number;
 };
 
 interface ClientFormState {
@@ -500,14 +503,23 @@ export default function DashboardClientsPage() {
                 Facturado y pendiente de cobro (no confundir con lo cobrado en banco).
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-semibold text-amber-600">
-                {formatCurrency(receivables.total_por_cobrar)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {receivables.clientes_con_saldo} clientes con saldo ·{" "}
-                {receivables.clientes_sin_rfc} sin RFC
-              </p>
+            <div className="flex gap-6 text-right">
+              <div>
+                <p className="text-2xl font-semibold text-amber-600">
+                  {formatCurrency(receivables.total_por_cobrar_cfdi)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Por cobrar (con CFDI) · {receivables.clientes_con_saldo} clientes
+                </p>
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-muted-foreground">
+                  {formatCurrency(receivables.total_sin_factura)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Ventas sin factura · {receivables.clientes_sin_factura} clientes
+                </p>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -516,7 +528,8 @@ export default function DashboardClientsPage() {
                 <TableRow>
                   <TableHead>Cliente</TableHead>
                   <TableHead>RFC</TableHead>
-                  <TableHead className="text-right">Por cobrar</TableHead>
+                  <TableHead className="text-right">Pendiente</TableHead>
+                  <TableHead>Tipo</TableHead>
                   <TableHead className="text-right">Facturas</TableHead>
                   <TableHead>Desde</TableHead>
                 </TableRow>
@@ -524,7 +537,7 @@ export default function DashboardClientsPage() {
               <TableBody>
                 {receivables.clientes
                   .filter((c) => c.por_cobrar > 0)
-                  .slice(0, 12)
+                  .slice(0, 14)
                   .map((c) => (
                     <TableRow key={`${c.cliente}-${c.rfc || "sinrfc"}`}>
                       <TableCell className="font-medium">{c.cliente}</TableCell>
@@ -539,6 +552,13 @@ export default function DashboardClientsPage() {
                       </TableCell>
                       <TableCell className="text-right font-semibold">
                         {formatCurrency(c.por_cobrar)}
+                      </TableCell>
+                      <TableCell>
+                        {c.sin_factura ? (
+                          <Badge variant="outline">Sin factura</Badge>
+                        ) : (
+                          <Badge variant="success">Por cobrar</Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {c.pendientes}
