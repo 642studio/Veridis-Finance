@@ -7,6 +7,7 @@ const autoPolizaService = require('../services/autoPolizaService');
 const bankPolizaService = require('../services/bankPolizaService');
 const auditoriaService = require('../services/auditoriaService');
 const notificationsService = require('../services/notificationsService');
+const rateLimitStore = require('../middleware/rateLimitStore');
 
 /**
  * Scheduled maintenance (Vercel Cron). vercel.json schedules a daily GET to
@@ -143,6 +144,15 @@ async function cronRoutes(app) {
       }
     }
 
+    // Purga ventanas viejas del store de rate limiting (best-effort).
+    let rateLimitsPurged = 0;
+    try {
+      const p = await rateLimitStore.purge();
+      rateLimitsPurged = p.deleted || 0;
+    } catch (err) {
+      request.log.warn({ err: err.message }, 'cron: purga de rate_limits falló');
+    }
+
     request.log.info(
       {
         source: 'cron_daily',
@@ -156,6 +166,7 @@ async function cronRoutes(app) {
         cfdis_canceled: cfdisCanceled,
         polizas_posted: polizasPosted,
         audit_errors: auditErrors,
+        rate_limits_purged: rateLimitsPurged,
       },
       'cron: daily maintenance done'
     );

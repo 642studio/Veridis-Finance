@@ -1,13 +1,11 @@
 const crypto = require('node:crypto');
 const { extractApiKey } = require('./apiKeyAuth');
+const store = require('./rateLimitStore');
 
-// LIMITATION: these limiters keep counters in an in-process Map. That is correct
-// and sufficient for a single instance, but with multiple instances behind a
-// load balancer the limit is enforced per-instance (effective limit = N * max)
-// and all counters reset on deploy/restart. For horizontal scaling, back these
-// buckets with a shared store (e.g. Redis via a fixed/sliding-window script) and
-// keep the same env-configurable window/max contract.
-const rateBuckets = new Map();
+// Los contadores viven en un store compartido (Postgres, ventana fija), así el
+// límite se respeta ENTRE instancias serverless. Si la BD falla, el store cae a
+// un contador en memoria por-instancia (comportamiento previo) para no tumbar
+// el login. Ventana/máximos configurables por env.
 
 function tooManyRequests(message) {
   const error = new Error(message);
@@ -38,64 +36,25 @@ function getLimiterKey(request) {
   return `ip:${clientIp}`;
 }
 
-function cleanupExpiredBuckets(now) {
-  for (const [key, bucket] of rateBuckets.entries()) {
-    if (bucket.resetAt <= now) {
-      rateBuckets.delete(key);
-    }
-  }
-}
-
 async function automationRateLimit(request, reply) {
   const windowMs = numberFromEnv('AUTOMATION_RATE_LIMIT_WINDOW_MS', 60000);
   const maxRequests = numberFromEnv('AUTOMATION_RATE_LIMIT_MAX', 60);
-  const now = Date.now();
   const limiterKey = getLimiterKey(request);
 
-  let bucket = rateBuckets.get(limiterKey);
-  if (!bucket || bucket.resetAt <= now) {
-    bucket = {
-      count: 0,
-      resetAt: now + windowMs,
-    };
-    rateBuckets.set(limiterKey, bucket);
-  }
+  const r = await store.hit(limiterKey, windowMs, maxRequests);
 
-  bucket.count += 1;
-
-  const remaining = Math.max(0, maxRequests - bucket.count);
   reply.header('X-RateLimit-Limit', String(maxRequests));
-  reply.header('X-RateLimit-Remaining', String(remaining));
-  reply.header('X-RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+  reply.header('X-RateLimit-Remaining', String(Math.max(0, maxRequests - r.count)));
+  reply.header('X-RateLimit-Reset', String(Math.ceil(r.resetAt / 1000)));
 
-  if (bucket.count > maxRequests) {
-    const retryAfterSeconds = Math.max(
-      1,
-      Math.ceil((bucket.resetAt - now) / 1000)
-    );
-    reply.header('Retry-After', String(retryAfterSeconds));
+  if (r.exceeded) {
+    reply.header('Retry-After', String(Math.max(1, Math.ceil((r.resetAt - Date.now()) / 1000))));
     throw tooManyRequests('Automation rate limit exceeded');
   }
-
-  if (rateBuckets.size > 10000) {
-    cleanupExpiredBuckets(now);
-  }
-}
-
-const loginBuckets = new Map();
-
-function bumpBucket(key, windowMs, now) {
-  let bucket = loginBuckets.get(key);
-  if (!bucket || bucket.resetAt <= now) {
-    bucket = { count: 0, resetAt: now + windowMs };
-    loginBuckets.set(key, bucket);
-  }
-  bucket.count += 1;
-  return bucket;
 }
 
 /**
- * Login limiter with TWO independent gates:
+ * Login limiter with TWO independent gates (ambos en el store compartido):
  *  - per-IP  (10 / 15 min): stops a single host hammering the endpoint.
  *  - per-account (8 / 15 min): stops credential brute force against ONE account
  *    even when the attacker rotates X-Forwarded-For / source IPs. The account is
@@ -106,43 +65,27 @@ async function authRateLimit(request, reply) {
   const windowMs = 900000; // 15 minutes
   const maxIpAttempts = 10;
   const maxAccountAttempts = 8;
-  const now = Date.now();
 
-  const ipBucket = bumpBucket(`auth:ip:${request.ip || 'unknown'}`, windowMs, now);
+  const ip = await store.hit(`auth:ip:${request.ip || 'unknown'}`, windowMs, maxIpAttempts);
 
   const body = request.body || {};
   const email = String(body.email || '').trim().toLowerCase();
   const org = String(body.organization_slug || body.organizationSlug || body.slug || '')
     .trim()
     .toLowerCase();
-  let accountBucket = null;
+  let acct = null;
   if (email) {
-    accountBucket = bumpBucket(
-      `auth:acct:${keyHash(`${org}|${email}`)}`,
-      windowMs,
-      now
-    );
+    acct = await store.hit(`auth:acct:${keyHash(`${org}|${email}`)}`, windowMs, maxAccountAttempts);
   }
 
-  const remaining = Math.max(0, maxIpAttempts - ipBucket.count);
   reply.header('X-RateLimit-Limit', String(maxIpAttempts));
-  reply.header('X-RateLimit-Remaining', String(remaining));
-  reply.header('X-RateLimit-Reset', String(Math.ceil(ipBucket.resetAt / 1000)));
+  reply.header('X-RateLimit-Remaining', String(Math.max(0, maxIpAttempts - ip.count)));
+  reply.header('X-RateLimit-Reset', String(Math.ceil(ip.resetAt / 1000)));
 
-  const ipExceeded = ipBucket.count > maxIpAttempts;
-  const accountExceeded = accountBucket && accountBucket.count > maxAccountAttempts;
-
-  if (ipExceeded || accountExceeded) {
-    const resetAt = accountExceeded ? accountBucket.resetAt : ipBucket.resetAt;
-    const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - now) / 1000));
-    reply.header('Retry-After', String(retryAfterSeconds));
+  if (ip.exceeded || (acct && acct.exceeded)) {
+    const resetAt = acct && acct.exceeded ? acct.resetAt : ip.resetAt;
+    reply.header('Retry-After', String(Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))));
     throw tooManyRequests('Too many login attempts. Please try again later.');
-  }
-
-  if (loginBuckets.size > 10000) {
-    for (const [key, b] of loginBuckets.entries()) {
-      if (b.resetAt <= now) loginBuckets.delete(key);
-    }
   }
 }
 
