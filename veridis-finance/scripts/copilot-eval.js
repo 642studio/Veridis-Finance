@@ -43,7 +43,7 @@ const CASES = [
     id: 'efos',
     message: '¿Algún proveedor en la lista negra del SAT?',
     tools: ['revisar_efos'],
-    replyMatch: /sin coincidencias|no hay|ningun/i,
+    replyMatch: /sin coincidencias|no se encontr|no hay|ning[uú]n/i,
   },
   {
     id: 'balanza',
