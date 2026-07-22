@@ -4,7 +4,7 @@ const {
   learnRuleFromManualCategorization,
   normalizeDescription,
 } = require('../modules/finance/intelligence/classification.service');
-const { getDefaultAccount } = require('./financeAccountsService');
+const { getDefaultAccount, getOrCreateBankAccountByNumber } = require('./financeAccountsService');
 
 function notFound(message) {
   const error = new Error(message);
@@ -379,7 +379,17 @@ async function confirmImport({ importId, organizationId, transactionOverrides })
     }
 
     const seenKeys = new Set();
-    const defaultAccount = await getDefaultAccount({
+    // Cada estado de cuenta cae en SU cuenta bancaria (banco + últimos 4 dígitos
+    // del número extraído del EDC); si no se pudo extraer, va a la General.
+    const statementAccount = importRecord.account_number
+      ? await getOrCreateBankAccountByNumber({
+          organization_id: organizationId,
+          bank: importRecord.bank,
+          accountNumber: importRecord.account_number,
+          client,
+        })
+      : null;
+    const defaultAccount = statementAccount || await getDefaultAccount({
       organization_id: organizationId,
       client,
     });

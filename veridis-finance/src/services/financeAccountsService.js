@@ -472,6 +472,48 @@ async function getDefaultAccount({ organization_id, client }) {
   throw notFound(`No active account available for organization: ${organization_id}`);
 }
 
+/**
+ * Cuenta bancaria por estado de cuenta: busca por banco + últimos 4 dígitos del
+ * número de cuenta y la crea si no existe ("Santander ****3526"). Así cada EDC
+ * importado cae en SU cuenta y el flujo multi-cuenta queda separado por banco.
+ */
+async function getOrCreateBankAccountByNumber({ organization_id, bank, accountNumber, client }) {
+  const db = client || pool;
+  const last4 = String(accountNumber || '').replace(/\D/g, '').slice(-4);
+  if (!last4) return getDefaultAccount({ organization_id, client });
+  const bankName = String(bank || 'banco').trim();
+  const pretty = bankName.charAt(0).toUpperCase() + bankName.slice(1);
+
+  const find = () => db.query(
+    `SELECT * FROM finance.accounts
+      WHERE organization_id = $1 AND status = 'active'
+        AND account_number_last4 = $2
+        AND lower(coalesce(bank_name,'')) = lower($3)
+      ORDER BY created_at ASC LIMIT 1`,
+    [organization_id, last4, bankName]
+  );
+
+  const { rows } = await find();
+  if (rows[0]) return mapAccount(rows[0]);
+
+  try {
+    await createAccount({
+      organization_id,
+      name: `${pretty} ****${last4}`,
+      type: 'bank',
+      bank_name: bankName,
+      account_number_last4: last4,
+      currency: 'MXN',
+      status: 'active',
+    });
+  } catch (error) {
+    if (error.code !== '23505') throw error;
+  }
+  const after = await find();
+  if (after.rows[0]) return mapAccount(after.rows[0]);
+  return getDefaultAccount({ organization_id, client });
+}
+
 async function getOrCreateCashAccount({ organization_id, client }) {
   const db = client || pool;
 
@@ -555,6 +597,7 @@ async function getOrCreateCashAccount({ organization_id, client }) {
 }
 
 module.exports = {
+  getOrCreateBankAccountByNumber,
   ACCOUNT_TYPES,
   ACCOUNT_STATUSES,
   createAccount,
