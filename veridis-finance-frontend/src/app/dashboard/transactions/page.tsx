@@ -1428,21 +1428,34 @@ export default function DashboardTransactionsPage() {
   const runAutoReconcile = async () => {
     setIsAutoReconciling(true);
     try {
+      // Pase 1: puntaje 1:1 (matches inequívocos de alta confianza).
       const res = await clientApiFetch<{
         data: { scanned: number; matched: number; ambiguous: number; no_match: number; remaining: number };
       }>("/api/finance/reconciliation/auto", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ max_transactions: 150 }),
+        body: JSON.stringify({ max_transactions: 300 }),
       });
       const s = res.data;
-      notify.success({
-        title: `Conciliación automática: ${s.matched} conciliadas`,
-        description: `${s.scanned} movimientos revisados · ${s.ambiguous} con candidatos ambiguos (revísalos 1×1) · ${s.no_match} sin factura${s.remaining ? ` · quedan ${s.remaining}, vuelve a ejecutar` : ""}.`,
+      // Pase 2: por cliente (RFC) — desempata facturas idénticas por fecha y
+      // resuelve pagos en bolsa (un depósito que cubre varias facturas).
+      const byClient = await clientApiFetch<{
+        data: { matched_1a1: number; matched_bolsa: number; invoices_conciliadas: number };
+      }>("/api/finance/reconciliation/by-client", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ max_transactions: 300 }),
       });
+      const b = byClient.data;
+      const totalFacturas = s.matched + (b.invoices_conciliadas || 0);
+      notify.success({
+        title: `Conciliación: ${totalFacturas} factura(s) casadas`,
+        description: `Por puntaje: ${s.matched}. Por cliente (RFC): ${b.matched_1a1} exactas + ${b.matched_bolsa} pagos en bolsa. ${s.ambiguous} siguen ambiguas para revisión 1×1.`,
+      });
+      await loadTransactions();
     } catch (error) {
       const message = error instanceof ApiClientError ? error.message : "No se pudo conciliar";
-      notify.error({ title: "Error en conciliación automática", description: message });
+      notify.error({ title: "Error en conciliación", description: message });
     } finally {
       setIsAutoReconciling(false);
     }

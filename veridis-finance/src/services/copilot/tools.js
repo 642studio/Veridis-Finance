@@ -227,12 +227,16 @@ const WRITE_TOOLS = [
   },
   {
     name: 'conciliar_automaticamente',
-    description: 'ACCIÓN (requiere confirmación): corre la conciliación automática banco↔CFDI (solo casa matches inequívocos de alta confianza).',
+    description: 'ACCIÓN (requiere confirmación): corre la conciliación automática banco↔CFDI en dos pases: por puntaje 1:1 y por cliente (RFC), que desempata facturas idénticas por fecha y resuelve pagos en bolsa.',
     write: true,
     input_schema: { type: 'object', properties: {}, required: [] },
-    resumen: () => 'Correr la conciliación automática banco ↔ CFDI',
-    handler: (org) => reconciliation.autoReconcile({ organization_id: org, max_transactions: 200 }),
-    formatResult: (r) => `✅ Conciliación automática: ${r.matched} conciliado(s) de ${r.scanned} revisados; ${r.ambiguous} ambiguos quedan para revisión manual.`,
+    resumen: () => 'Correr la conciliación automática banco ↔ CFDI (puntaje + por cliente)',
+    handler: async (org) => {
+      const auto = await reconciliation.autoReconcile({ organization_id: org, max_transactions: 300 });
+      const byClient = await reconciliation.reconcileByClient({ organization_id: org, max_transactions: 300 });
+      return { auto, byClient };
+    },
+    formatResult: (r) => `✅ Conciliación: ${r.auto.matched} por puntaje + ${r.byClient.matched_1a1} exactas + ${r.byClient.matched_bolsa} pagos en bolsa (${r.byClient.invoices_conciliadas} facturas). ${r.auto.ambiguous} ambiguas quedan para revisión manual.`,
   },
   {
     name: 'depreciar_activos',

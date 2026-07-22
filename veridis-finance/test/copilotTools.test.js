@@ -22,7 +22,12 @@ test('formatResult produce resúmenes humanos', () => {
   const g = getTool('generar_polizas_cfdi');
   assert.ok(/5 nueva/.test(g.formatResult({ posted: 5, skipped: 2, invoices: 7, errors: [] })));
   const c = getTool('conciliar_automaticamente');
-  assert.ok(/3 conciliado/.test(c.formatResult({ matched: 3, scanned: 80, ambiguous: 10 })));
+  assert.ok(/pagos en bolsa/.test(
+    c.formatResult({
+      auto: { matched: 3, scanned: 80, ambiguous: 10 },
+      byClient: { matched_1a1: 5, matched_bolsa: 2, invoices_conciliadas: 8 },
+    })
+  ));
 });
 test('runTool rechaza ejecutar acciones directo (sin confirmación)', async () => {
   const { runTool } = require('../src/services/copilot/tools');
