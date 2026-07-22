@@ -1,6 +1,7 @@
 const { z } = require('zod');
 
 const invoicesService = require('../services/invoicesService');
+const cfdiConvertService = require('../services/cfdiConvertService');
 const { parseCfdi40 } = require('../services/cfdiParserService');
 const { resolveOrganizationId } = require('../middleware/auth');
 const { getActiveIssuer } = require('../services/cfdiIssuersService');
@@ -289,6 +290,21 @@ async function cancelInvoice(request, reply) {
   reply.send({ data: cancelled });
 }
 
+async function convertToCfdi(request, reply) {
+  const params = invoiceParamsSchema.parse(request.params || {});
+  const organizationId = resolveOrganizationId(request);
+  const result = await cfdiConvertService.convert({
+    organizationId,
+    invoiceId: params.id,
+    userId: request.user?.user_id || null,
+  });
+  request.log.info(
+    { source: 'recibo_convert_cfdi', organization_id: organizationId, invoice_id: params.id },
+    'Recibo convertido a CFDI'
+  );
+  reply.send({ data: result });
+}
+
 module.exports = {
   listInvoices,
   createInvoice,
@@ -296,4 +312,5 @@ module.exports = {
   uploadInvoicesBulk,
   updateInvoiceStatus,
   cancelInvoice,
+  convertToCfdi,
 };

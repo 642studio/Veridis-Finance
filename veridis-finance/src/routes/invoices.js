@@ -5,6 +5,7 @@ const {
   uploadInvoicesBulk,
   updateInvoiceStatus,
   cancelInvoice,
+  convertToCfdi,
 } = require('../controllers/invoicesController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -60,6 +61,15 @@ async function invoicesRoutes(app) {
       preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])],
     },
     cancelInvoice
+  );
+
+  // Convertir un RECIBO (CRM) en CFDI timbrado. Requiere la CSF del cliente.
+  app.post(
+    '/invoices/:id/convert-to-cfdi',
+    {
+      preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])],
+    },
+    convertToCfdi
   );
 }
 

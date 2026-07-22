@@ -4,6 +4,9 @@ const transactionsService = require('../services/transactionsService');
 const reportsService = require('../services/reportsService');
 const recurringDetectionService = require('../services/recurringDetectionService');
 const recurringRulesService = require('../services/recurringRulesService');
+const {
+  learnRuleFromManualCategorization,
+} = require('../modules/finance/intelligence/classification.service');
 const { forbidden, resolveOrganizationId } = require('../middleware/auth');
 
 function countLinkedEntities(value) {
@@ -269,6 +272,20 @@ async function updateTransaction(request, reply) {
     actor_role: request.user?.role || null,
     audit_source: payload.source || null,
   });
+
+  // S40 — aprende de la corrección manual: si el usuario cambió la categoría,
+  // guarda una regla para que movimientos parecidos se auto-categoricen. Best
+  // effort: nunca debe tumbar la actualización.
+  if (payload.category && updated?.description) {
+    learnRuleFromManualCategorization({
+      organizationId,
+      description: updated.original_description || updated.description,
+      category: payload.category,
+      categoryId: payload.category_id,
+      subcategoryId: payload.subcategory_id,
+      memberId: payload.member_id,
+    }).catch((err) => request.log.warn({ err: err.message }, 'learnRule (manual cat) failed'));
+  }
 
   reply.send({ data: updated });
 }

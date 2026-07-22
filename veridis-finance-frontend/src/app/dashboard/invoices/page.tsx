@@ -320,6 +320,30 @@ export default function DashboardInvoicesPage() {
     [loadInvoices, notify]
   );
 
+  const convertToCfdi = useCallback(
+    async (invoice: Invoice) => {
+      setStatusUpdatingId(invoice.id);
+      try {
+        await clientApiFetch<ApiEnvelope<unknown>>(
+          `/api/finance/invoices/${invoice.id}/convert-to-cfdi`,
+          { method: "POST" }
+        );
+        await loadInvoices();
+        notify.success({
+          title: "Recibo convertido a CFDI",
+          description: "Se timbró el CFDI de ingreso a nombre del cliente.",
+        });
+      } catch (error) {
+        const message =
+          error instanceof ApiClientError ? error.message : "No se pudo convertir a CFDI";
+        notify.error({ title: "Falta info para timbrar", description: message });
+      } finally {
+        setStatusUpdatingId(null);
+      }
+    },
+    [loadInvoices, notify]
+  );
+
   const cancelRecibo = useCallback(
     async (invoice: Invoice) => {
       setStatusUpdatingId(invoice.id);
@@ -478,6 +502,18 @@ export default function DashboardInvoicesPage() {
                   Reabrir
                 </Button>
               )}
+              {row.source === "crm" && !row.cfdi_document_id ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void convertToCfdi(row);
+                  }}
+                  disabled={statusUpdatingId === row.id}
+                >
+                  Convertir a CFDI
+                </Button>
+              ) : null}
               {row.source === "crm" ? (
                 <Button
                   size="sm"
@@ -495,7 +531,7 @@ export default function DashboardInvoicesPage() {
           ),
       },
     ],
-    [statusUpdatingId, updateInvoiceStatus, cancelRecibo, canWrite]
+    [statusUpdatingId, updateInvoiceStatus, cancelRecibo, convertToCfdi, canWrite]
   );
 
   return (
