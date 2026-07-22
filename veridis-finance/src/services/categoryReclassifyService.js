@@ -19,7 +19,11 @@ const { createMessage } = require('./copilot/anthropicClient');
 const { EXPENSE_CATEGORIES, REVIEW_CATEGORY, isCanonical } = require('./categoryTaxonomy');
 
 const CONFIDENCE_APPLY = 0.8;
-const AI_BATCH_SIZE = 30;
+const AI_BATCH_SIZE = 25;
+// Tope de lotes de IA por invocación para caber en el presupuesto del serverless
+// (Vercel corta la función). El endpoint es idempotente: se llama en bucle hasta
+// que remaining llegue a 0.
+const MAX_AI_BATCHES = 2;
 
 /**
  * Reglas deterministas sobre (descripción cruda + concepto). Devuelve la
@@ -173,10 +177,13 @@ async function reclassifyReviewExpenses({ organizationId, limit = 200, apply = t
 
   // Pasada de IA por lotes.
   let aiUsage = { input_tokens: 0, output_tokens: 0 };
+  let aiProcessed = 0;
+  const aiCap = MAX_AI_BATCHES * AI_BATCH_SIZE;
   if (useAI && pendingAI.length) {
     const org = await orgNameFor(organizationId);
-    for (let i = 0; i < pendingAI.length; i += AI_BATCH_SIZE) {
+    for (let i = 0; i < pendingAI.length && i < aiCap; i += AI_BATCH_SIZE) {
       const batch = pendingAI.slice(i, i + AI_BATCH_SIZE);
+      aiProcessed += batch.length;
       // eslint-disable-next-line no-await-in-loop
       const { results, usage } = await classifyBatchAI(batch, org, ownerNames);
       aiUsage = {
@@ -199,7 +206,7 @@ async function reclassifyReviewExpenses({ organizationId, limit = 200, apply = t
       // eslint-disable-next-line no-await-in-loop
       await pool.query(
         `UPDATE finance.transactions
-            SET category = $1, match_method = $2, match_confidence = $3, updated_at = now()
+            SET category = $1, match_method = $2, match_confidence = $3
           WHERE id = $4 AND organization_id = $5`,
         [c.category, c.source === 'rule' ? 'rule' : 'fuzzy', c.confidence, c.id, organizationId]
       );
@@ -213,6 +220,7 @@ async function reclassifyReviewExpenses({ organizationId, limit = 200, apply = t
     scanned: rows.length,
     byRule,
     byAI,
+    ai_processed: aiProcessed,
     applied,
     remaining: rows.length - changes.length,
     ai_usage: aiUsage,
