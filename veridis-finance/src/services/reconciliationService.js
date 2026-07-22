@@ -318,6 +318,20 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
 }
 
 /**
+ * ¿Este movimiento NO requiere factura? Puro. No todo lo que pasa por el banco
+ * lleva CFDI de contraparte: traspasos entre cuentas propias, nómina (su CFDI
+ * es de nómina, va en otro módulo) y comisiones sobre ventas a socios. Marcarlos
+ * "sin conciliar" para siempre sería ruido — tienen su propio estado.
+ */
+function noRequiereFactura(descripcion, concepto, categoria) {
+  const hay = `${descripcion || ''} ${concepto || ''} ${categoria || ''}`.toLowerCase();
+  if (/traspaso/.test(hay)) return 'traspaso';
+  if (/n[oó]mina|sueldo|salario/.test(hay)) return 'nomina';
+  if (/comision(es)? (sobre )?venta/.test(hay)) return 'comision_venta';
+  return null;
+}
+
+/**
  * ¿Es un depósito (payout) de Stripe? Puro. Stripe liquida un LOTE de pagos en
  * un solo depósito neto de comisión, así que no casa 1:1 con un CFDI: se trata
  * aparte y no debe contar como "sin conciliar".
@@ -333,9 +347,11 @@ function isStripePayout(descripcion, concepto, type) {
  * "parcial" cuando el monto del CFDI no cubre el del movimiento; los payouts de
  * Stripe sin CFDI se marcan aparte.
  */
-function reconciliationState(txnAmount, invoiceTotal, { descripcion, concepto, type } = {}) {
+function reconciliationState(txnAmount, invoiceTotal, { descripcion, concepto, type, categoria } = {}) {
   if (invoiceTotal == null) {
-    return isStripePayout(descripcion, concepto, type) ? 'payout_stripe' : 'sin_conciliar';
+    if (isStripePayout(descripcion, concepto, type)) return 'payout_stripe';
+    if (noRequiereFactura(descripcion, concepto, categoria)) return 'sin_factura_ok';
+    return 'sin_conciliar';
   }
   const t = money(txnAmount).abs();
   const i = money(invoiceTotal).abs();
@@ -369,6 +385,7 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
   let conciliadoN = 0;
   let pendienteN = 0;
   let payoutN = 0;
+  let sinFacturaN = 0;
   let montoConciliado = 0;
   let montoPendiente = 0;
   let montoPayout = 0;
@@ -377,10 +394,12 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
       descripcion: r.original_description || r.description,
       concepto: r.description,
       type: r.type,
+      categoria: r.category,
     });
     const amount = Number(r.amount);
     if (estado === 'sin_conciliar') { pendienteN += 1; montoPendiente += amount; }
     else if (estado === 'payout_stripe') { payoutN += 1; montoPayout += amount; }
+    else if (estado === 'sin_factura_ok') { sinFacturaN += 1; }
     else { conciliadoN += 1; montoConciliado += amount; }
     return {
       id: r.id, date: r.transaction_date, type: r.type, amount,
@@ -397,8 +416,9 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
     };
   });
 
-  // El avance considera "resuelto" = conciliado + payout Stripe (ya explicado).
-  const resueltos = conciliadoN + payoutN;
+  // "Resuelto" = conciliado + payout Stripe + no requiere factura. Solo lo que
+  // de verdad espera un CFDI cuenta como pendiente.
+  const resueltos = conciliadoN + payoutN + sinFacturaN;
   return {
     year, month,
     resumen: {
@@ -406,6 +426,7 @@ async function reviewList({ organization_id, year, month, limit = 500 }) {
       conciliados: conciliadoN,
       sin_conciliar: pendienteN,
       payouts_stripe: payoutN,
+      sin_factura_ok: sinFacturaN,
       monto_conciliado: Number(money(montoConciliado).toFixed(2)),
       monto_pendiente: Number(money(montoPendiente).toFixed(2)),
       monto_payout_stripe: Number(money(montoPayout).toFixed(2)),
@@ -460,6 +481,7 @@ module.exports = {
   unmatch,
   reconciliationState,
   isStripePayout,
+  noRequiereFactura,
   AMOUNT_TOLERANCE,
   DATE_WINDOW_DAYS,
 };

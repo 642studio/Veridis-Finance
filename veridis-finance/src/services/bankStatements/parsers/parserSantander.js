@@ -456,6 +456,9 @@ function titleCase(s) {
 // Categoría base por palabra clave (merchant/concepto). La regla aprendida del
 // tenant o la IA pueden refinarla después; esto evita que llegue "sin categoría".
 const CATEGORY_KEYWORDS = [
+  // Traspasos entre cuentas propias: ni ingreso ni gasto — categoría neutral
+  // que el dashboard excluye de los totales.
+  [/traspaso (?:a otros bancos|entre cuentas|cuentas propias)|traspaso spei mismo titular/i, 'Traspaso interno'],
   [/comision venta/i, 'Comisiones sobre ventas'],
   // Comisión/membresía del banco va ANTES que "renta": "ADMINISTRACION RENTA
   // MEMBRESIA" es un cargo de manejo de cuenta, no un arrendamiento.

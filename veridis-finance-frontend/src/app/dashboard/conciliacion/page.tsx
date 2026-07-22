@@ -10,7 +10,7 @@ import { ApiClientError, clientApiFetch } from "@/lib/api-client";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Estado = "conciliado" | "parcial" | "sin_conciliar" | "payout_stripe";
+type Estado = "conciliado" | "parcial" | "sin_conciliar" | "payout_stripe" | "sin_factura_ok";
 
 interface Cfdi {
   invoice_id: string;
@@ -36,6 +36,7 @@ interface Review {
     conciliados: number;
     sin_conciliar: number;
     payouts_stripe: number;
+    sin_factura_ok: number;
     monto_conciliado: number;
     monto_pendiente: number;
     monto_payout_stripe: number;
@@ -62,12 +63,14 @@ const ESTADO_PILL: Record<Estado, string> = {
   parcial: "bg-amber-100 text-amber-800",
   sin_conciliar: "bg-muted text-muted-foreground",
   payout_stripe: "bg-violet-100 text-violet-700",
+  sin_factura_ok: "bg-sky-100 text-sky-700",
 };
 const ESTADO_LABEL: Record<Estado, string> = {
   conciliado: "Conciliado",
   parcial: "Parcial",
   sin_conciliar: "Sin conciliar",
   payout_stripe: "Payout Stripe",
+  sin_factura_ok: "No requiere factura",
 };
 
 export default function ConciliacionPage() {
@@ -312,7 +315,9 @@ export default function ConciliacionPage() {
                           </span>
                         </td>
                         <td className="py-2.5 text-right">
-                          {!canWrite ? null : it.estado === "sin_conciliar" ? (
+                          {!canWrite ? null : it.estado === "sin_factura_ok" ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : it.estado === "sin_conciliar" ? (
                             <Button variant="outline" size="sm" onClick={() => openCandidates(it.id)}>
                               {expanded === it.id ? "Cerrar" : "Buscar CFDI"}
                             </Button>

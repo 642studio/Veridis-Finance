@@ -4,6 +4,14 @@ function toAmount(value) {
   return Number.parseFloat(value || '0');
 }
 
+// Traspasos entre cuentas propias: mueven dinero, NO son ingreso ni gasto.
+// Se excluyen de los totales del flujo y se reportan aparte para que el
+// dashboard nunca infle ingresos/gastos con movimientos internos.
+const TRANSFER_FILTER = `(
+  category ILIKE 'traspaso%' OR category = 'transfer'
+  OR description ILIKE '%traspaso%' OR original_description ILIKE '%traspaso a otros bancos%'
+)`;
+
 async function getMonthlyReport({ organization_id, year, month }) {
   const periodStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
   const periodEnd = new Date(Date.UTC(year, month, 1, 0, 0, 0));
@@ -11,9 +19,10 @@ async function getMonthlyReport({ organization_id, year, month }) {
   const summaryQuery = {
     text: `
       SELECT
-        COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS total_income,
-        COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS total_expense,
-        COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) AS net_profit,
+        COALESCE(SUM(CASE WHEN type = 'income' AND NOT ${TRANSFER_FILTER} THEN amount ELSE 0 END), 0) AS total_income,
+        COALESCE(SUM(CASE WHEN type = 'expense' AND NOT ${TRANSFER_FILTER} THEN amount ELSE 0 END), 0) AS total_expense,
+        COALESCE(SUM(CASE WHEN ${TRANSFER_FILTER} THEN 0 WHEN type = 'income' THEN amount ELSE -amount END), 0) AS net_profit,
+        COALESCE(SUM(CASE WHEN ${TRANSFER_FILTER} THEN amount ELSE 0 END), 0) AS transfers_total,
         COUNT(*)::int AS transaction_count
       FROM finance.transactions
       WHERE organization_id = $1
@@ -57,6 +66,7 @@ async function getMonthlyReport({ organization_id, year, month }) {
     total_income: toAmount(summary.total_income),
     total_expense: toAmount(summary.total_expense),
     net_profit: toAmount(summary.net_profit),
+    transfers_total: toAmount(summary.transfers_total),
     transaction_count: summary.transaction_count,
     by_category: byCategoryResult.rows.map((row) => ({
       category: row.category,

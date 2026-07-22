@@ -559,7 +559,7 @@ export default function DashboardOverviewPage() {
       {/* KPI row */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCard
-          label="Ingresos del mes"
+          label="Ingresos del mes (flujo banco)"
           value={formatCurrency(summary?.total_income ?? 0)}
           icon={TrendingUp}
           tone="up"

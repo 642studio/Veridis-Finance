@@ -32,3 +32,15 @@ test('reconciliationState marca payout_stripe cuando no hay CFDI', () => {
   assert.strictEqual(reconciliationState(703.02, null, { descripcion: 'ABONO POR TRANSFERENCIA STRIPE', type: 'income' }), 'payout_stripe');
   assert.strictEqual(reconciliationState(500, null, { descripcion: 'ABONO SPEI CLIENTE X', type: 'income' }), 'sin_conciliar');
 });
+
+const { noRequiereFactura } = require('../src/services/reconciliationService');
+test('traspasos, nómina y comisiones de venta no requieren factura', () => {
+  assert.strictEqual(noRequiereFactura('TRASPASO A OTROS BANCOS INBURSA', null, 'transfer'), 'traspaso');
+  assert.strictEqual(noRequiereFactura('CARGO TRANSFERENCIA ENLACE Nomina 642 Carlos', null, null), 'nomina');
+  assert.strictEqual(noRequiereFactura(null, 'Comision venta RIVI Rojas', null), 'comision_venta');
+  assert.strictEqual(noRequiereFactura('ABONO SPEI CLIENTE X CONCEPTO F 1', null, 'sales'), null);
+});
+test('estado sin_factura_ok para movimientos que no llevan CFDI', () => {
+  assert.strictEqual(reconciliationState(9500, null, { descripcion: 'CARGO ENLACE Nomina 642', type: 'expense' }), 'sin_factura_ok');
+  assert.strictEqual(reconciliationState(500, null, { descripcion: 'TRASPASO A OTROS BANCOS', type: 'income', categoria: 'transfer' }), 'sin_factura_ok');
+});
