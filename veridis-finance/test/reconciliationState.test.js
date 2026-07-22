@@ -34,13 +34,19 @@ test('reconciliationState marca payout_stripe cuando no hay CFDI', () => {
 });
 
 const { noRequiereFactura } = require('../src/services/reconciliationService');
-test('traspasos, nómina y comisiones de venta no requieren factura', () => {
-  assert.strictEqual(noRequiereFactura('TRASPASO A OTROS BANCOS INBURSA', null, 'transfer'), 'traspaso');
+test('traspasos (solo criterio estricto), nómina y comisiones de venta no requieren factura', () => {
+  // "TRASPASO A OTROS BANCOS" puede ser un pago real de un tercero — NO se excluye por texto.
+  assert.strictEqual(noRequiereFactura('TRASPASO A OTROS BANCOS INBURSA', null, 'transfer'), null);
+  // Solo la categoría explícita o texto inequívoco de cuenta propia.
+  assert.strictEqual(noRequiereFactura('x', null, 'Traspaso interno'), 'traspaso');
+  assert.strictEqual(noRequiereFactura('TRASPASO ENTRE CUENTAS PROPIAS', null, null), 'traspaso');
   assert.strictEqual(noRequiereFactura('CARGO TRANSFERENCIA ENLACE Nomina 642 Carlos', null, null), 'nomina');
   assert.strictEqual(noRequiereFactura(null, 'Comision venta RIVI Rojas', null), 'comision_venta');
   assert.strictEqual(noRequiereFactura('ABONO SPEI CLIENTE X CONCEPTO F 1', null, 'sales'), null);
 });
 test('estado sin_factura_ok para movimientos que no llevan CFDI', () => {
   assert.strictEqual(reconciliationState(9500, null, { descripcion: 'CARGO ENLACE Nomina 642', type: 'expense' }), 'sin_factura_ok');
-  assert.strictEqual(reconciliationState(500, null, { descripcion: 'TRASPASO A OTROS BANCOS', type: 'income', categoria: 'transfer' }), 'sin_factura_ok');
+  // Traspaso de tercero: sigue siendo sin_conciliar (podría merecer CFDI).
+  assert.strictEqual(reconciliationState(500, null, { descripcion: 'TRASPASO A OTROS BANCOS', type: 'income', categoria: 'transfer' }), 'sin_conciliar');
+  assert.strictEqual(reconciliationState(500, null, { descripcion: 'x', type: 'income', categoria: 'Traspaso interno' }), 'sin_factura_ok');
 });

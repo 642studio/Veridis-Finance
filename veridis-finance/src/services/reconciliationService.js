@@ -324,8 +324,11 @@ async function autoReconcile({ organization_id, max_transactions = 100 }) {
  * "sin conciliar" para siempre sería ruido — tienen su propio estado.
  */
 function noRequiereFactura(descripcion, concepto, categoria) {
-  const hay = `${descripcion || ''} ${concepto || ''} ${categoria || ''}`.toLowerCase();
-  if (/traspaso/.test(hay)) return 'traspaso';
+  const hay = `${descripcion || ''} ${concepto || ''}`.toLowerCase();
+  // Traspaso: SOLO la categoría explícita o texto inequívoco de cuenta propia —
+  // "traspaso a otros bancos" puede ser un pago real de un tercero.
+  if (String(categoria || '') === 'Traspaso interno'
+    || /traspaso entre cuentas|cuentas propias|mismo titular/.test(hay)) return 'traspaso';
   if (/n[oó]mina|sueldo|salario/.test(hay)) return 'nomina';
   if (/comision(es)? (sobre )?venta/.test(hay)) return 'comision_venta';
   return null;

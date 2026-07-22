@@ -7,10 +7,10 @@ function toAmount(value) {
 // Traspasos entre cuentas propias: mueven dinero, NO son ingreso ni gasto.
 // Se excluyen de los totales del flujo y se reportan aparte para que el
 // dashboard nunca infle ingresos/gastos con movimientos internos.
-const TRANSFER_FILTER = `(
-  category ILIKE 'traspaso%' OR category = 'transfer'
-  OR description ILIKE '%traspaso%' OR original_description ILIKE '%traspaso a otros bancos%'
-)`;
+// SOLO la categoría explícita cuenta como traspaso. Los textos del banco
+// ("TRASPASO A OTROS BANCOS") suelen ser pagos de TERCEROS — excluirlos por
+// texto quitaría ingreso/gasto real del dashboard (verificado con datos).
+const TRANSFER_FILTER = `(category = 'Traspaso interno')`;
 
 async function getMonthlyReport({ organization_id, year, month }) {
   const periodStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));

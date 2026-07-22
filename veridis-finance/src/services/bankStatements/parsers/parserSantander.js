@@ -458,7 +458,7 @@ function titleCase(s) {
 const CATEGORY_KEYWORDS = [
   // Traspasos entre cuentas propias: ni ingreso ni gasto — categoría neutral
   // que el dashboard excluye de los totales.
-  [/traspaso (?:a otros bancos|entre cuentas|cuentas propias)|traspaso spei mismo titular/i, 'Traspaso interno'],
+  [/traspaso (?:entre cuentas|cuentas propias)|mismo titular/i, 'Traspaso interno'],
   [/comision venta/i, 'Comisiones sobre ventas'],
   // Comisión/membresía del banco va ANTES que "renta": "ADMINISTRACION RENTA
   // MEMBRESIA" es un cargo de manejo de cuenta, no un arrendamiento.
