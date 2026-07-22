@@ -7,6 +7,10 @@
 
 const { createMessage } = require('./anthropicClient');
 const { toolSpecs, runTool } = require('./tools');
+const reconciliation = require('../reconciliationService');
+
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 const MAX_ITERS = 6;
 
@@ -45,6 +49,15 @@ function textFromContent(content) {
  */
 async function chat({ organizationId, organizationName, message, history = [], today, context }) {
   let system = systemPrompt({ organizationName, today: today || new Date().toISOString().slice(0, 10) });
+  // El "mes en curso" puede estar vacío (aún sin estado de cuenta). Dile cuál es
+  // el último periodo con datos para que no responda vacíos por defecto.
+  try {
+    const lp = await reconciliation.latestPeriod({ organization_id: organizationId });
+    if (lp?.has_data) {
+      system += `\n\nEl último periodo con datos cargados es ${MONTH_NAMES[lp.month - 1]} ${lp.year}. `
+        + 'Si el usuario NO especifica mes, usa ese periodo por defecto (no el mes en curso).';
+    }
+  } catch { /* si falla, sigue con el default */ }
   if (context) {
     system += `\n\nCONTEXTO: el usuario está viendo la pantalla "${String(context).slice(0, 80)}". `
       + 'Si su pregunta es ambigua ("esto", "aquí"), asume que se refiere a esa pantalla.';
