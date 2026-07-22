@@ -4,7 +4,8 @@ const {
   updateClient,
   deleteClient,
 } = require('../controllers/clientsController');
-const { authenticate, authorize, ROLES } = require('../middleware/auth');
+const clientDirectory = require('../services/clientDirectoryService');
+const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 async function clientsRoutes(app) {
   app.get(
@@ -16,6 +17,19 @@ async function clientsRoutes(app) {
       ],
     },
     listClients
+  );
+
+  // Sincroniza el directorio de clientes desde facturas emitidas + CRM (S34).
+  app.post(
+    '/clients/sync',
+    {
+      preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])],
+    },
+    async (request) => {
+      const organizationId = resolveOrganizationId(request);
+      const result = await clientDirectory.sync({ organizationId });
+      return { data: result };
+    }
   );
 
   app.post(

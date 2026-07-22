@@ -85,6 +85,13 @@ async function reportsRoutes(app) {
       return { data: await categoryReport.monthlyBreakdown({ organizationId, year, month }) };
     });
 
+  // Cartera por cliente: emitido vs cobrado, quién debe y desde cuándo (S36).
+  app.get('/report/receivables-by-client', { preHandler: [authenticate, authorize(READ)] },
+    async (request) => {
+      const organizationId = resolveOrganizationId(request);
+      return { data: await categoryReport.receivablesByClient({ organizationId }) };
+    });
+
   // Exportación CSV de movimientos (S33).
   app.get('/report/transactions.csv', { preHandler: [authenticate, authorize(READ)] },
     async (request, reply) => {

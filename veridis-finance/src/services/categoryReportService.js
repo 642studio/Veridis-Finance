@@ -117,4 +117,37 @@ async function exportCsv({ organizationId, from, to }) {
   return { csv: lines.join('\n'), count: rows.length };
 }
 
-module.exports = { catalog, monthlyBreakdown, exportCsv };
+/**
+ * Cartera por cliente (S36): facturas emitidas agrupadas por receptor, con
+ * cuánto sigue pendiente y cuántas ya tienen pago conciliado en banco. Sirve
+ * para ver la cobranza real (no confundir "emitido" con "cobrado").
+ */
+async function receivablesByClient({ organizationId }) {
+  const { rows } = await pool.query(
+    `SELECT
+        COALESCE(NULLIF(TRIM(i.receiver), ''), 'Sin nombre') AS cliente,
+        i.receiver_rfc AS rfc,
+        COUNT(*)::int AS facturas,
+        COUNT(*) FILTER (WHERE i.status = 'pending')::int AS pendientes,
+        COUNT(*) FILTER (WHERE i.status = 'paid')::int AS pagadas,
+        COALESCE(SUM(i.total) FILTER (WHERE i.status = 'pending'), 0)::numeric(14,2) AS por_cobrar,
+        COALESCE(SUM(i.total) FILTER (WHERE i.status = 'paid'), 0)::numeric(14,2) AS cobrado,
+        MIN(i.invoice_date) FILTER (WHERE i.status = 'pending') AS pendiente_desde,
+        BOOL_OR(i.receiver_rfc IS NULL) AS falta_rfc
+       FROM finance.invoices i
+      WHERE i.organization_id = $1 AND i.direction = 'issued'
+        AND COALESCE(i.sat_estado, '') <> 'Cancelado'
+      GROUP BY 1, 2
+      ORDER BY por_cobrar DESC`,
+    [organizationId]
+  );
+  const totalPorCobrar = rows.reduce((a, r) => a + Number(r.por_cobrar), 0);
+  return {
+    clientes: rows,
+    total_por_cobrar: Number(totalPorCobrar.toFixed(2)),
+    clientes_con_saldo: rows.filter((r) => Number(r.por_cobrar) > 0).length,
+    clientes_sin_rfc: rows.filter((r) => r.falta_rfc).length,
+  };
+}
+
+module.exports = { catalog, monthlyBreakdown, exportCsv, receivablesByClient };

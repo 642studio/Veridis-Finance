@@ -62,20 +62,22 @@ async function getReceiver(request, reply) {
   reply.send({ data });
 }
 
-/** Generate a self-service link a client can use to upload their own CSF. */
+/** Generate a self-service link a client can use to upload their own CSF.
+ * Optional client_id/name embed the client so the upload auto-associates. */
 async function csfLink(request, reply) {
   const organizationId = resolveOrganizationId(request);
   // Short-lived by default: a leaked link should not grant 6 months of write
   // access to fiscal receiver data. Configurable via CSF_LINK_EXPIRES_IN.
   const expiresIn = process.env.CSF_LINK_EXPIRES_IN || '72h';
-  const token = jwt.sign(
-    { org: organizationId, purpose: 'csf' },
-    process.env.JWT_SECRET,
-    { expiresIn, algorithm: 'HS256' }
-  );
+  const clientId = request.query?.client_id || null;
+  const clientName = request.query?.name ? String(request.query.name).slice(0, 160) : null;
+  const payload = { org: organizationId, purpose: 'csf' };
+  if (clientId) payload.client_id = String(clientId);
+  if (clientName) payload.name = clientName;
+  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn, algorithm: 'HS256' });
   const base =
     process.env.FRONTEND_URL || 'https://veridis-finance-adrian-yepizs-projects.vercel.app';
-  reply.send({ data: { url: `${base}/subir-csf/${token}` } });
+  reply.send({ data: { url: `${base}/subir-csf/${token}`, expires_in: expiresIn } });
 }
 
 module.exports = { previewCsf, createReceiver, listReceivers, getReceiver, csfLink };
