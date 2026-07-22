@@ -20,6 +20,11 @@ const fixedAssets = require('../fixedAssetsService');
 const cierre = require('../cierreService');
 const recat = require('../categoryReclassifyService');
 const reports = require('../reportsService');
+const categoryReport = require('../categoryReportService');
+const payments = require('../paymentsService');
+const invoicesService = require('../invoicesService');
+const cfdiConvert = require('../cfdiConvertService');
+const transactionsService = require('../transactionsService');
 
 const periodProps = {
   year: { type: 'integer', description: 'Año, p.ej. 2026' },
@@ -119,12 +124,108 @@ const TOOLS = [
   },
   {
     name: 'listar_movimientos',
-    description: 'Lista movimientos bancarios del periodo, con su estado de conciliación (conciliado/sin conciliar/payout Stripe).',
+    description: 'Lista movimientos bancarios del periodo, con su estado de conciliación (conciliado/sin conciliar/payout Stripe). Para SUMAR por categoría usa mejor "resumen_movimientos"; para buscar/filtrar usa "buscar_movimientos".',
     read: true,
     input_schema: { type: 'object', properties: periodProps, required: ['year', 'month'] },
     async handler(org, { year, month }) {
       const r = await reconciliation.reviewList({ organization_id: org, year, month });
       return { resumen: r.resumen, movimientos: r.items.slice(0, 40) };
+    },
+  },
+  {
+    name: 'resumen_movimientos',
+    description: 'SUMAS EXACTAS de movimientos por categoría y tipo en un rango de meses (server-side, sobre TODOS los movimientos, no una muestra). Úsala SIEMPRE que pregunten "cuánto gasté/entró/vendí en X", totales por categoría, ingresos vs gastos, flujo neto. Excluye traspasos internos de los totales.',
+    read: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: periodProps.year,
+        month_desde: { type: 'integer', description: 'Mes inicial 1-12 (default 1)' },
+        month_hasta: { type: 'integer', description: 'Mes final 1-12 (default = month_desde o 12)' },
+        categoria: { type: 'string', description: 'Opcional: filtra por una categoría exacta (p.ej. "Software y suscripciones")' },
+      },
+      required: ['year'],
+    },
+    async handler(org, { year, month_desde, month_hasta, categoria }) {
+      const md = month_desde || 1;
+      const mh = month_hasta || month_desde || 12;
+      const start = `${year}-${String(md).padStart(2, '0')}-01`;
+      const endBase = `${year}-${String(mh).padStart(2, '0')}-01`;
+      const params = [org, start, endBase];
+      let extra = '';
+      if (categoria) { params.push(categoria); extra = ` AND category = $${params.length}`; }
+      const { rows } = await pool.query(
+        `SELECT type, COALESCE(category,'(sin categoría)') AS categoria,
+                COUNT(*)::int AS n, SUM(amount)::numeric(14,2) AS total
+           FROM finance.transactions
+          WHERE organization_id = $1 AND deleted_at IS NULL
+            AND transaction_date >= $2::date AND transaction_date < ($3::date + interval '1 month')
+            ${extra}
+          GROUP BY 1,2 ORDER BY 1, 4 DESC`,
+        params
+      );
+      const NEUTRAL = 'Traspaso interno';
+      let ingresos = 0; let gastos = 0; let traspasos = 0;
+      const porCategoria = { ingreso: [], gasto: [] };
+      for (const r of rows) {
+        const total = Number(r.total);
+        if (r.categoria === NEUTRAL) { traspasos += total; continue; }
+        if (r.type === 'income') { ingresos += total; porCategoria.ingreso.push({ categoria: r.categoria, total, n: r.n }); }
+        else { gastos += total; porCategoria.gasto.push({ categoria: r.categoria, total, n: r.n }); }
+      }
+      const r2 = (v) => Math.round(v * 100) / 100;
+      return {
+        periodo: { year, month_desde: md, month_hasta: mh },
+        ingresos_total: r2(ingresos), gastos_total: r2(gastos),
+        flujo_neto: r2(ingresos - gastos), traspasos_total: r2(traspasos),
+        por_categoria: porCategoria,
+        nota: 'Flujo de banco (dinero real). NO es utilidad; los traspasos no cuentan.',
+      };
+    },
+  },
+  {
+    name: 'buscar_movimientos',
+    description: 'Busca/filtra movimientos individuales por tipo, categoría, texto y/o monto, ordenados por monto o fecha. Úsala para "el gasto más grande", "pagos a X", "movimientos de software", "movimientos arriba de $10,000".',
+    read: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        year: periodProps.year, month: periodProps.month,
+        tipo: { type: 'string', enum: ['income', 'expense'], description: 'ingreso o gasto (opcional)' },
+        categoria: { type: 'string', description: 'Categoría exacta (opcional)' },
+        texto: { type: 'string', description: 'Busca en el concepto/descripción (opcional)' },
+        monto_min: { type: 'number', description: 'Monto mínimo (opcional)' },
+        orden: { type: 'string', enum: ['monto', 'fecha'], description: 'Ordenar por monto (mayor primero) o fecha. Default monto.' },
+        limite: { type: 'integer', description: 'Máximo de resultados (default 15, máx 50)' },
+      },
+      required: ['year', 'month'],
+    },
+    async handler(org, { year, month, tipo, categoria, texto, monto_min, orden = 'monto', limite = 15 }) {
+      const start = `${year}-${String(month).padStart(2, '0')}-01`;
+      const params = [org, start];
+      let where = `organization_id = $1 AND deleted_at IS NULL AND transaction_date >= $2::date AND transaction_date < ($2::date + interval '1 month')`;
+      if (tipo) { params.push(tipo); where += ` AND type = $${params.length}`; }
+      if (categoria) { params.push(categoria); where += ` AND category = $${params.length}`; }
+      if (texto) { params.push(`%${texto}%`); where += ` AND (description ILIKE $${params.length} OR original_description ILIKE $${params.length})`; }
+      if (monto_min != null) { params.push(monto_min); where += ` AND amount >= $${params.length}`; }
+      const order = orden === 'fecha' ? 't.transaction_date DESC' : 'amount DESC';
+      const lim = Math.min(Number(limite) || 15, 50);
+      const { rows } = await pool.query(
+        `SELECT transaction_date::date AS fecha, type AS tipo, amount::numeric(12,2) AS monto,
+                category AS categoria, LEFT(COALESCE(description,''),80) AS concepto
+           FROM finance.transactions t WHERE ${where} ORDER BY ${order} LIMIT ${lim}`,
+        params
+      );
+      return { cuenta: rows.length, movimientos: rows };
+    },
+  },
+  {
+    name: 'cartera_por_cliente',
+    description: 'Cartera por cliente: por cobrar con CFDI (deuda real) vs ventas sin factura (informativo), quién debe y desde cuándo. Úsala para "quién me debe", "cartera por cliente", cobranza.',
+    read: true,
+    input_schema: { type: 'object', properties: {}, required: [] },
+    async handler(org) {
+      return categoryReport.receivablesByClient({ organizationId: org });
     },
   },
   {
@@ -255,6 +356,75 @@ const WRITE_TOOLS = [
     resumen: () => 'Re-categorizar los gastos en "Por revisar" con reglas + IA',
     handler: (org, { limit }) => recat.reclassifyReviewExpenses({ organizationId: org, limit: limit || 60, apply: true, useAI: true }),
     formatResult: (r) => `✅ Re-categorización: ${r.applied} gasto(s) clasificados (${r.byRule} por regla, ${r.byAI} por IA) de ${r.scanned} revisados; ${r.remaining} siguen en "Por revisar".`,
+  },
+  {
+    name: 'conciliar_por_cliente',
+    description: 'ACCIÓN (requiere confirmación): concilia por cliente (RFC) — empareja facturas idénticas por fecha y resuelve pagos en bolsa (un depósito que cubre varias facturas).',
+    write: true,
+    input_schema: { type: 'object', properties: {}, required: [] },
+    resumen: () => 'Conciliar por cliente (RFC): facturas idénticas por fecha + pagos en bolsa',
+    handler: (org) => reconciliation.reconcileByClient({ organization_id: org, max_transactions: 300 }),
+    formatResult: (r) => `✅ Conciliación por cliente: ${r.matched_1a1} exactas + ${r.matched_bolsa} pagos en bolsa (${r.invoices_conciliadas} facturas).`,
+  },
+  {
+    name: 'registrar_pago',
+    description: 'ACCIÓN (requiere confirmación): registra un cobro/pago manual. Crea el movimiento en el flujo del banco y, si se liga a una factura pendiente, la concilia. Pide invoice_id (de listar_facturas/cartera) o cliente + monto.',
+    write: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoice_id: { type: 'string', description: 'UUID de la factura/recibo a cobrar (opcional)' },
+        amount: { type: 'number', description: 'Monto del pago' },
+        method: { type: 'string', enum: ['transferencia', 'deposito', 'efectivo', 'tarjeta', 'stripe', 'otro'], description: 'Método (default transferencia)' },
+        date: { type: 'string', description: 'Fecha AAAA-MM-DD (default hoy)' },
+        reference: { type: 'string', description: 'Clave de rastreo / referencia (opcional)' },
+      },
+      required: ['amount'],
+    },
+    resumen: ({ amount, method }) => `Registrar cobro de $${Number(amount).toLocaleString('es-MX')} (${method || 'transferencia'})`,
+    handler: (org, input, userId) => payments.registerPayment({
+      organizationId: org, userId,
+      amount: input.amount, date: input.date, invoiceId: input.invoice_id || null,
+      method: input.method || 'transferencia', reference: input.reference || null,
+    }),
+    formatResult: (r) => `✅ Cobro registrado: movimiento creado${r.reconciled ? ' y factura conciliada' : ''}.`,
+  },
+  {
+    name: 'cancelar_recibo',
+    description: 'ACCIÓN (requiere confirmación): cancela un RECIBO del CRM (los que no llevan CFDI). No cancela CFDIs timbrados. Pide invoice_id.',
+    write: true,
+    input_schema: { type: 'object', properties: { invoice_id: { type: 'string', description: 'UUID del recibo' } }, required: ['invoice_id'] },
+    resumen: () => 'Cancelar el recibo del CRM',
+    handler: (org, { invoice_id }) => invoicesService.cancelInvoice({ organization_id: org, invoice_id }),
+    formatResult: (r) => `✅ Recibo cancelado (${r.receiver}).`,
+  },
+  {
+    name: 'convertir_a_cfdi',
+    description: 'ACCIÓN (requiere confirmación): convierte un recibo del CRM en CFDI timbrado. Requiere que el cliente tenga su Constancia (CSF). Pide invoice_id.',
+    write: true,
+    input_schema: { type: 'object', properties: { invoice_id: { type: 'string', description: 'UUID del recibo' } }, required: ['invoice_id'] },
+    resumen: () => 'Convertir el recibo en CFDI timbrado',
+    handler: (org, { invoice_id }, userId) => cfdiConvert.convert({ organizationId: org, invoiceId: invoice_id, userId }),
+    formatResult: (r) => `✅ Recibo convertido a CFDI a nombre de ${r.receiver}.`,
+  },
+  {
+    name: 'recategorizar_movimiento',
+    description: 'ACCIÓN (requiere confirmación): cambia la categoría de UN movimiento específico (ajuste puntual). El sistema aprende la regla. Pide transaction_id y la categoría nueva.',
+    write: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        transaction_id: { type: 'string', description: 'UUID del movimiento' },
+        categoria: { type: 'string', description: 'Categoría canónica nueva' },
+      },
+      required: ['transaction_id', 'categoria'],
+    },
+    resumen: ({ categoria }) => `Cambiar la categoría del movimiento a "${categoria}"`,
+    handler: (org, { transaction_id, categoria }, userId) => transactionsService.updateTransaction({
+      organization_id: org, transaction_id, patch: { category: categoria },
+      actor_user_id: userId || null,
+    }),
+    formatResult: (r) => `✅ Movimiento recategorizado a "${r.category}".`,
   },
   {
     name: 'cerrar_periodo',
