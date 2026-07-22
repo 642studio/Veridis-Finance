@@ -42,11 +42,23 @@ const TOOLS = [
       required: ['query'],
     },
     async handler(org, { query }) {
+      const q = String(query || '').slice(0, 60);
+      // Busca en el directorio de clientes, en contactos y en los receptores de
+      // facturas emitidas (que traen RFC). Une por nombre/RFC.
       const { rows } = await pool.query(
-        `SELECT id, name, rfc, email FROM finance.contacts
-          WHERE organization_id = $1 AND (name ILIKE '%'||$2||'%' OR rfc ILIKE '%'||$2||'%')
-          ORDER BY name LIMIT 10`,
-        [org, String(query || '').slice(0, 60)]
+        `SELECT DISTINCT nombre, rfc FROM (
+           SELECT COALESCE(business_name, name) AS nombre, NULL::text AS rfc
+             FROM finance.clients WHERE organization_id = $1 AND COALESCE(business_name, name) ILIKE '%'||$2||'%'
+           UNION
+           SELECT name, rfc FROM finance.contacts
+             WHERE organization_id = $1 AND (name ILIKE '%'||$2||'%' OR rfc ILIKE '%'||$2||'%')
+           UNION
+           SELECT DISTINCT receiver, receiver_rfc FROM finance.invoices
+             WHERE organization_id = $1 AND direction = 'issued'
+               AND (receiver ILIKE '%'||$2||'%' OR receiver_rfc ILIKE '%'||$2||'%')
+         ) x
+         WHERE nombre IS NOT NULL ORDER BY nombre LIMIT 12`,
+        [org, q]
       );
       return { clientes: rows };
     },
@@ -69,7 +81,7 @@ const TOOLS = [
       const start = `${year}-${String(month_desde).padStart(2, '0')}-01`;
       const endBase = `${year}-${String(month_hasta).padStart(2, '0')}-01`;
       const { rows } = await pool.query(
-        `SELECT uuid_sat, receiver, receiver_rfc, total, status, invoice_date, payment_reference
+        `SELECT id, uuid_sat, receiver, receiver_rfc, total, status, invoice_date, payment_reference
            FROM finance.invoices
           WHERE organization_id = $1 AND direction = 'issued'
             AND (receiver ILIKE '%'||$2||'%' OR receiver_rfc ILIKE '%'||$2||'%')
@@ -89,7 +101,7 @@ const TOOLS = [
         facturado: round2(facturado), cobrado: round2(cobrado), por_cobrar: round2(porCobrar),
         cfdis: rows.length,
         facturas: rows.slice(0, 25).map((r) => ({
-          uuid: r.uuid_sat, receptor: r.receiver, total: Number(r.total),
+          id: r.id, uuid: r.uuid_sat, receptor: r.receiver, total: Number(r.total),
           estatus: r.payment_reference || r.status === 'paid' ? 'cobrada' : 'pendiente',
           fecha: r.invoice_date,
         })),
@@ -116,7 +128,7 @@ const TOOLS = [
       if (direction) { params.push(direction); where += ` AND direction = $${params.length}`; }
       if (estatus) { params.push(estatus); where += ` AND status = $${params.length}`; }
       const { rows } = await pool.query(
-        `SELECT uuid_sat, emitter, receiver, total, status, invoice_date, direction
+        `SELECT id, uuid_sat, emitter, receiver, total, status, invoice_date, direction, source
            FROM finance.invoices WHERE ${where} ORDER BY invoice_date DESC LIMIT 50`, params);
       const total = rows.reduce((s, r) => s + Number(r.total || 0), 0);
       return { total_monto: Math.round(total * 100) / 100, cuenta: rows.length, facturas: rows };
