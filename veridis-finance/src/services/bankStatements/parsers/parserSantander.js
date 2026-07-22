@@ -578,6 +578,15 @@ function resolveAmountWithBalanceDelta(amount, previousBalance, nextBalance) {
     return Number(balanceDelta.toFixed(2));
   }
 
+  // Pegado texto+monto: "... mayo2 4,700.00" colapsa a "24,700.00". Firma: el
+  // monto leído TERMINA en los dígitos exactos del delta del saldo. En ese caso
+  // el delta es el monto real (verificado con EDC Santander real).
+  const aStr = normalizedAmount.toFixed(2);
+  const dStr = balanceDelta.toFixed(2);
+  if (aStr.length > dStr.length && aStr.endsWith(dStr)) {
+    return Number(balanceDelta.toFixed(2));
+  }
+
   return normalizedAmount;
 }
 

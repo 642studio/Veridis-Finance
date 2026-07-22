@@ -42,3 +42,15 @@ test('categoría base por merchant/concepto', () => {
   assert.strictEqual(deriveCategoryFrom('ADMINISTRACION RENTA MEMBRESIA', {}), 'Comisiones bancarias');
   assert.strictEqual(deriveCategoryFrom('PAGO SPEI', { payment_concept: 'Renta oficina' }), 'Renta');
 });
+
+test('monto pegado a texto ("mayo2 4,700.00" → 24,700) se corrige con el delta del saldo', () => {
+  const { parseSantanderStatement } = require('../src/services/bankStatements/parsers/parserSantander');
+  const txt = [
+    'SALDO FINAL DEL PERIODO ANTERIOR 12,625.50',
+    'FECHA FOLIO DESCRIPCION DEPOSITO RETIRO SALDO',
+    '09-JUN-2026 1786115 CARGO TRANSFERENCIA ENLACE Nomina 642 Rojas mayo24,700.00 7,925.50',
+    'TOTAL',
+  ].join('\n');
+  const r = parseSantanderStatement(txt);
+  assert.strictEqual(r.transactions[0].amount, 4700);
+});
