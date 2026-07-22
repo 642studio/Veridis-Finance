@@ -62,9 +62,9 @@ const EMPTY_FORM: ContactFormState = {
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const CONTACT_SORT_BY_OPTIONS = [
-  { value: "name", label: "Name" },
-  { value: "created_at", label: "Created" },
-  { value: "type", label: "Type" },
+  { value: "name", label: "Nombre" },
+  { value: "created_at", label: "Creación" },
+  { value: "type", label: "Tipo" },
 ] as const;
 const CONTACT_SORT_ORDER_OPTIONS = [
   { value: "asc", label: "Asc" },
@@ -140,13 +140,13 @@ function ContactModal({
         <div className="mb-4 flex items-start justify-between gap-3">
           <h3 className="font-heading text-lg font-semibold">{title}</h3>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
-            Close
+            Cerrar
           </Button>
         </div>
 
         <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
           <div className="space-y-2">
-            <Label htmlFor="contact_type">Type</Label>
+            <Label htmlFor="contact_type">Tipo</Label>
             <select
               id="contact_type"
               className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -164,7 +164,7 @@ function ContactModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contact_status">Status</Label>
+            <Label htmlFor="contact_status">Estado</Label>
             <select
               id="contact_status"
               className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -179,30 +179,30 @@ function ContactModal({
           </div>
 
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="contact_name">Name</Label>
+            <Label htmlFor="contact_name">Nombre</Label>
             <Input
               id="contact_name"
               value={form.name}
               onChange={(event) => onChange({ ...form, name: event.target.value })}
-              placeholder="Contact name"
+              placeholder="Nombre del contacto"
               required
             />
           </div>
 
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="contact_business_name">Business name</Label>
+            <Label htmlFor="contact_business_name">Razón social</Label>
             <Input
               id="contact_business_name"
               value={form.business_name}
               onChange={(event) =>
                 onChange({ ...form, business_name: event.target.value })
               }
-              placeholder="Optional"
+              placeholder="Opcional"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contact_email">Email</Label>
+            <Label htmlFor="contact_email">Correo electrónico</Label>
             <Input
               id="contact_email"
               type="email"
@@ -212,7 +212,7 @@ function ContactModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contact_phone">Phone</Label>
+            <Label htmlFor="contact_phone">Teléfono</Label>
             <Input
               id="contact_phone"
               value={form.phone}
@@ -232,29 +232,29 @@ function ContactModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contact_tags">Tags</Label>
+            <Label htmlFor="contact_tags">Etiquetas</Label>
             <Input
               id="contact_tags"
               value={form.tags}
               onChange={(event) => onChange({ ...form, tags: event.target.value })}
-              placeholder="client, key-account"
+              placeholder="cliente, cuenta-clave"
             />
           </div>
 
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="contact_notes">Notes</Label>
+            <Label htmlFor="contact_notes">Notas</Label>
             <textarea
               id="contact_notes"
               className="min-h-[100px] w-full rounded-xl border border-border bg-card px-3 py-2 text-sm"
               value={form.notes}
               onChange={(event) => onChange({ ...form, notes: event.target.value })}
-              placeholder="Optional notes"
+              placeholder="Notas opcionales"
             />
           </div>
 
           <div className="flex items-end justify-end sm:col-span-2">
             <Button type="submit" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save contact"}
+              {isSaving ? "Guardando..." : "Guardar contacto"}
             </Button>
           </div>
         </form>
@@ -324,8 +324,8 @@ export default function DashboardContactsPage() {
     } catch (error) {
       setContacts([]);
       const message =
-        error instanceof ApiClientError ? error.message : "Could not fetch contacts";
-      notify.error({ title: "Load failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudieron cargar los contactos";
+      notify.error({ title: "Error al cargar", description: message });
     } finally {
       setIsLoading(false);
     }
@@ -537,7 +537,7 @@ export default function DashboardContactsPage() {
 
     const payload = toPayload(form);
     if (!payload.name) {
-      notify.error({ title: "Validation", description: "Name is required" });
+      notify.error({ title: "Validación", description: "El nombre es obligatorio" });
       return;
     }
 
@@ -554,8 +554,8 @@ export default function DashboardContactsPage() {
         );
 
         notify.success({
-          title: "Contact updated",
-          description: "Contact changes were saved.",
+          title: "Contacto actualizado",
+          description: "Se guardaron los cambios del contacto.",
         });
       } else {
         await clientApiFetch<ApiEnvelope<Contact>>("/api/finance/contacts", {
@@ -565,8 +565,8 @@ export default function DashboardContactsPage() {
         });
 
         notify.success({
-          title: "Contact created",
-          description: "Contact added successfully.",
+          title: "Contacto creado",
+          description: "El contacto se agregó correctamente.",
         });
       }
 
@@ -574,8 +574,8 @@ export default function DashboardContactsPage() {
       closeModal();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not save contact";
-      notify.error({ title: "Save failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo guardar el contacto";
+      notify.error({ title: "Error al guardar", description: message });
     } finally {
       setIsSaving(false);
     }
@@ -589,15 +589,15 @@ export default function DashboardContactsPage() {
       });
 
       notify.success({
-        title: "Contact deactivated",
-        description: "Contact was soft deleted (status=inactive).",
+        title: "Contacto desactivado",
+        description: "El contacto se eliminó de forma lógica (status=inactive).",
       });
       await loadContacts();
       setDeletingContact(null);
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not soft delete contact";
-      notify.error({ title: "Delete failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo desactivar el contacto";
+      notify.error({ title: "Error al eliminar", description: message });
     } finally {
       setIsDeleting(false);
     }
@@ -658,8 +658,8 @@ export default function DashboardContactsPage() {
 
       if (allRows.length === 0) {
         notify.info({
-          title: "No data to export",
-          description: "Current filters returned zero contacts.",
+          title: "Sin datos para exportar",
+          description: "Los filtros actuales no arrojaron contactos.",
         });
         return;
       }
@@ -721,15 +721,15 @@ export default function DashboardContactsPage() {
       URL.revokeObjectURL(url);
 
       notify.success({
-        title: "CSV exported",
+        title: "CSV exportado",
         description: truncated
-          ? `Exported first ${allRows.length} rows (max limit reached).`
-          : `Exported ${allRows.length} contacts.`,
+          ? `Se exportaron las primeras ${allRows.length} filas (se alcanzó el límite máximo).`
+          : `Se exportaron ${allRows.length} contactos.`,
       });
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not export CSV";
-      notify.error({ title: "Export failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo exportar el CSV";
+      notify.error({ title: "Error al exportar", description: message });
     } finally {
       setIsExporting(false);
     }
@@ -744,7 +744,7 @@ export default function DashboardContactsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>Contacts</CardTitle>
+          <CardTitle>Contactos</CardTitle>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
@@ -755,25 +755,25 @@ export default function DashboardContactsPage() {
                   setPage(1);
                 }}
               />
-              Show inactive
+              Mostrar inactivos
             </label>
             <Button onClick={openCreateModal}>
               <Plus className="mr-2 h-4 w-4" />
-              Add contact
+              Agregar contacto
             </Button>
             <Button
               variant="outline"
               onClick={exportContactsCsv}
               disabled={isLoading || isExporting}
             >
-              {isExporting ? "Exporting..." : "Export CSV"}
+              {isExporting ? "Exportando..." : "Exportar CSV"}
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="mb-4 space-y-3">
             <Badge variant="secondary">
-              {activeCount}/{contacts.length} active
+              {activeCount}/{contacts.length} activos
             </Badge>
             <div className="flex flex-wrap items-center gap-2">
               <select
@@ -784,7 +784,7 @@ export default function DashboardContactsPage() {
                   setPage(1);
                 }}
               >
-                <option value="all">All types</option>
+                <option value="all">Todos los tipos</option>
                 {CONTACT_TYPE_OPTIONS.map((type) => (
                   <option key={type} value={type}>
                     {type}
@@ -797,7 +797,7 @@ export default function DashboardContactsPage() {
                   setSearchQuery(event.target.value);
                   setPage(1);
                 }}
-                placeholder="Search name, email, phone, type..."
+                placeholder="Buscar nombre, correo, teléfono, tipo..."
                 className="min-w-[260px] max-w-sm"
               />
               <select
@@ -810,7 +810,7 @@ export default function DashboardContactsPage() {
               >
                 {PAGE_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>
-                    {size} / page
+                    {size} / página
                   </option>
                 ))}
               </select>
@@ -826,7 +826,7 @@ export default function DashboardContactsPage() {
               >
                 {CONTACT_SORT_BY_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
-                    Sort: {option.label}
+                    Ordenar: {option.label}
                   </option>
                 ))}
               </select>
@@ -847,30 +847,30 @@ export default function DashboardContactsPage() {
                 ))}
               </select>
               <span className="text-xs text-muted-foreground">
-                {contacts.length} loaded
+                {contacts.length} cargados
               </span>
             </div>
           </div>
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading contacts...</p>
+            <p className="text-sm text-muted-foreground">Cargando contactos...</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Correo electrónico</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {contacts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      No contacts found.
+                      No se encontraron contactos.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -894,7 +894,7 @@ export default function DashboardContactsPage() {
                         <div className="flex justify-end gap-2">
                           <Button size="sm" variant="ghost" asChild>
                             <Link href={`/dashboard/transactions?contact_id=${contact.id}`}>
-                              Transactions
+                              Transacciones
                             </Link>
                           </Button>
                           <Button
@@ -903,7 +903,7 @@ export default function DashboardContactsPage() {
                             onClick={() => openEditModal(contact)}
                           >
                             <Edit3 className="mr-1 h-3.5 w-3.5" />
-                            Edit
+                            Editar
                           </Button>
                           <Button
                             size="sm"
@@ -912,7 +912,7 @@ export default function DashboardContactsPage() {
                             disabled={contact.status !== "active"}
                           >
                             <Trash2 className="mr-1 h-3.5 w-3.5" />
-                            Delete
+                            Eliminar
                           </Button>
                         </div>
                       </TableCell>
@@ -925,7 +925,7 @@ export default function DashboardContactsPage() {
           {!isLoading ? (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">
               <span className="text-muted-foreground">
-                Page {page} - showing {contacts.length} rows
+                Página {page} - mostrando {contacts.length} filas
               </span>
               <div className="flex items-center gap-2">
                 <Button
@@ -934,7 +934,7 @@ export default function DashboardContactsPage() {
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
                   disabled={page <= 1}
                 >
-                  Previous
+                  Anterior
                 </Button>
                 <Button
                   variant="outline"
@@ -947,7 +947,7 @@ export default function DashboardContactsPage() {
                   }}
                   disabled={!hasNextPage}
                 >
-                  Next
+                  Siguiente
                 </Button>
               </div>
             </div>
@@ -957,7 +957,7 @@ export default function DashboardContactsPage() {
 
       <ContactModal
         open={isModalOpen}
-        title={editingContact ? "Edit contact" : "Create contact"}
+        title={editingContact ? "Editar contacto" : "Crear contacto"}
         form={form}
         isSaving={isSaving}
         onClose={closeModal}
@@ -967,10 +967,10 @@ export default function DashboardContactsPage() {
 
       <ConfirmModal
         open={Boolean(deletingContact)}
-        title="Deactivate contact?"
-        description="This performs a soft delete by setting status to inactive."
-        confirmLabel="Deactivate"
-        cancelLabel="Cancel"
+        title="¿Desactivar contacto?"
+        description="Esto realiza una eliminación lógica estableciendo el estado en inactivo."
+        confirmLabel="Desactivar"
+        cancelLabel="Cancelar"
         isLoading={isDeleting}
         onCancel={() => {
           if (!isDeleting) {

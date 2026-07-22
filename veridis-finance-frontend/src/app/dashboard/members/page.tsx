@@ -114,8 +114,8 @@ export default function DashboardMembersPage() {
       setMembers(response.data);
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not fetch members";
-      notify.error({ title: "Load failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudieron cargar los miembros";
+      notify.error({ title: "Error al cargar", description: message });
     } finally {
       setIsLoading(false);
     }
@@ -161,7 +161,7 @@ export default function DashboardMembersPage() {
       const payload = toPayload(form);
 
       if (!payload.full_name) {
-        throw new Error("Full name is required");
+        throw new Error("El nombre completo es obligatorio");
       }
 
       if (editingMemberId) {
@@ -177,8 +177,8 @@ export default function DashboardMembersPage() {
         );
 
         notify.success({
-          title: "Member updated",
-          description: "Member data was updated successfully.",
+          title: "Miembro actualizado",
+          description: "Los datos del miembro se actualizaron correctamente.",
         });
       } else {
         await clientApiFetch<ApiEnvelope<Member>>("/api/finance/members", {
@@ -190,8 +190,8 @@ export default function DashboardMembersPage() {
         });
 
         notify.success({
-          title: "Member created",
-          description: "New member added to your organization.",
+          title: "Miembro creado",
+          description: "Nuevo miembro agregado a tu organización.",
         });
       }
 
@@ -203,10 +203,10 @@ export default function DashboardMembersPage() {
           ? error.message
           : error instanceof Error
             ? error.message
-            : "Could not save member";
+            : "No se pudo guardar el miembro";
 
       notify.error({
-        title: "Save failed",
+        title: "Error al guardar",
         description: message,
       });
     } finally {
@@ -230,14 +230,14 @@ export default function DashboardMembersPage() {
       });
 
       notify.success({
-        title: "Member updated",
-        description: `Member is now ${!member.active ? "active" : "inactive"}.`,
+        title: "Miembro actualizado",
+        description: `El miembro ahora está ${!member.active ? "activo" : "inactivo"}.`,
       });
       await loadMembers();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not update member";
-      notify.error({ title: "Update failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo actualizar el miembro";
+      notify.error({ title: "Error al actualizar", description: message });
     }
   };
 
@@ -252,8 +252,8 @@ export default function DashboardMembersPage() {
       );
 
       notify.success({
-        title: "Member deleted",
-        description: "Member removed successfully.",
+        title: "Miembro eliminado",
+        description: "El miembro se eliminó correctamente.",
       });
 
       if (editingMemberId === member.id) {
@@ -264,8 +264,8 @@ export default function DashboardMembersPage() {
       setDeletingMember(null);
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not delete member";
-      notify.error({ title: "Delete failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo eliminar el miembro";
+      notify.error({ title: "Error al eliminar", description: message });
     } finally {
       setIsDeleting(false);
     }
@@ -298,12 +298,12 @@ export default function DashboardMembersPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>{editingMemberId ? "Edit member" : "Create member"}</CardTitle>
+          <CardTitle>{editingMemberId ? "Editar miembro" : "Crear miembro"}</CardTitle>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="member_full_name">Full name</Label>
+              <Label htmlFor="member_full_name">Nombre completo</Label>
               <Input
                 id="member_full_name"
                 value={form.full_name}
@@ -323,12 +323,12 @@ export default function DashboardMembersPage() {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, alias: event.target.value }))
                 }
-                placeholder="Optional"
+                placeholder="Opcional"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="member_last4">Bank account last 4</Label>
+              <Label htmlFor="member_last4">Últimos 4 de la cuenta bancaria</Label>
               <Input
                 id="member_last4"
                 maxLength={4}
@@ -359,7 +359,7 @@ export default function DashboardMembersPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="member_salary">Salary estimate</Label>
+              <Label htmlFor="member_salary">Salario estimado</Label>
               <Input
                 id="member_salary"
                 type="number"
@@ -374,7 +374,7 @@ export default function DashboardMembersPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="member_active">Status</Label>
+              <Label htmlFor="member_active">Estado</Label>
               <select
                 id="member_active"
                 className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -386,18 +386,18 @@ export default function DashboardMembersPage() {
                   }))
                 }
               >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="active">Activo</option>
+                <option value="inactive">Inactivo</option>
               </select>
             </div>
 
             <div className="flex flex-wrap gap-2 sm:col-span-2">
               <Button type="submit" disabled={isSaving}>
-                {isSaving ? "Saving..." : editingMemberId ? "Update member" : "Create member"}
+                {isSaving ? "Guardando..." : editingMemberId ? "Actualizar miembro" : "Crear miembro"}
               </Button>
               {editingMemberId ? (
                 <Button type="button" variant="outline" onClick={resetForm}>
-                  Cancel edit
+                  Cancelar edición
                 </Button>
               ) : null}
             </div>
@@ -407,32 +407,32 @@ export default function DashboardMembersPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>Members</CardTitle>
+          <CardTitle>Miembros</CardTitle>
           <Badge variant="secondary">
-            {activeCount}/{members.length} active
+            {activeCount}/{members.length} activos
           </Badge>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading members...</p>
+            <p className="text-sm text-muted-foreground">Cargando miembros...</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead>Nombre</TableHead>
                   <TableHead>Alias</TableHead>
                   <TableHead>RFC</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead>Salary</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Cuenta</TableHead>
+                  <TableHead>Salario</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {members.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      No members yet.
+                      Aún no hay miembros.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -466,7 +466,7 @@ export default function DashboardMembersPage() {
                                   : `/dashboard/transactions?member_id=${member.id}`
                               }
                             >
-                              Transactions
+                              Transacciones
                             </Link>
                           </Button>
                           <Button
@@ -474,21 +474,21 @@ export default function DashboardMembersPage() {
                             variant="outline"
                             onClick={() => startEdit(member)}
                           >
-                            Edit
+                            Editar
                           </Button>
                           <Button
                             size="sm"
                             variant="secondary"
                             onClick={() => toggleActive(member)}
                           >
-                            {member.active ? "Deactivate" : "Activate"}
+                            {member.active ? "Desactivar" : "Activar"}
                           </Button>
                           <Button
                             size="sm"
                             variant="danger"
                             onClick={() => setDeletingMember(member)}
                           >
-                            Delete
+                            Eliminar
                           </Button>
                         </div>
                       </TableCell>
@@ -503,9 +503,9 @@ export default function DashboardMembersPage() {
 
       <ConfirmModal
         open={Boolean(deletingMember)}
-        title="Delete Member?"
-        description="This action cannot be undone."
-        confirmLabel="Delete"
+        title="¿Eliminar miembro?"
+        description="Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
         isLoading={isDeleting}
         onCancel={() => {
           if (!isDeleting) {

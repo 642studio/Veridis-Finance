@@ -374,8 +374,8 @@ export default function DashboardCategoriesPage() {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : "Could not delete subcategory";
-      notify.error({ title: "Delete failed", description: message });
+          : "No se pudo eliminar la subcategoría";
+      notify.error({ title: "Error al eliminar", description: message });
     } finally {
       setIsDeletingSubcategory(false);
     }
@@ -459,20 +459,20 @@ export default function DashboardCategoriesPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>Categories</CardTitle>
+          <CardTitle>Categorías</CardTitle>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input
               type="checkbox"
               checked={showInactive}
               onChange={(event) => setShowInactive(event.target.checked)}
             />
-            Show inactive
+            Mostrar inactivas
           </label>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <Badge variant="secondary">
-              {activeCategoryCount}/{categories.length} active
+              {activeCategoryCount}/{categories.length} activas
             </Badge>
             <div className="flex flex-wrap items-center gap-2">
               <Input
@@ -481,7 +481,7 @@ export default function DashboardCategoriesPage() {
                   setCategorySearchQuery(event.target.value);
                   setCategoryPage(1);
                 }}
-                placeholder="Search categories..."
+                placeholder="Buscar categorías..."
                 className="min-w-[220px] max-w-sm"
               />
               <select
@@ -494,31 +494,31 @@ export default function DashboardCategoriesPage() {
               >
                 {PAGE_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>
-                    {size} / page
+                    {size} / página
                   </option>
                 ))}
               </select>
               <span className="text-xs text-muted-foreground">
-                {filteredCategories.length} results
+                {filteredCategories.length} resultados
               </span>
             </div>
 
             {isLoadingCategories ? (
-              <p className="text-sm text-muted-foreground">Loading categories...</p>
+              <p className="text-sm text-muted-foreground">Cargando categorías...</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedCategories.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        No categories found.
+                        No se encontraron categorías.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -546,7 +546,7 @@ export default function DashboardCategoriesPage() {
                               onClick={() => editCategory(category)}
                             >
                               <Edit3 className="mr-1 h-3.5 w-3.5" />
-                              Edit
+                              Editar
                             </Button>
                             <Button
                               size="sm"
@@ -555,7 +555,7 @@ export default function DashboardCategoriesPage() {
                               disabled={!category.active}
                             >
                               <Trash2 className="mr-1 h-3.5 w-3.5" />
-                              Delete
+                              Eliminar
                             </Button>
                           </div>
                         </TableCell>
@@ -568,7 +568,7 @@ export default function DashboardCategoriesPage() {
             {!isLoadingCategories ? (
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span className="text-muted-foreground">
-                  Page {categoryPage} of {categoryTotalPages}
+                  Página {categoryPage} de {categoryTotalPages}
                 </span>
                 <div className="flex items-center gap-2">
                   <Button
@@ -579,7 +579,7 @@ export default function DashboardCategoriesPage() {
                     }
                     disabled={categoryPage <= 1}
                   >
-                    Previous
+                    Anterior
                   </Button>
                   <Button
                     variant="outline"
@@ -591,7 +591,7 @@ export default function DashboardCategoriesPage() {
                     }
                     disabled={categoryPage >= categoryTotalPages}
                   >
-                    Next
+                    Siguiente
                   </Button>
                 </div>
               </div>
@@ -600,12 +600,12 @@ export default function DashboardCategoriesPage() {
 
           <div className="space-y-4 rounded-2xl border border-border/80 p-4">
             <h3 className="font-heading text-base font-semibold">
-              {editingCategoryId ? "Edit category" : "Create category"}
+              {editingCategoryId ? "Editar categoría" : "Crear categoría"}
             </h3>
 
             <form className="grid gap-4" onSubmit={submitCategory}>
               <div className="space-y-2">
-                <Label htmlFor="category_name">Name</Label>
+                <Label htmlFor="category_name">Nombre</Label>
                 <Input
                   id="category_name"
                   value={categoryForm.name}
@@ -617,14 +617,14 @@ export default function DashboardCategoriesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category_icon">Icon</Label>
+                <Label htmlFor="category_icon">Icono</Label>
                 <Input
                   id="category_icon"
                   value={categoryForm.icon}
                   onChange={(event) =>
                     setCategoryForm((current) => ({ ...current, icon: event.target.value }))
                   }
-                  placeholder="Optional"
+                  placeholder="Opcional"
                 />
               </div>
 
@@ -636,12 +636,12 @@ export default function DashboardCategoriesPage() {
                   onChange={(event) =>
                     setCategoryForm((current) => ({ ...current, color: event.target.value }))
                   }
-                  placeholder="Optional"
+                  placeholder="Opcional"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category_active">Status</Label>
+                <Label htmlFor="category_active">Estado</Label>
                 <select
                   id="category_active"
                   className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -660,7 +660,7 @@ export default function DashboardCategoriesPage() {
 
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="submit" disabled={isSavingCategory}>
-                  {isSavingCategory ? "Saving..." : "Save category"}
+                  {isSavingCategory ? "Guardando..." : "Guardar categoría"}
                 </Button>
                 {editingCategoryId ? (
                   <Button
@@ -671,7 +671,7 @@ export default function DashboardCategoriesPage() {
                       setCategoryForm(EMPTY_CATEGORY_FORM);
                     }}
                   >
-                    Cancel
+                    Cancelar
                   </Button>
                 ) : null}
               </div>
@@ -683,13 +683,13 @@ export default function DashboardCategoriesPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            Subcategories {selectedCategory ? `for ${selectedCategory.name}` : ""}
+            Subcategorías {selectedCategory ? `de ${selectedCategory.name}` : ""}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <Badge variant="secondary">
-              {activeSubcategoryCount}/{subcategories.length} active
+              {activeSubcategoryCount}/{subcategories.length} activas
             </Badge>
             <div className="flex flex-wrap items-center gap-2">
               <Input
@@ -698,7 +698,7 @@ export default function DashboardCategoriesPage() {
                   setSubcategorySearchQuery(event.target.value);
                   setSubcategoryPage(1);
                 }}
-                placeholder="Search subcategories..."
+                placeholder="Buscar subcategorías..."
                 className="min-w-[220px] max-w-sm"
               />
               <select
@@ -711,31 +711,31 @@ export default function DashboardCategoriesPage() {
               >
                 {PAGE_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>
-                    {size} / page
+                    {size} / página
                   </option>
                 ))}
               </select>
               <span className="text-xs text-muted-foreground">
-                {filteredSubcategories.length} results
+                {filteredSubcategories.length} resultados
               </span>
             </div>
 
             {isLoadingSubcategories ? (
-              <p className="text-sm text-muted-foreground">Loading subcategories...</p>
+              <p className="text-sm text-muted-foreground">Cargando subcategorías...</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedSubcategories.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        No subcategories found.
+                        No se encontraron subcategorías.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -755,7 +755,7 @@ export default function DashboardCategoriesPage() {
                               onClick={() => editSubcategory(subcategory)}
                             >
                               <Edit3 className="mr-1 h-3.5 w-3.5" />
-                              Edit
+                              Editar
                             </Button>
                             <Button
                               size="sm"
@@ -764,7 +764,7 @@ export default function DashboardCategoriesPage() {
                               disabled={!subcategory.active}
                             >
                               <Trash2 className="mr-1 h-3.5 w-3.5" />
-                              Delete
+                              Eliminar
                             </Button>
                           </div>
                         </TableCell>
@@ -777,7 +777,7 @@ export default function DashboardCategoriesPage() {
             {!isLoadingSubcategories ? (
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span className="text-muted-foreground">
-                  Page {subcategoryPage} of {subcategoryTotalPages}
+                  Página {subcategoryPage} de {subcategoryTotalPages}
                 </span>
                 <div className="flex items-center gap-2">
                   <Button
@@ -788,7 +788,7 @@ export default function DashboardCategoriesPage() {
                     }
                     disabled={subcategoryPage <= 1}
                   >
-                    Previous
+                    Anterior
                   </Button>
                   <Button
                     variant="outline"
@@ -800,7 +800,7 @@ export default function DashboardCategoriesPage() {
                     }
                     disabled={subcategoryPage >= subcategoryTotalPages}
                   >
-                    Next
+                    Siguiente
                   </Button>
                 </div>
               </div>
@@ -809,19 +809,19 @@ export default function DashboardCategoriesPage() {
 
           <div className="space-y-4 rounded-2xl border border-border/80 p-4">
             <h3 className="font-heading text-base font-semibold">
-              {editingSubcategoryId ? "Edit subcategory" : "Create subcategory"}
+              {editingSubcategoryId ? "Editar subcategoría" : "Crear subcategoría"}
             </h3>
 
             <form className="grid gap-4" onSubmit={submitSubcategory}>
               <div className="space-y-2">
-                <Label htmlFor="subcategory_category">Category</Label>
+                <Label htmlFor="subcategory_category">Categoría</Label>
                 <select
                   id="subcategory_category"
                   className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
                   value={selectedCategoryId}
                   onChange={(event) => setSelectedCategoryId(event.target.value)}
                 >
-                  <option value="">Select category</option>
+                  <option value="">Selecciona categoría</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
@@ -831,7 +831,7 @@ export default function DashboardCategoriesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="subcategory_name">Name</Label>
+                <Label htmlFor="subcategory_name">Nombre</Label>
                 <Input
                   id="subcategory_name"
                   value={subcategoryForm.name}
@@ -846,7 +846,7 @@ export default function DashboardCategoriesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="subcategory_icon">Icon</Label>
+                <Label htmlFor="subcategory_icon">Icono</Label>
                 <Input
                   id="subcategory_icon"
                   value={subcategoryForm.icon}
@@ -856,7 +856,7 @@ export default function DashboardCategoriesPage() {
                       icon: event.target.value,
                     }))
                   }
-                  placeholder="Optional"
+                  placeholder="Opcional"
                 />
               </div>
 
@@ -871,12 +871,12 @@ export default function DashboardCategoriesPage() {
                       color: event.target.value,
                     }))
                   }
-                  placeholder="Optional"
+                  placeholder="Opcional"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="subcategory_active">Status</Label>
+                <Label htmlFor="subcategory_active">Estado</Label>
                 <select
                   id="subcategory_active"
                   className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -895,7 +895,7 @@ export default function DashboardCategoriesPage() {
 
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="submit" disabled={isSavingSubcategory || !selectedCategoryId}>
-                  {isSavingSubcategory ? "Saving..." : "Save subcategory"}
+                  {isSavingSubcategory ? "Guardando..." : "Guardar subcategoría"}
                 </Button>
                 {editingSubcategoryId ? (
                   <Button
@@ -906,7 +906,7 @@ export default function DashboardCategoriesPage() {
                       setSubcategoryForm(EMPTY_SUBCATEGORY_FORM);
                     }}
                   >
-                    Cancel
+                    Cancelar
                   </Button>
                 ) : null}
               </div>
@@ -917,10 +917,10 @@ export default function DashboardCategoriesPage() {
 
       <ConfirmModal
         open={Boolean(deletingCategory)}
-        title="Deactivate category?"
-        description="This sets category active=false."
-        confirmLabel="Deactivate"
-        cancelLabel="Cancel"
+        title="¿Desactivar categoría?"
+        description="Esto establece la categoría como active=false."
+        confirmLabel="Desactivar"
+        cancelLabel="Cancelar"
         isLoading={isDeletingCategory}
         onCancel={() => {
           if (!isDeletingCategory) {
@@ -937,10 +937,10 @@ export default function DashboardCategoriesPage() {
 
       <ConfirmModal
         open={Boolean(deletingSubcategory)}
-        title="Deactivate subcategory?"
-        description="This sets subcategory active=false."
-        confirmLabel="Deactivate"
-        cancelLabel="Cancel"
+        title="¿Desactivar subcategoría?"
+        description="Esto establece la subcategoría como active=false."
+        confirmLabel="Desactivar"
+        cancelLabel="Cancelar"
         isLoading={isDeletingSubcategory}
         onCancel={() => {
           if (!isDeletingSubcategory) {

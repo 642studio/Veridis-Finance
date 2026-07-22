@@ -34,10 +34,10 @@ import type {
 type SettingsTab = "profile" | "organization" | "ai" | "security";
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
-  { id: "profile", label: "Profile" },
-  { id: "organization", label: "Organization" },
-  { id: "ai", label: "AI Keys" },
-  { id: "security", label: "Security" },
+  { id: "profile", label: "Perfil" },
+  { id: "organization", label: "Organización" },
+  { id: "ai", label: "Claves de IA" },
+  { id: "security", label: "Seguridad" },
 ];
 
 const CURRENCY_OPTIONS = ["MXN", "USD", "EUR"] as const;
@@ -130,8 +130,8 @@ export default function DashboardSettingsPage() {
       setOrganizationForm(organizationFromAccount(response.data));
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not load account settings";
-      notify.error({ title: "Load failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo cargar la configuración de la cuenta";
+      notify.error({ title: "Error al cargar", description: message });
       setAccount(null);
     } finally {
       setIsLoading(false);
@@ -145,8 +145,8 @@ export default function DashboardSettingsPage() {
   const handleLibraryChange = (value: (typeof availableLibraries)[number]) => {
     setLibrary(value);
     notify.info({
-      title: "Notification library changed",
-      description: `Active provider: ${value}`,
+      title: "Librería de notificaciones cambiada",
+      description: `Proveedor activo: ${value}`,
     });
   };
 
@@ -160,12 +160,12 @@ export default function DashboardSettingsPage() {
     event.preventDefault();
 
     if (!profileForm.full_name.trim()) {
-      notify.error({ title: "Validation", description: "Full name is required." });
+      notify.error({ title: "Validación", description: "El nombre completo es obligatorio." });
       return;
     }
 
     if (!profileForm.email.trim()) {
-      notify.error({ title: "Validation", description: "Email is required." });
+      notify.error({ title: "Validación", description: "El correo electrónico es obligatorio." });
       return;
     }
 
@@ -186,13 +186,13 @@ export default function DashboardSettingsPage() {
       setAccount(response.data);
       setProfileForm(profileFromAccount(response.data));
       notify.success({
-        title: "Profile updated",
-        description: "Your account profile was updated.",
+        title: "Perfil actualizado",
+        description: "El perfil de tu cuenta se actualizó.",
       });
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not update profile";
-      notify.error({ title: "Update failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo actualizar el perfil";
+      notify.error({ title: "Error al actualizar", description: message });
     } finally {
       setIsSavingProfile(false);
     }
@@ -202,7 +202,7 @@ export default function DashboardSettingsPage() {
     event.preventDefault();
 
     if (!organizationForm.name.trim()) {
-      notify.error({ title: "Validation", description: "Organization name is required." });
+      notify.error({ title: "Validación", description: "El nombre de la organización es obligatorio." });
       return;
     }
 
@@ -237,15 +237,15 @@ export default function DashboardSettingsPage() {
       });
 
       notify.success({
-        title: "Organization updated",
-        description: "Organization configuration saved.",
+        title: "Organización actualizada",
+        description: "Configuración de la organización guardada.",
       });
     } catch (error) {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : "Could not update organization settings";
-      notify.error({ title: "Update failed", description: message });
+          : "No se pudo actualizar la configuración de la organización";
+      notify.error({ title: "Error al actualizar", description: message });
     } finally {
       setIsSavingOrganization(false);
     }
@@ -253,7 +253,7 @@ export default function DashboardSettingsPage() {
 
   const uploadOrganizationLogo = async () => {
     if (!logoFile) {
-      notify.error({ title: "Validation", description: "Select a logo file first." });
+      notify.error({ title: "Validación", description: "Selecciona primero un archivo de logo." });
       return;
     }
 
@@ -281,13 +281,13 @@ export default function DashboardSettingsPage() {
       setLogoFile(null);
 
       notify.success({
-        title: "Logo updated",
-        description: "Organization logo uploaded successfully.",
+        title: "Logo actualizado",
+        description: "El logo de la organización se subió correctamente.",
       });
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not upload logo";
-      notify.error({ title: "Upload failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo subir el logo";
+      notify.error({ title: "Error al subir", description: message });
     } finally {
       setIsUploadingLogo(false);
     }
@@ -297,20 +297,20 @@ export default function DashboardSettingsPage() {
     event.preventDefault();
 
     if (!passwordForm.current_password || !passwordForm.new_password) {
-      notify.error({ title: "Validation", description: "All password fields are required." });
+      notify.error({ title: "Validación", description: "Todos los campos de contraseña son obligatorios." });
       return;
     }
 
     if (passwordForm.new_password.length < 8) {
       notify.error({
-        title: "Validation",
-        description: "New password must be at least 8 characters.",
+        title: "Validación",
+        description: "La nueva contraseña debe tener al menos 8 caracteres.",
       });
       return;
     }
 
     if (passwordForm.new_password !== passwordForm.confirm_password) {
-      notify.error({ title: "Validation", description: "Password confirmation does not match." });
+      notify.error({ title: "Validación", description: "La confirmación de la contraseña no coincide." });
       return;
     }
 
@@ -332,13 +332,13 @@ export default function DashboardSettingsPage() {
       });
 
       notify.success({
-        title: "Password changed",
-        description: "Your password was updated successfully.",
+        title: "Contraseña cambiada",
+        description: "Tu contraseña se actualizó correctamente.",
       });
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not change password";
-      notify.error({ title: "Password update failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo cambiar la contraseña";
+      notify.error({ title: "Error al actualizar la contraseña", description: message });
     } finally {
       setIsChangingPassword(false);
     }
@@ -346,7 +346,7 @@ export default function DashboardSettingsPage() {
 
   const deleteAccount = async () => {
     if (!deletePassword) {
-      notify.error({ title: "Validation", description: "Enter your password to continue." });
+      notify.error({ title: "Validación", description: "Ingresa tu contraseña para continuar." });
       return;
     }
 
@@ -359,16 +359,16 @@ export default function DashboardSettingsPage() {
       });
 
       notify.success({
-        title: "Account deleted",
-        description: "Your account has been deactivated.",
+        title: "Cuenta eliminada",
+        description: "Tu cuenta ha sido desactivada.",
       });
       setIsDeleteModalOpen(false);
       setDeletePassword("");
       await logout();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not delete account";
-      notify.error({ title: "Delete failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo eliminar la cuenta";
+      notify.error({ title: "Error al eliminar", description: message });
     } finally {
       setIsDeletingAccount(false);
     }
@@ -381,9 +381,9 @@ export default function DashboardSettingsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Account Settings</CardTitle>
+          <CardTitle>Configuración de la cuenta</CardTitle>
           <CardDescription>
-            Configure your user profile, organization, AI provider access, and security.
+            Configura tu perfil de usuario, organización, acceso a proveedores de IA y seguridad.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -404,7 +404,7 @@ export default function DashboardSettingsPage() {
       {isLoading ? (
         <Card>
           <CardContent className="py-8 text-sm text-muted-foreground">
-            Loading settings...
+            Cargando configuración...
           </CardContent>
         </Card>
       ) : null}
@@ -412,13 +412,13 @@ export default function DashboardSettingsPage() {
       {!isLoading && activeTab === "profile" ? (
         <Card>
           <CardHeader>
-            <CardTitle>Profile</CardTitle>
-            <CardDescription>Update your account identity and email.</CardDescription>
+            <CardTitle>Perfil</CardTitle>
+            <CardDescription>Actualiza la identidad y el correo de tu cuenta.</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="grid gap-4 sm:grid-cols-2" onSubmit={submitProfile}>
               <div className="space-y-2">
-                <Label htmlFor="profile_full_name">Full Name</Label>
+                <Label htmlFor="profile_full_name">Nombre completo</Label>
                 <Input
                   id="profile_full_name"
                   value={profileForm.full_name}
@@ -430,7 +430,7 @@ export default function DashboardSettingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="profile_email">Email</Label>
+                <Label htmlFor="profile_email">Correo electrónico</Label>
                 <Input
                   id="profile_email"
                   type="email"
@@ -443,18 +443,18 @@ export default function DashboardSettingsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Role</Label>
+                <Label>Rol</Label>
                 <Input value={account?.user.role || "viewer"} readOnly />
               </div>
 
               <div className="space-y-2">
-                <Label>Organization</Label>
+                <Label>Organización</Label>
                 <Input value={account?.organization.name || "-"} readOnly />
               </div>
 
               <div className="sm:col-span-2">
                 <Button type="submit" disabled={isSavingProfile}>
-                  {isSavingProfile ? "Saving..." : "Save profile"}
+                  {isSavingProfile ? "Guardando..." : "Guardar perfil"}
                 </Button>
               </div>
             </form>
@@ -466,10 +466,10 @@ export default function DashboardSettingsPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Plan &amp; Subscription</CardTitle>
+              <CardTitle>Plan y suscripción</CardTitle>
               <CardDescription>
-                Your current plan and its transaction limits. Billing management is
-                not yet available in-app.
+                Tu plan actual y sus límites de transacciones. La gestión de facturación
+                aún no está disponible dentro de la app.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap items-center gap-6 text-sm">
@@ -483,7 +483,7 @@ export default function DashboardSettingsPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Status
+                  Estado
                 </p>
                 <Badge
                   variant={
@@ -497,20 +497,20 @@ export default function DashboardSettingsPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Monthly transactions
+                  Transacciones mensuales
                 </p>
                 <p className="font-medium">
                   {account?.organization.plan === "free"
-                    ? "Up to 200 / month"
-                    : "Unlimited"}
+                    ? "Hasta 200 / mes"
+                    : "Ilimitadas"}
                 </p>
               </div>
               {account?.organization.plan === "enterprise" ? (
                 <div className="space-y-1">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    API access
+                    Acceso a API
                   </p>
-                  <p className="font-medium">Enabled</p>
+                  <p className="font-medium">Habilitado</p>
                 </div>
               ) : null}
             </CardContent>
@@ -518,15 +518,15 @@ export default function DashboardSettingsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Organization</CardTitle>
+              <CardTitle>Organización</CardTitle>
               <CardDescription>
-                Update org details used across your tenant.
+                Actualiza los datos de la organización usados en todo tu tenant.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form className="grid gap-4 sm:grid-cols-2" onSubmit={submitOrganization}>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="org_name">Organization Name</Label>
+                  <Label htmlFor="org_name">Nombre de la organización</Label>
                   <Input
                     id="org_name"
                     value={organizationForm.name}
@@ -539,7 +539,7 @@ export default function DashboardSettingsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="org_currency">Currency</Label>
+                  <Label htmlFor="org_currency">Moneda</Label>
                   <select
                     id="org_currency"
                     className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -561,7 +561,7 @@ export default function DashboardSettingsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="org_timezone">Timezone</Label>
+                  <Label htmlFor="org_timezone">Zona horaria</Label>
                   <select
                     id="org_timezone"
                     className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -584,13 +584,13 @@ export default function DashboardSettingsPage() {
 
                 <div className="sm:col-span-2">
                   <Button type="submit" disabled={isSavingOrganization || !canManageOrganization}>
-                    {isSavingOrganization ? "Saving..." : "Save organization"}
+                    {isSavingOrganization ? "Guardando..." : "Guardar organización"}
                   </Button>
                 </div>
 
               {!canManageOrganization ? (
                 <p className="text-sm text-muted-foreground sm:col-span-2">
-                  Only owner/admin can update organization settings.
+                  Solo el propietario/administrador puede actualizar la configuración de la organización.
                 </p>
               ) : null}
             </form>
@@ -599,8 +599,8 @@ export default function DashboardSettingsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Organization Logo</CardTitle>
-              <CardDescription>Upload PNG, JPG, WEBP or SVG.</CardDescription>
+              <CardTitle>Logo de la organización</CardTitle>
+              <CardDescription>Sube PNG, JPG, WEBP o SVG.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {account?.organization.logo_url ? (
@@ -608,17 +608,17 @@ export default function DashboardSettingsPage() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={account.organization.logo_url}
-                    alt="Organization logo"
+                    alt="Logo de la organización"
                     className="max-h-24 w-auto rounded-md"
                   />
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No logo uploaded yet.</p>
+                <p className="text-sm text-muted-foreground">Aún no se ha subido ningún logo.</p>
               )}
 
               <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                 <div className="space-y-2">
-                  <Label htmlFor="org_logo">Logo file</Label>
+                  <Label htmlFor="org_logo">Archivo de logo</Label>
                   <Input
                     id="org_logo"
                     type="file"
@@ -635,13 +635,13 @@ export default function DashboardSettingsPage() {
                   onClick={uploadOrganizationLogo}
                   disabled={isUploadingLogo || !logoFile || !canManageOrganization}
                 >
-                  {isUploadingLogo ? "Uploading..." : "Upload logo"}
+                  {isUploadingLogo ? "Subiendo..." : "Subir logo"}
                 </Button>
               </div>
 
               {!canManageOrganization ? (
                 <p className="text-sm text-muted-foreground">
-                  Only owner/admin can upload organization logo.
+                  Solo el propietario/administrador puede subir el logo de la organización.
                 </p>
               ) : null}
             </CardContent>
@@ -653,29 +653,29 @@ export default function DashboardSettingsPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>AI Provider Keys</CardTitle>
+              <CardTitle>Claves de proveedores de IA</CardTitle>
               <CardDescription>
-                Manage provider, model, testing and usage from the dedicated AI settings page.
+                Administra el proveedor, el modelo, las pruebas y el uso desde la página dedicada de configuración de IA.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
-                Provider API keys are stored encrypted (AES-256) on the server and
-                are never exposed here. Configure and test them from the AI
-                settings page.
+                Las claves de API de los proveedores se almacenan cifradas (AES-256) en el servidor y
+                nunca se exponen aquí. Configúralas y pruébalas desde la página de configuración
+                de IA.
               </div>
 
               <Button asChild>
-                <Link href="/dashboard/settings/ai">Open AI settings</Link>
+                <Link href="/dashboard/settings/ai">Abrir configuración de IA</Link>
               </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Notification Library</CardTitle>
+              <CardTitle>Librería de notificaciones</CardTitle>
               <CardDescription>
-                Pick the active toast adapter used by this frontend.
+                Elige el adaptador de notificaciones activo que usa este frontend.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
@@ -697,15 +697,15 @@ export default function DashboardSettingsPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Change Password</CardTitle>
+              <CardTitle>Cambiar contraseña</CardTitle>
               <CardDescription>
-                Update your password securely using your current credentials.
+                Actualiza tu contraseña de forma segura usando tus credenciales actuales.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form className="grid gap-4 sm:grid-cols-2" onSubmit={changePassword}>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="current_password">Current Password</Label>
+                  <Label htmlFor="current_password">Contraseña actual</Label>
                   <Input
                     id="current_password"
                     type="password"
@@ -721,7 +721,7 @@ export default function DashboardSettingsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="new_password">New Password</Label>
+                  <Label htmlFor="new_password">Nueva contraseña</Label>
                   <Input
                     id="new_password"
                     type="password"
@@ -738,7 +738,7 @@ export default function DashboardSettingsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="confirm_password">Confirm New Password</Label>
+                  <Label htmlFor="confirm_password">Confirmar nueva contraseña</Label>
                   <Input
                     id="confirm_password"
                     type="password"
@@ -756,7 +756,7 @@ export default function DashboardSettingsPage() {
 
                 <div className="sm:col-span-2">
                   <Button type="submit" disabled={isChangingPassword}>
-                    {isChangingPassword ? "Updating..." : "Change password"}
+                    {isChangingPassword ? "Actualizando..." : "Cambiar contraseña"}
                   </Button>
                 </div>
               </form>
@@ -765,17 +765,17 @@ export default function DashboardSettingsPage() {
 
           <Card className="border-destructive/40">
             <CardHeader>
-              <CardTitle>Danger Zone</CardTitle>
+              <CardTitle>Zona de peligro</CardTitle>
               <CardDescription>
-                Delete your account from this organization. This action is irreversible.
+                Elimina tu cuenta de esta organización. Esta acción es irreversible.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3">
               <Button variant="danger" onClick={() => setIsDeleteModalOpen(true)}>
-                Delete Account
+                Eliminar cuenta
               </Button>
               <Button variant="outline" onClick={logout}>
-                Logout
+                Cerrar sesión
               </Button>
             </CardContent>
           </Card>
@@ -796,20 +796,20 @@ export default function DashboardSettingsPage() {
       >
         <DialogContent className="max-w-md border-border bg-card text-foreground">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Delete Account?</DialogTitle>
+            <DialogTitle className="text-foreground">¿Eliminar cuenta?</DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              This action cannot be undone. Enter your password to continue.
+              Esta acción no se puede deshacer. Ingresa tu contraseña para continuar.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <Label htmlFor="delete_account_password">Current Password</Label>
+            <Label htmlFor="delete_account_password">Contraseña actual</Label>
             <Input
               id="delete_account_password"
               type="password"
               value={deletePassword}
               onChange={(event) => setDeletePassword(event.target.value)}
-              placeholder="Enter current password"
+              placeholder="Ingresa la contraseña actual"
             />
           </div>
 
@@ -824,14 +824,14 @@ export default function DashboardSettingsPage() {
                 }
               }}
             >
-              Cancel
+              Cancelar
             </Button>
             <Button
               variant="danger"
               disabled={isDeletingAccount}
               onClick={deleteAccount}
             >
-              {isDeletingAccount ? "Deleting..." : "Delete"}
+              {isDeletingAccount ? "Eliminando..." : "Eliminar"}
             </Button>
           </DialogFooter>
         </DialogContent>

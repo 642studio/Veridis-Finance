@@ -65,18 +65,18 @@ type VariableDraft = {
 };
 
 const PLANNING_TABS: Array<{ id: PlanningTab; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "products", label: "Products" },
-  { id: "fixed-costs", label: "Fixed Costs" },
+  { id: "overview", label: "Resumen" },
+  { id: "products", label: "Productos" },
+  { id: "fixed-costs", label: "Costos fijos" },
   { id: "variables", label: "Variables" },
-  { id: "import", label: "Import" },
+  { id: "import", label: "Importar" },
 ];
 
 const VARIABLE_DEFINITIONS: Array<{ key: VariableKey; label: string; defaultType: VariableType }> = [
-  { key: "accounts_receivable", label: "Accounts Receivable", defaultType: "percentage" },
-  { key: "accounts_payable", label: "Accounts Payable", defaultType: "percentage" },
-  { key: "discount_rate", label: "Discount Rate", defaultType: "percentage" },
-  { key: "inventory", label: "Inventory", defaultType: "percentage" },
+  { key: "accounts_receivable", label: "Cuentas por cobrar", defaultType: "percentage" },
+  { key: "accounts_payable", label: "Cuentas por pagar", defaultType: "percentage" },
+  { key: "discount_rate", label: "Tasa de descuento", defaultType: "percentage" },
+  { key: "inventory", label: "Inventario", defaultType: "percentage" },
 ];
 
 function toNumber(value: string, fallback = 0) {
@@ -89,7 +89,7 @@ function hasMaxTwoDecimals(value: number) {
 }
 
 function displayPlanName(plan: FinancialPlan) {
-  const planName = plan.plan_name || plan.name || "Financial Plan";
+  const planName = plan.plan_name || plan.name || "Plan financiero";
   return `${planName} (${plan.start_year} - ${plan.end_year})`;
 }
 
@@ -236,8 +236,8 @@ export default function DashboardPlanningPage() {
         return response.data[0].id;
       });
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not load plans";
-      notify.error({ title: "Load failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudieron cargar los planes";
+      notify.error({ title: "Error al cargar", description: message });
       setPlans([]);
       setSelectedPlanId("");
       applyPlanToConfigInputs(null);
@@ -284,8 +284,8 @@ export default function DashboardPlanningPage() {
         applyPlanToConfigInputs(overviewResponse.data.plan);
       } catch (error) {
         const message =
-          error instanceof ApiClientError ? error.message : "Could not load plan details";
-        notify.error({ title: "Load failed", description: message });
+          error instanceof ApiClientError ? error.message : "No se pudieron cargar los detalles del plan";
+        notify.error({ title: "Error al cargar", description: message });
       } finally {
         setIsLoadingData(false);
       }
@@ -315,17 +315,17 @@ export default function DashboardPlanningPage() {
 
   const validatePercent = (value: number, min: number, max: number, field: string) => {
     if (!Number.isFinite(value)) {
-      notify.error({ title: "Validation", description: `${field} must be numeric.` });
+      notify.error({ title: "Validación", description: `${field} debe ser numérico.` });
       return false;
     }
 
     if (!hasMaxTwoDecimals(value)) {
-      notify.error({ title: "Validation", description: `${field} must use max 2 decimals.` });
+      notify.error({ title: "Validación", description: `${field} debe usar máximo 2 decimales.` });
       return false;
     }
 
     if (value < min || value > max) {
-      notify.error({ title: "Validation", description: `${field} must be between ${min} and ${max}.` });
+      notify.error({ title: "Validación", description: `${field} debe estar entre ${min} y ${max}.` });
       return false;
     }
 
@@ -334,17 +334,17 @@ export default function DashboardPlanningPage() {
 
   const validateNonNegative = (value: number, field: string) => {
     if (!Number.isFinite(value)) {
-      notify.error({ title: "Validation", description: `${field} must be numeric.` });
+      notify.error({ title: "Validación", description: `${field} debe ser numérico.` });
       return false;
     }
 
     if (!hasMaxTwoDecimals(value)) {
-      notify.error({ title: "Validation", description: `${field} must use max 2 decimals.` });
+      notify.error({ title: "Validación", description: `${field} debe usar máximo 2 decimales.` });
       return false;
     }
 
     if (value < 0) {
-      notify.error({ title: "Validation", description: `${field} cannot be negative.` });
+      notify.error({ title: "Validación", description: `${field} no puede ser negativo.` });
       return false;
     }
 
@@ -362,23 +362,23 @@ export default function DashboardPlanningPage() {
     const inflation = toNumber(inflationInput, NaN);
 
     if (!planNameInput.trim()) {
-      notify.error({ title: "Validation", description: "Plan name is required." });
+      notify.error({ title: "Validación", description: "El nombre del plan es obligatorio." });
       return;
     }
 
     if (!Number.isInteger(startYear) || !Number.isInteger(endYear) || endYear < startYear) {
       notify.error({
-        title: "Validation",
-        description: "Year range is invalid. Ensure end year is >= start year.",
+        title: "Validación",
+        description: "El rango de años no es válido. Asegúrate de que el año final sea >= al año inicial.",
       });
       return;
     }
 
-    if (!validatePercent(taxRate, 0, 100, "Tax Rate")) {
+    if (!validatePercent(taxRate, 0, 100, "La tasa de impuesto")) {
       return;
     }
 
-    if (!validatePercent(inflation, 0, 100, "Inflation")) {
+    if (!validatePercent(inflation, 0, 100, "La inflación")) {
       return;
     }
 
@@ -399,11 +399,11 @@ export default function DashboardPlanningPage() {
         }),
       });
 
-      notify.success({ title: "Plan updated", description: "Projection recalculated successfully." });
+      notify.success({ title: "Plan actualizado", description: "Proyección recalculada correctamente." });
       await Promise.all([loadPlans(), refreshCurrentPlan()]);
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not update plan";
-      notify.error({ title: "Update failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudo actualizar el plan";
+      notify.error({ title: "Error al actualizar", description: message });
     } finally {
       setIsSavingConfig(false);
     }
@@ -415,7 +415,7 @@ export default function DashboardPlanningPage() {
     }
 
     if (!newProduct.product_name.trim()) {
-      notify.error({ title: "Validation", description: "Product name is required." });
+      notify.error({ title: "Validación", description: "El nombre del producto es obligatorio." });
       return;
     }
 
@@ -424,19 +424,19 @@ export default function DashboardPlanningPage() {
     const cogsPercent = toNumber(newProduct.cogs_percent, NaN);
     const growthPercentAnnual = toNumber(newProduct.growth_percent_annual, NaN);
 
-    if (!validateNonNegative(baseUnits, "Base Units")) {
+    if (!validateNonNegative(baseUnits, "Las unidades base")) {
       return;
     }
 
-    if (!validateNonNegative(price, "Price")) {
+    if (!validateNonNegative(price, "El precio")) {
       return;
     }
 
-    if (!validatePercent(cogsPercent, 0, 100, "COGS %")) {
+    if (!validatePercent(cogsPercent, 0, 100, "El COGS %")) {
       return;
     }
 
-    if (!validatePercent(growthPercentAnnual, 0, 300, "Annual Unit Growth %")) {
+    if (!validatePercent(growthPercentAnnual, 0, 300, "El crecimiento anual de unidades %")) {
       return;
     }
 
@@ -467,11 +467,11 @@ export default function DashboardPlanningPage() {
         growth_percent_annual: "0",
       });
 
-      notify.success({ title: "Product added", description: "Projection recalculated." });
+      notify.success({ title: "Producto agregado", description: "Proyección recalculada." });
       await refreshCurrentPlan();
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not create product";
-      notify.error({ title: "Create failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudo crear el producto";
+      notify.error({ title: "Error al crear", description: message });
     } finally {
       setIsSavingProduct(false);
     }
@@ -496,23 +496,23 @@ export default function DashboardPlanningPage() {
     }
 
     if (!row.product_name.trim()) {
-      notify.error({ title: "Validation", description: "Product name is required." });
+      notify.error({ title: "Validación", description: "El nombre del producto es obligatorio." });
       return;
     }
 
-    if (!validateNonNegative(row.base_monthly_units, "Base Units")) {
+    if (!validateNonNegative(row.base_monthly_units, "Las unidades base")) {
       return;
     }
 
-    if (!validateNonNegative(row.price, "Price")) {
+    if (!validateNonNegative(row.price, "El precio")) {
       return;
     }
 
-    if (!validatePercent(row.cogs_percent, 0, 100, "COGS %")) {
+    if (!validatePercent(row.cogs_percent, 0, 100, "El COGS %")) {
       return;
     }
 
-    if (!validatePercent(row.growth_percent_annual, 0, 300, "Annual Unit Growth %")) {
+    if (!validatePercent(row.growth_percent_annual, 0, 300, "El crecimiento anual de unidades %")) {
       return;
     }
 
@@ -533,11 +533,11 @@ export default function DashboardPlanningPage() {
         }),
       });
 
-      notify.success({ title: "Product updated", description: "Projection recalculated." });
+      notify.success({ title: "Producto actualizado", description: "Proyección recalculada." });
       await refreshCurrentPlan();
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not update product";
-      notify.error({ title: "Update failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudo actualizar el producto";
+      notify.error({ title: "Error al actualizar", description: message });
     }
   };
 
@@ -551,11 +551,11 @@ export default function DashboardPlanningPage() {
         method: "DELETE",
       });
 
-      notify.success({ title: "Product removed", description: "Projection recalculated." });
+      notify.success({ title: "Producto eliminado", description: "Proyección recalculada." });
       await refreshCurrentPlan();
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not delete product";
-      notify.error({ title: "Delete failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudo eliminar el producto";
+      notify.error({ title: "Error al eliminar", description: message });
     }
   };
 
@@ -565,18 +565,18 @@ export default function DashboardPlanningPage() {
     }
 
     if (!newFixedCost.cost_name.trim()) {
-      notify.error({ title: "Validation", description: "Cost name is required." });
+      notify.error({ title: "Validación", description: "El nombre del costo es obligatorio." });
       return;
     }
 
     const monthlyAmount = toNumber(newFixedCost.monthly_amount, NaN);
     const growthPercentAnnual = toNumber(newFixedCost.growth_percent_annual, NaN);
 
-    if (!validateNonNegative(monthlyAmount, "Monthly Amount")) {
+    if (!validateNonNegative(monthlyAmount, "El monto mensual")) {
       return;
     }
 
-    if (!validatePercent(growthPercentAnnual, 0, 300, "Annual Growth %")) {
+    if (!validatePercent(growthPercentAnnual, 0, 300, "El crecimiento anual %")) {
       return;
     }
 
@@ -601,12 +601,12 @@ export default function DashboardPlanningPage() {
         growth_percent_annual: "0",
       });
 
-      notify.success({ title: "Fixed cost added", description: "Projection recalculated." });
+      notify.success({ title: "Costo fijo agregado", description: "Proyección recalculada." });
       await refreshCurrentPlan();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not create fixed cost";
-      notify.error({ title: "Create failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo crear el costo fijo";
+      notify.error({ title: "Error al crear", description: message });
     } finally {
       setIsSavingFixedCost(false);
     }
@@ -631,15 +631,15 @@ export default function DashboardPlanningPage() {
     }
 
     if (!row.cost_name.trim()) {
-      notify.error({ title: "Validation", description: "Cost name is required." });
+      notify.error({ title: "Validación", description: "El nombre del costo es obligatorio." });
       return;
     }
 
-    if (!validateNonNegative(row.monthly_amount, "Monthly Amount")) {
+    if (!validateNonNegative(row.monthly_amount, "El monto mensual")) {
       return;
     }
 
-    if (!validatePercent(row.growth_percent_annual, 0, 300, "Annual Growth %")) {
+    if (!validatePercent(row.growth_percent_annual, 0, 300, "El crecimiento anual %")) {
       return;
     }
 
@@ -658,11 +658,11 @@ export default function DashboardPlanningPage() {
         }),
       });
 
-      notify.success({ title: "Fixed cost updated", description: "Projection recalculated." });
+      notify.success({ title: "Costo fijo actualizado", description: "Proyección recalculada." });
       await refreshCurrentPlan();
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not update cost";
-      notify.error({ title: "Update failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudo actualizar el costo";
+      notify.error({ title: "Error al actualizar", description: message });
     }
   };
 
@@ -676,11 +676,11 @@ export default function DashboardPlanningPage() {
         method: "DELETE",
       });
 
-      notify.success({ title: "Fixed cost removed", description: "Projection recalculated." });
+      notify.success({ title: "Costo fijo eliminado", description: "Proyección recalculada." });
       await refreshCurrentPlan();
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not delete cost";
-      notify.error({ title: "Delete failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudo eliminar el costo";
+      notify.error({ title: "Error al eliminar", description: message });
     }
   };
 
@@ -712,40 +712,40 @@ export default function DashboardPlanningPage() {
       const valueNumber = toNumber(draft.value, NaN);
       if (!Number.isFinite(valueNumber)) {
         notify.error({
-          title: "Validation",
-          description: `${draft.key} value must be numeric.`,
+          title: "Validación",
+          description: `El valor de ${draft.key} debe ser numérico.`,
         });
         return;
       }
 
       if (!hasMaxTwoDecimals(valueNumber)) {
         notify.error({
-          title: "Validation",
-          description: `${draft.key} must use max 2 decimals.`,
+          title: "Validación",
+          description: `${draft.key} debe usar máximo 2 decimales.`,
         });
         return;
       }
 
       if (draft.type === "percentage" && (valueNumber < 0 || valueNumber > 100)) {
         notify.error({
-          title: "Validation",
-          description: `${draft.key} percentage must be between 0 and 100.`,
+          title: "Validación",
+          description: `El porcentaje de ${draft.key} debe estar entre 0 y 100.`,
         });
         return;
       }
 
       if (draft.type === "fixed" && valueNumber < 0) {
         notify.error({
-          title: "Validation",
-          description: `${draft.key} fixed value cannot be negative.`,
+          title: "Validación",
+          description: `El valor fijo de ${draft.key} no puede ser negativo.`,
         });
         return;
       }
 
       if (draft.applies_to !== "global" && !productIds.has(draft.applies_to)) {
         notify.error({
-          title: "Validation",
-          description: `${draft.key} applies_to must be global or a valid product.`,
+          title: "Validación",
+          description: `applies_to de ${draft.key} debe ser global o un producto válido.`,
         });
         return;
       }
@@ -769,11 +769,11 @@ export default function DashboardPlanningPage() {
         body: JSON.stringify({ variables: payload }),
       });
 
-      notify.success({ title: "Variables saved", description: "Projection recalculated." });
+      notify.success({ title: "Variables guardadas", description: "Proyección recalculada." });
       await refreshCurrentPlan();
     } catch (error) {
-      const message = error instanceof ApiClientError ? error.message : "Could not save variables";
-      notify.error({ title: "Save failed", description: message });
+      const message = error instanceof ApiClientError ? error.message : "No se pudieron guardar las variables";
+      notify.error({ title: "Error al guardar", description: message });
     } finally {
       setIsSavingVariables(false);
     }
@@ -783,9 +783,9 @@ export default function DashboardPlanningPage() {
     event.preventDefault();
 
     if (!importFile) {
-      const message = "Select an XLSX file first.";
+      const message = "Selecciona primero un archivo XLSX.";
       setImportError(message);
-      notify.error({ title: "Validation", description: message });
+      notify.error({ title: "Validación", description: message });
       return;
     }
 
@@ -799,10 +799,10 @@ export default function DashboardPlanningPage() {
       (startYearRaw.length > 0 && !Number.isInteger(startYear)) ||
       (endYearRaw.length > 0 && !Number.isInteger(endYear))
     ) {
-      const message = "Start Year and End Year must be valid integers when provided.";
+      const message = "El año inicial y el año final deben ser enteros válidos cuando se proporcionan.";
       setImportError(message);
       notify.error({
-        title: "Validation",
+        title: "Validación",
         description: message,
       });
       return;
@@ -813,10 +813,10 @@ export default function DashboardPlanningPage() {
       endYear !== undefined &&
       endYear < startYear
     ) {
-      const message = "End Year must be greater than or equal to Start Year.";
+      const message = "El año final debe ser mayor o igual al año inicial.";
       setImportError(message);
       notify.error({
-        title: "Validation",
+        title: "Validación",
         description: message,
       });
       return;
@@ -827,10 +827,10 @@ export default function DashboardPlanningPage() {
       endYear !== undefined &&
       endYear - startYear + 1 > 20
     ) {
-      const message = "Year range cannot exceed 20 years.";
+      const message = "El rango de años no puede exceder los 20 años.";
       setImportError(message);
       notify.error({
-        title: "Validation",
+        title: "Validación",
         description: message,
       });
       return;
@@ -865,8 +865,8 @@ export default function DashboardPlanningPage() {
       setImportResult(response.data);
       setImportError(null);
       notify.success({
-        title: "Planning imported",
-        description: `${response.data.parsed_counts.products} products loaded and projected.`,
+        title: "Planeación importada",
+        description: `${response.data.parsed_counts.products} productos cargados y proyectados.`,
       });
 
       await loadPlans();
@@ -878,9 +878,9 @@ export default function DashboardPlanningPage() {
       setActiveTab("overview");
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not import planning workbook";
+        error instanceof ApiClientError ? error.message : "No se pudo importar el libro de planeación";
       setImportError(message);
-      notify.error({ title: "Import failed", description: message });
+      notify.error({ title: "Error al importar", description: message });
     } finally {
       setIsImporting(false);
     }
@@ -890,9 +890,9 @@ export default function DashboardPlanningPage() {
     <div className="min-h-screen space-y-6 rounded-2xl bg-card/45 p-6 text-foreground">
       <Card>
         <CardHeader>
-          <CardTitle>Financial Planning Engine</CardTitle>
+          <CardTitle>Motor de planeación financiera</CardTitle>
           <CardDescription>
-            Product-driven planning with deterministic projections and editable assumptions.
+            Planeación basada en productos con proyecciones deterministas y supuestos editables.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -907,7 +907,7 @@ export default function DashboardPlanningPage() {
                 disabled={isLoadingPlans || plans.length === 0}
               >
                 {plans.length === 0 ? (
-                  <option value="">No plans yet</option>
+                  <option value="">Aún no hay planes</option>
                 ) : (
                   plans.map((plan) => (
                     <option key={plan.id} value={plan.id}>
@@ -921,10 +921,10 @@ export default function DashboardPlanningPage() {
             <div className="flex items-end gap-2">
               <Button variant="outline" onClick={loadPlans} disabled={isLoadingPlans}>
                 <RefreshCw className="mr-2 h-4 w-4" />
-                {isLoadingPlans ? "Refreshing..." : "Refresh"}
+                {isLoadingPlans ? "Actualizando..." : "Actualizar"}
               </Button>
               <Button variant="outline" onClick={refreshCurrentPlan} disabled={!selectedPlanId}>
-                Reload data
+                Recargar datos
               </Button>
             </div>
           </div>
@@ -946,14 +946,14 @@ export default function DashboardPlanningPage() {
       {selectedPlan ? (
         <Card>
           <CardHeader>
-            <CardTitle>Plan Configuration</CardTitle>
+            <CardTitle>Configuración del plan</CardTitle>
             <CardDescription>
-              Update core settings. Projections recalculate after every save.
+              Actualiza la configuración principal. Las proyecciones se recalculan después de cada guardado.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-6">
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="plan_name">Plan Name</Label>
+              <Label htmlFor="plan_name">Nombre del plan</Label>
               <Input
                 id="plan_name"
                 value={planNameInput}
@@ -961,7 +961,7 @@ export default function DashboardPlanningPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="plan_start_year">Start Year</Label>
+              <Label htmlFor="plan_start_year">Año inicial</Label>
               <Input
                 id="plan_start_year"
                 type="number"
@@ -970,7 +970,7 @@ export default function DashboardPlanningPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="plan_end_year">End Year</Label>
+              <Label htmlFor="plan_end_year">Año final</Label>
               <Input
                 id="plan_end_year"
                 type="number"
@@ -979,7 +979,7 @@ export default function DashboardPlanningPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="plan_tax_rate">Tax Rate %</Label>
+              <Label htmlFor="plan_tax_rate">Tasa de impuesto %</Label>
               <Input
                 id="plan_tax_rate"
                 type="number"
@@ -988,7 +988,7 @@ export default function DashboardPlanningPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="plan_inflation">Inflation %</Label>
+              <Label htmlFor="plan_inflation">Inflación %</Label>
               <Input
                 id="plan_inflation"
                 type="number"
@@ -999,7 +999,7 @@ export default function DashboardPlanningPage() {
             <div className="md:col-span-6">
               <Button onClick={handleSaveConfig} disabled={isSavingConfig || isLoadingData}>
                 <Save className="mr-2 h-4 w-4" />
-                {isSavingConfig ? "Saving..." : "Save Configuration"}
+                {isSavingConfig ? "Guardando..." : "Guardar configuración"}
               </Button>
             </div>
           </CardContent>
@@ -1011,25 +1011,25 @@ export default function DashboardPlanningPage() {
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Revenue</CardDescription>
+                <CardDescription>Ingresos totales</CardDescription>
                 <CardTitle className="text-2xl">{formatCurrency(summary?.total_revenue || 0)}</CardTitle>
               </CardHeader>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Cost</CardDescription>
+                <CardDescription>Costo total</CardDescription>
                 <CardTitle className="text-2xl">{formatCurrency(summary?.total_cost || 0)}</CardTitle>
               </CardHeader>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Net Profit</CardDescription>
+                <CardDescription>Utilidad neta total</CardDescription>
                 <CardTitle className="text-2xl">{formatCurrency(summary?.total_net_profit || 0)}</CardTitle>
               </CardHeader>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total Cashflow</CardDescription>
+                <CardDescription>Flujo de efectivo total</CardDescription>
                 <CardTitle className="text-2xl">{formatCurrency(summary?.total_cashflow || 0)}</CardTitle>
               </CardHeader>
             </Card>
@@ -1098,25 +1098,25 @@ export default function DashboardPlanningPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Projected Years</CardTitle>
-              <CardDescription>Revenue, gross profit, net profit and cashflow.</CardDescription>
+              <CardTitle>Años proyectados</CardTitle>
+              <CardDescription>Ingresos, utilidad bruta, utilidad neta y flujo de efectivo.</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Year</TableHead>
-                    <TableHead>Revenue</TableHead>
-                    <TableHead>Gross Profit</TableHead>
-                    <TableHead>Net Profit</TableHead>
-                    <TableHead>Cashflow</TableHead>
+                    <TableHead>Año</TableHead>
+                    <TableHead>Ingresos</TableHead>
+                    <TableHead>Utilidad bruta</TableHead>
+                    <TableHead>Utilidad neta</TableHead>
+                    <TableHead>Flujo de efectivo</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {chartRows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        No data available
+                        Sin datos disponibles
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -1142,15 +1142,15 @@ export default function DashboardPlanningPage() {
       {activeTab === "products" ? (
         <Card>
           <CardHeader>
-            <CardTitle>Products and Services</CardTitle>
+            <CardTitle>Productos y servicios</CardTitle>
             <CardDescription>
-              Growth affects unit volume only. COGS is applied as percentage of revenue.
+              El crecimiento afecta solo el volumen de unidades. El COGS se aplica como porcentaje de los ingresos.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 rounded-xl border border-border bg-card/40 p-4 md:grid-cols-7">
               <Input
-                placeholder="Product name"
+                placeholder="Nombre del producto"
                 value={newProduct.product_name}
                 onChange={(event) =>
                   setNewProduct((current) => ({ ...current, product_name: event.target.value }))
@@ -1158,7 +1158,7 @@ export default function DashboardPlanningPage() {
                 className="md:col-span-2"
               />
               <Input
-                placeholder="Category"
+                placeholder="Categoría"
                 value={newProduct.category}
                 onChange={(event) =>
                   setNewProduct((current) => ({ ...current, category: event.target.value }))
@@ -1166,7 +1166,7 @@ export default function DashboardPlanningPage() {
               />
               <Input
                 type="number"
-                placeholder="Base Units"
+                placeholder="Unidades base"
                 value={newProduct.base_monthly_units}
                 onChange={(event) =>
                   setNewProduct((current) => ({ ...current, base_monthly_units: event.target.value }))
@@ -1174,7 +1174,7 @@ export default function DashboardPlanningPage() {
               />
               <Input
                 type="number"
-                placeholder="Price"
+                placeholder="Precio"
                 value={newProduct.price}
                 onChange={(event) =>
                   setNewProduct((current) => ({ ...current, price: event.target.value }))
@@ -1190,7 +1190,7 @@ export default function DashboardPlanningPage() {
               />
               <Input
                 type="number"
-                placeholder="Annual Unit Growth %"
+                placeholder="Crecimiento anual de unidades %"
                 value={newProduct.growth_percent_annual}
                 onChange={(event) =>
                   setNewProduct((current) => ({ ...current, growth_percent_annual: event.target.value }))
@@ -1199,7 +1199,7 @@ export default function DashboardPlanningPage() {
               <div className="md:col-span-7">
                 <Button onClick={handleCreateProduct} disabled={isSavingProduct}>
                   <Plus className="mr-2 h-4 w-4" />
-                  {isSavingProduct ? "Adding..." : "Add Product"}
+                  {isSavingProduct ? "Agregando..." : "Agregar producto"}
                 </Button>
               </div>
             </div>
@@ -1207,20 +1207,20 @@ export default function DashboardPlanningPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Base Units</TableHead>
-                  <TableHead>Price</TableHead>
+                  <TableHead>Producto</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Unidades base</TableHead>
+                  <TableHead>Precio</TableHead>
                   <TableHead>COGS %</TableHead>
-                  <TableHead>Annual Unit Growth %</TableHead>
-                  <TableHead className="w-[180px]">Actions</TableHead>
+                  <TableHead>Crecimiento anual de unidades %</TableHead>
+                  <TableHead className="w-[180px]">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(products?.rows || []).length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      No products configured
+                      No hay productos configurados
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -1290,14 +1290,14 @@ export default function DashboardPlanningPage() {
                       </TableCell>
                       <TableCell className="space-x-2">
                         <Button size="sm" variant="outline" onClick={() => handleSaveProductRow(row)}>
-                          <Save className="mr-1 h-4 w-4" /> Save
+                          <Save className="mr-1 h-4 w-4" /> Guardar
                         </Button>
                         <Button
                           size="sm"
                           variant="danger"
                           onClick={() => handleDeleteProduct(row.id)}
                         >
-                          <Trash2 className="mr-1 h-4 w-4" /> Delete
+                          <Trash2 className="mr-1 h-4 w-4" /> Eliminar
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -1312,15 +1312,15 @@ export default function DashboardPlanningPage() {
       {activeTab === "fixed-costs" ? (
         <Card>
           <CardHeader>
-            <CardTitle>Fixed Costs</CardTitle>
+            <CardTitle>Costos fijos</CardTitle>
             <CardDescription>
-              Fixed costs can include own growth, and are also inflation-adjusted in projections.
+              Los costos fijos pueden incluir su propio crecimiento y también se ajustan por inflación en las proyecciones.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 rounded-xl border border-border bg-card/40 p-4 md:grid-cols-4">
               <Input
-                placeholder="Cost name"
+                placeholder="Nombre del costo"
                 value={newFixedCost.cost_name}
                 onChange={(event) =>
                   setNewFixedCost((current) => ({ ...current, cost_name: event.target.value }))
@@ -1328,7 +1328,7 @@ export default function DashboardPlanningPage() {
               />
               <Input
                 type="number"
-                placeholder="Monthly amount"
+                placeholder="Monto mensual"
                 value={newFixedCost.monthly_amount}
                 onChange={(event) =>
                   setNewFixedCost((current) => ({ ...current, monthly_amount: event.target.value }))
@@ -1336,7 +1336,7 @@ export default function DashboardPlanningPage() {
               />
               <Input
                 type="number"
-                placeholder="Annual growth %"
+                placeholder="Crecimiento anual %"
                 value={newFixedCost.growth_percent_annual}
                 onChange={(event) =>
                   setNewFixedCost((current) => ({
@@ -1347,24 +1347,24 @@ export default function DashboardPlanningPage() {
               />
               <Button onClick={handleCreateFixedCost} disabled={isSavingFixedCost}>
                 <Plus className="mr-2 h-4 w-4" />
-                {isSavingFixedCost ? "Adding..." : "Add Cost"}
+                {isSavingFixedCost ? "Agregando..." : "Agregar costo"}
               </Button>
             </div>
 
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Cost</TableHead>
-                  <TableHead>Monthly Amount</TableHead>
-                  <TableHead>Annual Growth %</TableHead>
-                  <TableHead className="w-[180px]">Actions</TableHead>
+                  <TableHead>Costo</TableHead>
+                  <TableHead>Monto mensual</TableHead>
+                  <TableHead>Crecimiento anual %</TableHead>
+                  <TableHead className="w-[180px]">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(fixedCosts?.rows || []).length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      No fixed costs configured
+                      No hay costos fijos configurados
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -1403,14 +1403,14 @@ export default function DashboardPlanningPage() {
                       </TableCell>
                       <TableCell className="space-x-2">
                         <Button size="sm" variant="outline" onClick={() => handleSaveFixedCostRow(row)}>
-                          <Save className="mr-1 h-4 w-4" /> Save
+                          <Save className="mr-1 h-4 w-4" /> Guardar
                         </Button>
                         <Button
                           size="sm"
                           variant="danger"
                           onClick={() => handleDeleteFixedCost(row.id)}
                         >
-                          <Trash2 className="mr-1 h-4 w-4" /> Delete
+                          <Trash2 className="mr-1 h-4 w-4" /> Eliminar
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -1425,27 +1425,27 @@ export default function DashboardPlanningPage() {
       {activeTab === "variables" ? (
         <Card>
           <CardHeader>
-            <CardTitle>Working Capital Variables</CardTitle>
+            <CardTitle>Variables de capital de trabajo</CardTitle>
             <CardDescription>
-              Structured assumptions only: accounts_receivable, accounts_payable, discount_rate, inventory.
+              Solo supuestos estructurados: accounts_receivable, accounts_payable, discount_rate, inventory.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
               <Button onClick={handleSaveVariables} disabled={isSavingVariables}>
                 <Save className="mr-2 h-4 w-4" />
-                {isSavingVariables ? "Saving..." : "Save Variables"}
+                {isSavingVariables ? "Guardando..." : "Guardar variables"}
               </Button>
             </div>
 
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Enabled</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Value</TableHead>
-                  <TableHead>Applies To</TableHead>
+                  <TableHead>Habilitado</TableHead>
+                  <TableHead>Clave</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Valor</TableHead>
+                  <TableHead>Aplica a</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1509,7 +1509,7 @@ export default function DashboardPlanningPage() {
             </Table>
 
             <div className="text-sm text-muted-foreground">
-              {variables?.rows?.length || 0} persisted structured variables for this plan.
+              {variables?.rows?.length || 0} variables estructuradas persistidas para este plan.
             </div>
           </CardContent>
         </Card>
@@ -1537,7 +1537,7 @@ export default function DashboardPlanningPage() {
             <form onSubmit={handleImport} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2 md:col-span-3">
-                  <Label htmlFor="planning_file">Template (.xlsx)</Label>
+                  <Label htmlFor="planning_file">Plantilla (.xlsx)</Label>
                   <Input
                     id="planning_file"
                     type="file"
@@ -1551,7 +1551,7 @@ export default function DashboardPlanningPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="import_plan_name">Override Plan Name (optional)</Label>
+                  <Label htmlFor="import_plan_name">Reemplazar nombre del plan (opcional)</Label>
                   <Input
                     id="import_plan_name"
                     value={importPlanName}
@@ -1560,7 +1560,7 @@ export default function DashboardPlanningPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="import_start_year">Start Year (optional override)</Label>
+                  <Label htmlFor="import_start_year">Año inicial (reemplazo opcional)</Label>
                   <Input
                     id="import_start_year"
                     type="number"
@@ -1571,7 +1571,7 @@ export default function DashboardPlanningPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="import_end_year">End Year (optional override)</Label>
+                  <Label htmlFor="import_end_year">Año final (reemplazo opcional)</Label>
                   <Input
                     id="import_end_year"
                     type="number"
@@ -1586,7 +1586,7 @@ export default function DashboardPlanningPage() {
                 type="submit"
                 disabled={isImporting || !importFile}
               >
-                {isImporting ? "Importing..." : "Import Workbook"}
+                {isImporting ? "Importando..." : "Importar libro"}
               </Button>
             </form>
 
@@ -1598,11 +1598,11 @@ export default function DashboardPlanningPage() {
 
             {importResult ? (
               <div className="mt-6 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4 text-sm">
-                <div className="font-medium text-emerald-300">Import completed</div>
-                <div className="mt-2 text-emerald-200/90">Plan ID: {importResult.plan_id}</div>
-                <div className="text-emerald-200/90">Years: {importResult.years.join(", ")}</div>
-                <div className="text-emerald-200/90">Products parsed: {importResult.parsed_counts.products}</div>
-                <div className="text-emerald-200/90">Fixed costs parsed: {importResult.parsed_counts.fixed_costs}</div>
+                <div className="font-medium text-emerald-300">Importación completada</div>
+                <div className="mt-2 text-emerald-200/90">ID del plan: {importResult.plan_id}</div>
+                <div className="text-emerald-200/90">Años: {importResult.years.join(", ")}</div>
+                <div className="text-emerald-200/90">Productos procesados: {importResult.parsed_counts.products}</div>
+                <div className="text-emerald-200/90">Costos fijos procesados: {importResult.parsed_counts.fixed_costs}</div>
               </div>
             ) : null}
           </CardContent>
@@ -1611,7 +1611,7 @@ export default function DashboardPlanningPage() {
 
       {isLoadingData ? (
         <Card>
-          <CardContent className="py-8 text-sm text-muted-foreground">Loading plan data...</CardContent>
+          <CardContent className="py-8 text-sm text-muted-foreground">Cargando datos del plan...</CardContent>
         </Card>
       ) : null}
     </div>
