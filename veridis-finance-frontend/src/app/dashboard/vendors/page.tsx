@@ -187,6 +187,7 @@ export default function DashboardVendorsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [form, setForm] = useState<VendorFormState>(EMPTY_FORM);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const loadContacts = useCallback(async () => {
     try {
@@ -359,6 +360,28 @@ export default function DashboardVendorsPage() {
     }
   };
 
+  const runSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await clientApiFetch<ApiEnvelope<{ vendors_created: number; emisores: number }>>(
+        "/api/finance/vendors/sync",
+        { method: "POST" }
+      );
+      notify.success({
+        title: "Proveedores sincronizados",
+        description: `${res.data.vendors_created} proveedor(es) nuevos de ${res.data.emisores} emisores de CFDI.`,
+      });
+      await loadVendors();
+    } catch (error) {
+      notify.error({
+        title: "No se pudo sincronizar",
+        description: error instanceof ApiClientError ? error.message : "Intenta de nuevo.",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const activeCount = useMemo(
     () => vendors.filter((vendor) => vendor.active).length,
     [vendors]
@@ -382,7 +405,12 @@ export default function DashboardVendorsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>Vendors</CardTitle>
+          <div>
+            <CardTitle>Proveedores</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              A quién le pagas (Meta, Gini, Amazon…). Se siembran de tus CFDIs recibidos.
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
@@ -390,11 +418,14 @@ export default function DashboardVendorsPage() {
                 checked={showInactive}
                 onChange={(event) => setShowInactive(event.target.checked)}
               />
-              Show inactive
+              Ver inactivos
             </label>
+            <Button variant="outline" onClick={runSync} disabled={isSyncing}>
+              {isSyncing ? "Sincronizando…" : "Sincronizar desde CFDIs"}
+            </Button>
             <Button onClick={openCreateModal}>
               <Plus className="mr-2 h-4 w-4" />
-              Add vendor
+              Agregar proveedor
             </Button>
           </div>
         </CardHeader>

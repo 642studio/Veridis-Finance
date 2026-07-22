@@ -343,6 +343,11 @@ const NO_CFDI_EXPENSE_CATEGORIES = {
 function noRequiereFactura(descripcion, concepto, categoria, type) {
   const cat = String(categoria || '');
   if (cat === 'Traspaso interno') return 'traspaso';
+  // Consumo/compra en el EXTRANJERO: no existe CFDI mexicano posible (Adobe,
+  // Supabase, Google Cloud US…). Se deduce con el comprobante extranjero aparte.
+  if (type !== 'income' && /consumo internacional|moneda extranjera/i.test(String(descripcion || ''))) {
+    return 'extranjero';
+  }
   // Solo egresos: por categoría canónica (fuente confiable tras la limpieza).
   if (type !== 'income' && Object.prototype.hasOwnProperty.call(NO_CFDI_EXPENSE_CATEGORIES, cat)) {
     return NO_CFDI_EXPENSE_CATEGORIES[cat];
