@@ -275,10 +275,25 @@ async function updateInvoiceStatus(request, reply) {
   reply.send({ data: updated });
 }
 
+async function cancelInvoice(request, reply) {
+  const params = invoiceParamsSchema.parse(request.params || {});
+  const organizationId = resolveOrganizationId(request);
+  const cancelled = await invoicesService.cancelInvoice({
+    organization_id: organizationId,
+    invoice_id: params.id,
+  });
+  request.log.info(
+    { source: 'recibo_cancel', organization_id: organizationId, invoice_id: cancelled.id },
+    'Recibo cancelado'
+  );
+  reply.send({ data: cancelled });
+}
+
 module.exports = {
   listInvoices,
   createInvoice,
   uploadInvoice,
   uploadInvoicesBulk,
   updateInvoiceStatus,
+  cancelInvoice,
 };

@@ -320,6 +320,30 @@ export default function DashboardInvoicesPage() {
     [loadInvoices, notify]
   );
 
+  const cancelRecibo = useCallback(
+    async (invoice: Invoice) => {
+      setStatusUpdatingId(invoice.id);
+      try {
+        await clientApiFetch<ApiEnvelope<Invoice>>(
+          `/api/finance/invoices/${invoice.id}/cancel`,
+          { method: "POST" }
+        );
+        await loadInvoices();
+        notify.success({
+          title: "Recibo cancelado",
+          description: "Sale de la cartera. Si necesitas CFDI, emítelo desde CFDI.",
+        });
+      } catch (error) {
+        const message =
+          error instanceof ApiClientError ? error.message : "No se pudo cancelar el recibo";
+        notify.error({ title: "Error al cancelar", description: message });
+      } finally {
+        setStatusUpdatingId(null);
+      }
+    },
+    [loadInvoices, notify]
+  );
+
   const columns = useMemo(
     () => [
       {
@@ -363,8 +387,20 @@ export default function DashboardInvoicesPage() {
         key: "status",
         header: "Estatus",
         render: (row: Invoice) => (
-          <Badge variant={row.status === "paid" ? "success" : "outline"}>
-            {row.status === "paid" ? "Conciliada / pagada" : "Pendiente"}
+          <Badge
+            variant={
+              row.status === "paid"
+                ? "success"
+                : row.status === "cancelled"
+                  ? "secondary"
+                  : "outline"
+            }
+          >
+            {row.status === "paid"
+              ? "Conciliada / pagada"
+              : row.status === "cancelled"
+                ? "Cancelado"
+                : "Pendiente"}
           </Badge>
         ),
       },
@@ -413,34 +449,53 @@ export default function DashboardInvoicesPage() {
         render: (row: Invoice) =>
           !canWrite ? (
             <span className="text-xs text-muted-foreground">—</span>
-          ) : row.status === "pending" ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setMarkPaidInvoice(row);
-                setPaymentMethod("transferencia");
-                setPaymentReference("");
-              }}
-              disabled={statusUpdatingId === row.id}
-            >
-              Marcar pagada
-            </Button>
+          ) : row.status === "cancelled" ? (
+            <span className="text-xs text-muted-foreground">Cancelado</span>
           ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                void updateInvoiceStatus(row, "pending");
-              }}
-              disabled={statusUpdatingId === row.id}
-            >
-              Reabrir
-            </Button>
+            <div className="flex items-center gap-2">
+              {row.status === "pending" ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setMarkPaidInvoice(row);
+                    setPaymentMethod("transferencia");
+                    setPaymentReference("");
+                  }}
+                  disabled={statusUpdatingId === row.id}
+                >
+                  Marcar pagada
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    void updateInvoiceStatus(row, "pending");
+                  }}
+                  disabled={statusUpdatingId === row.id}
+                >
+                  Reabrir
+                </Button>
+              )}
+              {row.source === "crm" ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-rose-600"
+                  onClick={() => {
+                    void cancelRecibo(row);
+                  }}
+                  disabled={statusUpdatingId === row.id}
+                >
+                  Cancelar recibo
+                </Button>
+              ) : null}
+            </div>
           ),
       },
     ],
-    [statusUpdatingId, updateInvoiceStatus, canWrite]
+    [statusUpdatingId, updateInvoiceStatus, cancelRecibo, canWrite]
   );
 
   return (
@@ -450,10 +505,11 @@ export default function DashboardInvoicesPage() {
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle>Libro de facturas</CardTitle>
+            <CardTitle>Recibos y comprobantes</CardTitle>
             <CardDescription>
-              Todas tus facturas para conciliar: del CRM, del SAT (Descarga Masiva), XML subidos y
-              CFDI timbrados. Este libro <strong>no emite</strong> comprobantes fiscales.
+              Recibos del CRM (no todos requieren CFDI), del SAT (Descarga Masiva), XML subidos y
+              CFDI timbrados. Puedes <strong>cancelar recibos del CRM</strong> aquí; los CFDI
+              timbrados se cancelan ante el SAT desde la sección CFDI.
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">

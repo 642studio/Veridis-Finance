@@ -4,6 +4,7 @@ const {
   uploadInvoice,
   uploadInvoicesBulk,
   updateInvoiceStatus,
+  cancelInvoice,
 } = require('../controllers/invoicesController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -50,6 +51,15 @@ async function invoicesRoutes(app) {
       preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])],
     },
     updateInvoiceStatus
+  );
+
+  // Cancelar un RECIBO (CRM). Los CFDI timbrados se cancelan ante el SAT.
+  app.post(
+    '/invoices/:id/cancel',
+    {
+      preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN, ROLES.OPS])],
+    },
+    cancelInvoice
   );
 }
 

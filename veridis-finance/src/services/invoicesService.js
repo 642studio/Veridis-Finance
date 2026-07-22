@@ -352,11 +352,46 @@ async function updateInvoiceStatus({
   return rows[0];
 }
 
+/**
+ * Cancela un RECIBO (los del CRM que no requieren CFDI). Cancelación LOCAL:
+ * marca status='cancelled'. NO cancela CFDIs timbrados — eso pasa por el SAT
+ * (POST /cfdi/:id/cancel). Si el recibo tiene UUID SAT real y no es de fuente
+ * 'crm', se rechaza para que el usuario use el flujo fiscal correcto.
+ */
+async function cancelInvoice({ organization_id, invoice_id }) {
+  const { rows: current } = await pool.query(
+    `SELECT id, source, uuid_sat, sat_estado FROM finance.invoices
+      WHERE organization_id = $1 AND id = $2`,
+    [organization_id, invoice_id]
+  );
+  if (!current[0]) {
+    const error = new Error(`Invoice not found: ${invoice_id}`);
+    error.statusCode = 404;
+    throw error;
+  }
+  // Un CFDI timbrado (no-CRM) debe cancelarse ante el SAT, no localmente.
+  if (current[0].source !== 'crm') {
+    const error = new Error('Este comprobante es un CFDI fiscal: cancélalo desde CFDI (ante el SAT), no como recibo.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const { rows } = await pool.query(
+    `UPDATE finance.invoices
+        SET status = 'cancelled'::finance.invoice_status,
+            payment_reference = NULL, paid_at = NULL, updated_at = now()
+      WHERE organization_id = $1 AND id = $2
+      RETURNING id, status, receiver, total`,
+    [organization_id, invoice_id]
+  );
+  return rows[0];
+}
+
 module.exports = {
   createInvoice,
   upsertFromCfdi,
   listInvoices,
   findInvoiceByUuid,
   updateInvoiceStatus,
+  cancelInvoice,
   normalizeUuidSat,
 };

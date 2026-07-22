@@ -150,6 +150,7 @@ async function receivablesByClient({ organizationId }) {
        LEFT JOIN cli c ON c.key = lower(trim(i.receiver))
       WHERE i.organization_id = $1 AND i.direction = 'issued'
         AND COALESCE(i.sat_estado, '') <> 'Cancelado'
+        AND i.status <> 'cancelled'
       GROUP BY 1, 2
       ORDER BY por_cobrar DESC`,
     [organizationId]
