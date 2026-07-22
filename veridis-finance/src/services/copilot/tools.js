@@ -14,6 +14,10 @@ const ivaFlow = require('../ivaFlowService');
 const efos = require('../efosService');
 const deducibilidad = require('../deducibilidadService');
 const reconciliation = require('../reconciliationService');
+const autoPoliza = require('../autoPolizaService');
+const bankPoliza = require('../bankPolizaService');
+const fixedAssets = require('../fixedAssetsService');
+const cierre = require('../cierreService');
 
 const periodProps = {
   year: { type: 'integer', description: 'Año, p.ej. 2026' },
@@ -180,17 +184,87 @@ const TOOLS = [
   },
 ];
 
-const TOOL_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
+/**
+ * Herramientas TRANSACCIONALES (write: true). El loop del copiloto NUNCA las
+ * ejecuta directo: devuelve una acción pendiente que el usuario confirma en la
+ * interfaz; solo entonces el backend corre el handler (con rol de escritura) y
+ * lo registra en la bitácora. Todas reutilizan servicios idempotentes.
+ *
+ * Cada una define:
+ *  - resumen(input): texto de la tarjeta de confirmación.
+ *  - formatResult(result): resumen humano del resultado (determinista, sin IA).
+ */
+const WRITE_TOOLS = [
+  {
+    name: 'generar_polizas_cfdi',
+    description: 'ACCIÓN (requiere confirmación del usuario): genera las pólizas contables del periodo desde los CFDIs (idempotente, no duplica).',
+    write: true,
+    input_schema: { type: 'object', properties: periodProps, required: ['year', 'month'] },
+    resumen: ({ year, month }) => `Generar pólizas contables desde los CFDIs de ${month}/${year}`,
+    handler: (org, { year, month }, userId) => autoPoliza.generateForPeriod(org, { year, month, createdBy: userId }),
+    formatResult: (r) => `✅ Pólizas desde CFDIs: ${r.posted} nueva(s), ${r.skipped} ya existían, de ${r.invoices} CFDI(s).${r.errors?.length ? ` ⚠️ ${r.errors.length} con error.` : ''}`,
+  },
+  {
+    name: 'generar_polizas_flujo',
+    description: 'ACCIÓN (requiere confirmación): genera las pólizas de cobro/pago (flujo) de los movimientos bancarios ya conciliados del periodo.',
+    write: true,
+    input_schema: { type: 'object', properties: periodProps, required: ['year', 'month'] },
+    resumen: ({ year, month }) => `Generar pólizas de flujo (cobro/pago) de ${month}/${year}`,
+    handler: (org, { year, month }, userId) => bankPoliza.generateForPeriod(org, { year, month, createdBy: userId }),
+    formatResult: (r) => `✅ Pólizas de flujo: ${r.posted} nueva(s), ${r.skipped} ya existían, de ${r.conciliados} movimiento(s) conciliado(s).`,
+  },
+  {
+    name: 'conciliar_automaticamente',
+    description: 'ACCIÓN (requiere confirmación): corre la conciliación automática banco↔CFDI (solo casa matches inequívocos de alta confianza).',
+    write: true,
+    input_schema: { type: 'object', properties: {}, required: [] },
+    resumen: () => 'Correr la conciliación automática banco ↔ CFDI',
+    handler: (org) => reconciliation.autoReconcile({ organization_id: org, max_transactions: 200 }),
+    formatResult: (r) => `✅ Conciliación automática: ${r.matched} conciliado(s) de ${r.scanned} revisados; ${r.ambiguous} ambiguos quedan para revisión manual.`,
+  },
+  {
+    name: 'depreciar_activos',
+    description: 'ACCIÓN (requiere confirmación): registra la depreciación mensual de los activos fijos del periodo (línea recta, idempotente).',
+    write: true,
+    input_schema: { type: 'object', properties: periodProps, required: ['year', 'month'] },
+    resumen: ({ year, month }) => `Registrar la depreciación de activos fijos de ${month}/${year}`,
+    handler: (org, { year, month }, userId) => fixedAssets.runDepreciation(org, { year, month, createdBy: userId }),
+    formatResult: (r) => `✅ Depreciación: ${r.posted} póliza(s) nueva(s) de ${r.assets} activo(s); ${r.skipped} sin depreciación o ya registradas.`,
+  },
+  {
+    name: 'cerrar_periodo',
+    description: 'ACCIÓN (requiere confirmación): cierra el periodo contable (bloquea nuevas pólizas). Exige que la balanza cuadre. Reversible con reapertura.',
+    write: true,
+    input_schema: { type: 'object', properties: periodProps, required: ['year', 'month'] },
+    resumen: ({ year, month }) => `Cerrar el periodo contable ${month}/${year} (bloquea nuevas pólizas)`,
+    handler: (org, { year, month }) => cierre.closePeriod(org, { year, month }),
+    formatResult: (r) => `✅ Periodo ${r.month}/${r.year} cerrado. Puedes reabrirlo desde Contabilidad › Cierre si necesitas corregir algo.`,
+  },
+];
 
-/** Formato de herramientas para la API de Anthropic (sin los handlers). */
+const TOOL_BY_NAME = new Map([...TOOLS, ...WRITE_TOOLS].map((t) => [t.name, t]));
+
+/** Formato de herramientas para la API de Anthropic (lectura + acciones). */
 function toolSpecs() {
-  return TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
+  return [...TOOLS, ...WRITE_TOOLS].map((t) => ({
+    name: t.name, description: t.description, input_schema: t.input_schema,
+  }));
 }
 
-/** Ejecuta una herramienta por nombre, con la organización del usuario. */
+/** ¿Es una herramienta transaccional (requiere confirmación)? */
+function isWriteTool(name) {
+  return Boolean(TOOL_BY_NAME.get(name)?.write);
+}
+
+function getTool(name) {
+  return TOOL_BY_NAME.get(name) || null;
+}
+
+/** Ejecuta una herramienta de LECTURA. Las de escritura jamás pasan por aquí. */
 async function runTool(name, organizationId, input) {
   const tool = TOOL_BY_NAME.get(name);
   if (!tool) return { error: `Herramienta desconocida: ${name}` };
+  if (tool.write) return { error: 'Esta acción requiere confirmación del usuario en la interfaz.' };
   try {
     return await tool.handler(organizationId, input || {});
   } catch (err) {
@@ -198,4 +272,4 @@ async function runTool(name, organizationId, input) {
   }
 }
 
-module.exports = { TOOLS, toolSpecs, runTool };
+module.exports = { TOOLS, WRITE_TOOLS, toolSpecs, runTool, isWriteTool, getTool };

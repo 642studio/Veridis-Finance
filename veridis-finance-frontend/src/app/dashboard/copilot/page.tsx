@@ -13,6 +13,12 @@ interface Msg {
   tools?: { name: string }[];
 }
 
+interface PendingAction {
+  tool: string;
+  input: Record<string, unknown>;
+  resumen: string;
+}
+
 const SUGERENCIAS = [
   "¿Cómo va mi IVA este mes?",
   "Dame un reporte del cliente Rivi Grand Hotel",
@@ -25,6 +31,7 @@ export default function CopilotPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<PendingAction | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,11 +46,12 @@ export default function CopilotPage() {
     setInput("");
     setBusy(true);
     try {
-      const res = await clientApiFetch<{ data: { reply: string; tool_calls?: { name: string }[] } }>(
+      const res = await clientApiFetch<{ data: { reply: string; tool_calls?: { name: string }[]; pending_action?: PendingAction } }>(
         "/api/finance/copilot/chat",
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: q, history }) }
       );
       setMessages((prev) => [...prev, { role: "assistant", content: res.data.reply, tools: res.data.tool_calls }]);
+      setPending(res.data.pending_action || null);
     } catch (error) {
       const msg = error instanceof ApiClientError ? error.message : "Error";
       setMessages((prev) => [...prev, { role: "assistant", content: `No pude responder: ${msg}` }]);
@@ -51,6 +59,30 @@ export default function CopilotPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const runPending = async () => {
+    if (!pending || busy) return;
+    const action = pending;
+    setPending(null);
+    setBusy(true);
+    try {
+      const res = await clientApiFetch<{ data: { reply: string } }>("/api/finance/copilot/execute", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tool: action.tool, input: action.input }),
+      });
+      setMessages((prev) => [...prev, { role: "assistant", content: res.data.reply }]);
+    } catch (error) {
+      const msg = error instanceof ApiClientError ? error.message : "Error";
+      setMessages((prev) => [...prev, { role: "assistant", content: `❌ No se pudo ejecutar: ${msg}` }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelPending = () => {
+    setPending(null);
+    setMessages((prev) => [...prev, { role: "assistant", content: "Acción cancelada. No ejecuté nada." }]);
   };
 
   return (
@@ -101,6 +133,16 @@ export default function CopilotPage() {
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-md border border-border bg-muted/40 px-4 py-2.5 text-sm text-muted-foreground">
                   Consultando tus datos…
+                </div>
+              </div>
+            ) : null}
+            {pending ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Acción pendiente de tu confirmación</p>
+                <p className="mt-1 text-sm text-amber-900">{pending.resumen}</p>
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" onClick={runPending}>Confirmar y ejecutar</Button>
+                  <Button size="sm" variant="outline" onClick={cancelPending}>Cancelar</Button>
                 </div>
               </div>
             ) : null}

@@ -14,6 +14,12 @@ interface Msg {
   tools?: { name: string }[];
 }
 
+interface PendingAction {
+  tool: string;
+  input: Record<string, unknown>;
+  resumen: string;
+}
+
 const SUGERENCIAS = [
   "¿Cómo va mi IVA este mes?",
   "¿Algo urgente o algún riesgo fiscal?",
@@ -27,6 +33,7 @@ export function CopilotWidget() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<PendingAction | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -48,7 +55,7 @@ export function CopilotWidget() {
     setInput("");
     setBusy(true);
     try {
-      const res = await clientApiFetch<{ data: { reply: string; tool_calls?: { name: string }[] } }>(
+      const res = await clientApiFetch<{ data: { reply: string; tool_calls?: { name: string }[]; pending_action?: PendingAction } }>(
         "/api/finance/copilot/chat",
         {
           method: "POST",
@@ -57,6 +64,7 @@ export function CopilotWidget() {
         }
       );
       setMessages((prev) => [...prev, { role: "assistant", content: res.data.reply, tools: res.data.tool_calls }]);
+      setPending(res.data.pending_action || null);
     } catch (error) {
       const msg = error instanceof ApiClientError ? error.message : "Error";
       setMessages((prev) => [...prev, { role: "assistant", content: `No pude responder: ${msg}` }]);
@@ -64,6 +72,31 @@ export function CopilotWidget() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const runPending = async () => {
+    if (!pending || busy) return;
+    const action = pending;
+    setPending(null);
+    setBusy(true);
+    try {
+      const res = await clientApiFetch<{ data: { reply: string } }>("/api/finance/copilot/execute", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tool: action.tool, input: action.input }),
+      });
+      setMessages((prev) => [...prev, { role: "assistant", content: res.data.reply }]);
+    } catch (error) {
+      const msg = error instanceof ApiClientError ? error.message : "Error";
+      setMessages((prev) => [...prev, { role: "assistant", content: `❌ No se pudo ejecutar: ${msg}` }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelPending = () => {
+    setPending(null);
+    setMessages((prev) => [...prev, { role: "assistant", content: "Acción cancelada. No ejecuté nada." }]);
   };
 
   return (
@@ -151,6 +184,22 @@ export function CopilotWidget() {
                 <div className="flex justify-start">
                   <div className="rounded-2xl rounded-bl-md border border-border bg-muted/40 px-3.5 py-2 text-sm text-muted-foreground">
                     Consultando tus datos…
+                  </div>
+                </div>
+              ) : null}
+              {pending ? (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Acción pendiente de tu confirmación</p>
+                  <p className="mt-1 text-sm text-amber-900">{pending.resumen}</p>
+                  <div className="mt-2.5 flex gap-2">
+                    <button type="button" onClick={runPending}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+                      Confirmar y ejecutar
+                    </button>
+                    <button type="button" onClick={cancelPending}
+                      className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground">
+                      Cancelar
+                    </button>
                   </div>
                 </div>
               ) : null}

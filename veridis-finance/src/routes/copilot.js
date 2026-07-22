@@ -4,6 +4,7 @@ const copilot = require('../services/copilot/copilotService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const READ = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER];
+const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
 
 const chatSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -24,6 +25,22 @@ async function copilotRoutes(app) {
       message,
       history: history || [],
       context: context || null,
+    });
+    reply.send({ data });
+  });
+
+  // Ejecuta una acción propuesta por el copiloto, ya confirmada por el usuario.
+  app.post('/copilot/execute', { preHandler: [authenticate, authorize(WRITE)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { tool, input } = z.object({
+      tool: z.string().min(1).max(60),
+      input: z.record(z.unknown()).optional(),
+    }).parse(request.body || {});
+    const data = await copilot.executeAction({
+      organizationId,
+      userId: request.user?.user_id || null,
+      tool,
+      input: input || {},
     });
     reply.send({ data });
   });

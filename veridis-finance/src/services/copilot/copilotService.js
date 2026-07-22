@@ -5,8 +5,9 @@
  * respuesta SOLO con esos datos reales.
  */
 
+const pool = require('../../db/pool');
 const { createMessage } = require('./anthropicClient');
-const { toolSpecs, runTool } = require('./tools');
+const { toolSpecs, runTool, isWriteTool, getTool } = require('./tools');
 const reconciliation = require('../reconciliationService');
 
 const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -35,8 +36,12 @@ function systemPrompt({ organizationName, today }) {
     '  cobros del pipeline. Un mismo cobro aparece en las tres — es UN solo ingreso. Si mezclas',
     '  cifras de dos lentes, acláralo ("facturaste X, de lo cual ya cobraste Y en banco").',
     '  Los traspasos entre cuentas propias NO son ingreso ni gasto.',
-    '- En esta versión solo puedes CONSULTAR; si te piden ejecutar una acción (generar pólizas,',
-    '  crear factura, mandar correo), explica que la ejecución transaccional llega en la próxima fase.',
+    '- ACCIONES: puedes proponer acciones (generar pólizas, conciliar, depreciar, cerrar periodo)',
+    '  usando las herramientas marcadas como ACCIÓN. NUNCA se ejecutan solas: el usuario ve una',
+    '  tarjeta de confirmación y decide. Jamás afirmes que una acción ya se ejecutó — hasta que el',
+    '  sistema te muestre el resultado, solo está PROPUESTA. Propón UNA acción a la vez.',
+    '- Si piden algo transaccional sin herramienta (crear factura, enviar correo, pagar), explica',
+    '  que aún no está disponible desde el copiloto y en qué módulo se hace.',
   ].join('\n');
 }
 
@@ -93,6 +98,21 @@ async function chat({ organizationId, organizationName, message, history = [], t
     // Ejecuta cada herramienta pedida y arma los tool_result.
     messages.push({ role: 'assistant', content: res.content });
     const toolUses = (res.content || []).filter((b) => b.type === 'tool_use');
+
+    // Si el modelo propone una ACCIÓN, el loop se detiene aquí: la interfaz
+    // muestra la tarjeta de confirmación y solo /copilot/execute la corre.
+    const writeUse = toolUses.find((tu) => isWriteTool(tu.name));
+    if (writeUse) {
+      const tool = getTool(writeUse.name);
+      const resumen = tool.resumen ? tool.resumen(writeUse.input || {}) : tool.description;
+      const preText = textFromContent(res.content);
+      return {
+        reply: preText || `Puedo hacerlo: ${resumen}. ¿Confirmas?`,
+        tool_calls: toolCalls,
+        usage,
+        pending_action: { tool: writeUse.name, input: writeUse.input || {}, resumen },
+      };
+    }
     const results = [];
     for (const tu of toolUses) {
       toolCalls.push({ name: tu.name, input: tu.input });
@@ -110,4 +130,39 @@ async function chat({ organizationId, organizationName, message, history = [], t
   return { reply: 'La consulta fue demasiado compleja. Intenta acotarla (por ejemplo, un cliente o un mes).', tool_calls: toolCalls, usage };
 }
 
-module.exports = { chat };
+/**
+ * Ejecuta una ACCIÓN confirmada por el usuario. Valida que sea una herramienta
+ * transaccional conocida, la corre con la organización/usuario del token y la
+ * registra en la bitácora (finance.copilot_actions). Devuelve un resumen humano
+ * determinista — sin pasar por el modelo.
+ */
+async function executeAction({ organizationId, userId, tool: toolName, input }) {
+  const tool = getTool(toolName);
+  if (!tool || !tool.write) {
+    const err = new Error('Acción no reconocida.');
+    err.statusCode = 400;
+    throw err;
+  }
+  let result = null;
+  let status = 'ok';
+  let errorMessage = null;
+  try {
+    result = await tool.handler(organizationId, input || {}, userId || null);
+  } catch (err) {
+    status = 'error';
+    errorMessage = String(err.message || err).slice(0, 400);
+  }
+  await pool.query(
+    `INSERT INTO finance.copilot_actions (organization_id, user_id, tool, input, result, status, error_message)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [organizationId, userId || null, toolName, JSON.stringify(input || {}),
+     result ? JSON.stringify(result).slice(0, 8000) : null, status, errorMessage]
+  ).catch(() => {}); // la bitácora nunca debe tumbar la acción
+  if (status === 'error') {
+    return { ok: false, reply: `❌ No se pudo ejecutar: ${errorMessage}` };
+  }
+  const reply = tool.formatResult ? tool.formatResult(result) : '✅ Acción ejecutada.';
+  return { ok: true, reply, result };
+}
+
+module.exports = { chat, executeAction };
