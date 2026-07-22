@@ -139,8 +139,8 @@ export default function DashboardCategoriesPage() {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : "Could not fetch categories";
-      notify.error({ title: "Load failed", description: message });
+          : "No se pudieron cargar las categorías";
+      notify.error({ title: "Error al cargar", description: message });
     } finally {
       setIsLoadingCategories(false);
     }
@@ -165,8 +165,8 @@ export default function DashboardCategoriesPage() {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : "Could not fetch subcategories";
-      notify.error({ title: "Load failed", description: message });
+          : "No se pudieron cargar las subcategorías";
+      notify.error({ title: "Error al cargar", description: message });
     } finally {
       setIsLoadingSubcategories(false);
     }
@@ -185,7 +185,7 @@ export default function DashboardCategoriesPage() {
 
     const payload = toCategoryPayload(categoryForm);
     if (!payload.name) {
-      notify.error({ title: "Validation", description: "Category name is required" });
+      notify.error({ title: "Validación", description: "El nombre de la categoría es obligatorio" });
       return;
     }
 
@@ -203,8 +203,8 @@ export default function DashboardCategoriesPage() {
         );
 
         notify.success({
-          title: "Category updated",
-          description: "Category changes were saved.",
+          title: "Categoría actualizada",
+          description: "Se guardaron los cambios de la categoría.",
         });
       } else {
         const created = await clientApiFetch<ApiEnvelope<Category>>(
@@ -218,8 +218,8 @@ export default function DashboardCategoriesPage() {
 
         setSelectedCategoryId(created.data.id);
         notify.success({
-          title: "Category created",
-          description: "Category added successfully.",
+          title: "Categoría creada",
+          description: "La categoría se agregó correctamente.",
         });
       }
 
@@ -228,8 +228,8 @@ export default function DashboardCategoriesPage() {
       await loadCategories();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not save category";
-      notify.error({ title: "Save failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo guardar la categoría";
+      notify.error({ title: "Error al guardar", description: message });
     } finally {
       setIsSavingCategory(false);
     }
@@ -240,15 +240,15 @@ export default function DashboardCategoriesPage() {
 
     if (!selectedCategoryId) {
       notify.error({
-        title: "Validation",
-        description: "Select a category first",
+        title: "Validación",
+        description: "Selecciona primero una categoría",
       });
       return;
     }
 
     const payload = toSubcategoryPayload(subcategoryForm);
     if (!payload.name) {
-      notify.error({ title: "Validation", description: "Subcategory name is required" });
+      notify.error({ title: "Validación", description: "El nombre de la subcategoría es obligatorio" });
       return;
     }
 
@@ -266,8 +266,8 @@ export default function DashboardCategoriesPage() {
         );
 
         notify.success({
-          title: "Subcategory updated",
-          description: "Subcategory changes were saved.",
+          title: "Subcategoría actualizada",
+          description: "Se guardaron los cambios de la subcategoría.",
         });
       } else {
         await clientApiFetch<ApiEnvelope<Subcategory>>(
@@ -280,8 +280,8 @@ export default function DashboardCategoriesPage() {
         );
 
         notify.success({
-          title: "Subcategory created",
-          description: "Subcategory added successfully.",
+          title: "Subcategoría creada",
+          description: "La subcategoría se agregó correctamente.",
         });
       }
 
@@ -292,8 +292,8 @@ export default function DashboardCategoriesPage() {
       const message =
         error instanceof ApiClientError
           ? error.message
-          : "Could not save subcategory";
-      notify.error({ title: "Save failed", description: message });
+          : "No se pudo guardar la subcategoría";
+      notify.error({ title: "Error al guardar", description: message });
     } finally {
       setIsSavingSubcategory(false);
     }
@@ -327,8 +327,8 @@ export default function DashboardCategoriesPage() {
       });
 
       notify.success({
-        title: "Category deactivated",
-        description: "Category was soft deleted (active=false).",
+        title: "Categoría desactivada",
+        description: "La categoría se eliminó de forma lógica (active=false).",
       });
 
       if (editingCategoryId === category.id) {
@@ -341,8 +341,8 @@ export default function DashboardCategoriesPage() {
       setDeletingCategory(null);
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not delete category";
-      notify.error({ title: "Delete failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo eliminar la categoría";
+      notify.error({ title: "Error al eliminar", description: message });
     } finally {
       setIsDeletingCategory(false);
     }
@@ -359,8 +359,8 @@ export default function DashboardCategoriesPage() {
       );
 
       notify.success({
-        title: "Subcategory deactivated",
-        description: "Subcategory was soft deleted (active=false).",
+        title: "Subcategoría desactivada",
+        description: "La subcategoría se eliminó de forma lógica (active=false).",
       });
 
       if (editingSubcategoryId === subcategory.id) {

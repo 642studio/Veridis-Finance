@@ -144,24 +144,24 @@ function AccountModal({
         <div className="mb-4 flex items-start justify-between gap-3">
           <h3 className="font-heading text-lg font-semibold">{title}</h3>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
-            Close
+            Cerrar
           </Button>
         </div>
 
         <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="account_name">Name</Label>
+            <Label htmlFor="account_name">Nombre</Label>
             <Input
               id="account_name"
               value={form.name}
               onChange={(event) => onChange({ ...form, name: event.target.value })}
-              placeholder="Main account"
+              placeholder="Cuenta principal"
               required
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_type">Type</Label>
+            <Label htmlFor="account_type">Tipo</Label>
             <select
               id="account_type"
               className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -179,7 +179,7 @@ function AccountModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_currency">Currency</Label>
+            <Label htmlFor="account_currency">Moneda</Label>
             <Input
               id="account_currency"
               value={form.currency}
@@ -191,17 +191,17 @@ function AccountModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_bank">Bank name</Label>
+            <Label htmlFor="account_bank">Nombre del banco</Label>
             <Input
               id="account_bank"
               value={form.bank_name}
               onChange={(event) => onChange({ ...form, bank_name: event.target.value })}
-              placeholder="Optional"
+              placeholder="Opcional"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_last4">Account last 4</Label>
+            <Label htmlFor="account_last4">Últimos 4 de la cuenta</Label>
             <Input
               id="account_last4"
               value={form.account_number_last4}
@@ -217,7 +217,7 @@ function AccountModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_balance">Balance</Label>
+            <Label htmlFor="account_balance">Saldo</Label>
             <Input
               id="account_balance"
               type="number"
@@ -228,7 +228,7 @@ function AccountModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_credit_limit">Credit limit</Label>
+            <Label htmlFor="account_credit_limit">Límite de crédito</Label>
             <Input
               id="account_credit_limit"
               type="number"
@@ -240,7 +240,7 @@ function AccountModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_cut_day">Cut day</Label>
+            <Label htmlFor="account_cut_day">Día de corte</Label>
             <Input
               id="account_cut_day"
               type="number"
@@ -252,7 +252,7 @@ function AccountModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_due_day">Due day</Label>
+            <Label htmlFor="account_due_day">Día de pago</Label>
             <Input
               id="account_due_day"
               type="number"
@@ -264,7 +264,7 @@ function AccountModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="account_status">Status</Label>
+            <Label htmlFor="account_status">Estado</Label>
             <select
               id="account_status"
               className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
@@ -281,7 +281,7 @@ function AccountModal({
 
           <div className="flex items-end justify-end sm:col-span-2">
             <Button type="submit" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save account"}
+              {isSaving ? "Guardando..." : "Guardar cuenta"}
             </Button>
           </div>
         </form>
@@ -320,8 +320,8 @@ export default function DashboardAccountsPage() {
       setAccounts(response.data);
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not fetch accounts";
-      notify.error({ title: "Load failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudieron cargar las cuentas";
+      notify.error({ title: "Error al cargar", description: message });
     } finally {
       setIsLoading(false);
     }
@@ -358,7 +358,7 @@ export default function DashboardAccountsPage() {
 
     const payload = toPayload(form);
     if (!payload.name) {
-      notify.error({ title: "Validation", description: "Name is required" });
+      notify.error({ title: "Validación", description: "El nombre es obligatorio" });
       return;
     }
 
@@ -375,8 +375,8 @@ export default function DashboardAccountsPage() {
         );
 
         notify.success({
-          title: "Account updated",
-          description: "Account changes were saved.",
+          title: "Cuenta actualizada",
+          description: "Se guardaron los cambios de la cuenta.",
         });
       } else {
         await clientApiFetch<ApiEnvelope<Account>>("/api/finance/accounts", {
@@ -386,8 +386,8 @@ export default function DashboardAccountsPage() {
         });
 
         notify.success({
-          title: "Account created",
-          description: "Account added successfully.",
+          title: "Cuenta creada",
+          description: "La cuenta se agregó correctamente.",
         });
       }
 
@@ -395,8 +395,8 @@ export default function DashboardAccountsPage() {
       closeModal();
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not save account";
-      notify.error({ title: "Save failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo guardar la cuenta";
+      notify.error({ title: "Error al guardar", description: message });
     } finally {
       setIsSaving(false);
     }
@@ -410,15 +410,15 @@ export default function DashboardAccountsPage() {
       });
 
       notify.success({
-        title: "Account deactivated",
-        description: "Account was soft deleted (status=inactive).",
+        title: "Cuenta desactivada",
+        description: "La cuenta se eliminó de forma lógica (status=inactive).",
       });
       await loadAccounts();
       setDeletingAccount(null);
     } catch (error) {
       const message =
-        error instanceof ApiClientError ? error.message : "Could not soft delete account";
-      notify.error({ title: "Delete failed", description: message });
+        error instanceof ApiClientError ? error.message : "No se pudo desactivar la cuenta";
+      notify.error({ title: "Error al eliminar", description: message });
     } finally {
       setIsDeleting(false);
     }
@@ -467,7 +467,7 @@ export default function DashboardAccountsPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <CardTitle>Accounts</CardTitle>
+          <CardTitle>Cuentas</CardTitle>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input
@@ -475,18 +475,18 @@ export default function DashboardAccountsPage() {
                 checked={showInactive}
                 onChange={(event) => setShowInactive(event.target.checked)}
               />
-              Show inactive
+              Mostrar inactivas
             </label>
             <Button onClick={openCreateModal}>
               <Plus className="mr-2 h-4 w-4" />
-              Add account
+              Agregar cuenta
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="mb-4 space-y-3">
             <Badge variant="secondary">
-              {activeCount}/{accounts.length} active
+              {activeCount}/{accounts.length} activas
             </Badge>
             <div className="flex flex-wrap items-center gap-2">
               <Input
@@ -495,7 +495,7 @@ export default function DashboardAccountsPage() {
                   setSearchQuery(event.target.value);
                   setPage(1);
                 }}
-                placeholder="Search name, bank, type, currency..."
+                placeholder="Buscar nombre, banco, tipo, moneda..."
                 className="min-w-[260px] max-w-sm"
               />
               <select
@@ -508,35 +508,35 @@ export default function DashboardAccountsPage() {
               >
                 {PAGE_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>
-                    {size} / page
+                    {size} / página
                   </option>
                 ))}
               </select>
               <span className="text-xs text-muted-foreground">
-                {filteredAccounts.length} results
+                {filteredAccounts.length} resultados
               </span>
             </div>
           </div>
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading accounts...</p>
+            <p className="text-sm text-muted-foreground">Cargando cuentas...</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Currency</TableHead>
-                  <TableHead>Balance</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Moneda</TableHead>
+                  <TableHead>Saldo</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedAccounts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      No accounts found.
+                      No se encontraron cuentas.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -562,7 +562,7 @@ export default function DashboardAccountsPage() {
                             onClick={() => openEditModal(account)}
                           >
                             <Edit3 className="mr-1 h-3.5 w-3.5" />
-                            Edit
+                            Editar
                           </Button>
                           <Button
                             size="sm"
@@ -571,7 +571,7 @@ export default function DashboardAccountsPage() {
                             disabled={account.status !== "active"}
                           >
                             <Trash2 className="mr-1 h-3.5 w-3.5" />
-                            Delete
+                            Eliminar
                           </Button>
                         </div>
                       </TableCell>
@@ -584,7 +584,7 @@ export default function DashboardAccountsPage() {
           {!isLoading ? (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">
               <span className="text-muted-foreground">
-                Page {page} of {totalPages}
+                Página {page} de {totalPages}
               </span>
               <div className="flex items-center gap-2">
                 <Button
@@ -593,7 +593,7 @@ export default function DashboardAccountsPage() {
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
                   disabled={page <= 1}
                 >
-                  Previous
+                  Anterior
                 </Button>
                 <Button
                   variant="outline"
@@ -603,7 +603,7 @@ export default function DashboardAccountsPage() {
                   }
                   disabled={page >= totalPages}
                 >
-                  Next
+                  Siguiente
                 </Button>
               </div>
             </div>
@@ -613,7 +613,7 @@ export default function DashboardAccountsPage() {
 
       <AccountModal
         open={isModalOpen}
-        title={editingAccount ? "Edit account" : "Create account"}
+        title={editingAccount ? "Editar cuenta" : "Crear cuenta"}
         form={form}
         isSaving={isSaving}
         onClose={closeModal}
@@ -623,10 +623,10 @@ export default function DashboardAccountsPage() {
 
       <ConfirmModal
         open={Boolean(deletingAccount)}
-        title="Deactivate account?"
-        description="This performs a soft delete by setting status to inactive."
-        confirmLabel="Deactivate"
-        cancelLabel="Cancel"
+        title="¿Desactivar cuenta?"
+        description="Esto realiza una eliminación lógica estableciendo el estado en inactivo."
+        confirmLabel="Desactivar"
+        cancelLabel="Cancelar"
         isLoading={isDeleting}
         onCancel={() => {
           if (!isDeleting) {
