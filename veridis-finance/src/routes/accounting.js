@@ -9,6 +9,7 @@ const auditoria = require('../services/auditoriaService');
 const cierre = require('../services/cierreService');
 const conciliacion = require('../services/conciliacionContableService');
 const bankPoliza = require('../services/bankPolizaService');
+const deducibilidad = require('../services/deducibilidadService');
 const { authenticate, authorize, ROLES, resolveOrganizationId } = require('../middleware/auth');
 
 const WRITE = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS];
@@ -265,6 +266,13 @@ async function accountingRoutes(app) {
     const organizationId = resolveOrganizationId(request);
     const { year, month } = periodQuery.parse(request.body || {});
     reply.send({ data: await bankPoliza.generateForPeriod(organizationId, { year, month, createdBy: request.user?.user_id }) });
+  });
+
+  // ---- Gastos sin CFDI (deducibilidad) (S24) ----
+  app.get('/accounting/gastos-sin-cfdi', { preHandler: [authenticate, authorize(READ)] }, async (request, reply) => {
+    const organizationId = resolveOrganizationId(request);
+    const { year, month } = periodQuery.parse(request.query || {});
+    reply.send({ data: await deducibilidad.gastosSinCfdi(organizationId, { year, month }) });
   });
 }
 

@@ -17,7 +17,8 @@ type ReportKey =
   | "diario"
   | "e-contabilidad"
   | "auditoria"
-  | "diot";
+  | "diot"
+  | "gastos-sin-cfdi";
 
 const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "balanza", label: "Balanza de comprobación" },
@@ -28,7 +29,26 @@ const REPORTS: { key: ReportKey; label: string }[] = [
   { key: "e-contabilidad", label: "Contabilidad electrónica (SAT)" },
   { key: "auditoria", label: "Auditoría preventiva" },
   { key: "diot", label: "DIOT" },
+  { key: "gastos-sin-cfdi", label: "Gastos sin CFDI" },
 ];
+
+interface GastoFaltante {
+  id: string;
+  date: string;
+  amount: number;
+  concepto: string | null;
+  categoria: string | null;
+  motivo: string;
+}
+interface GastosSinCfdi {
+  faltantes: GastoFaltante[];
+  resumen: {
+    con_riesgo: number;
+    monto_en_riesgo: number;
+    cfdi_del_banco: number;
+    no_aplica: number;
+  };
+}
 
 interface DiotRow {
   tipo_tercero: string;
@@ -173,6 +193,8 @@ export function ReportesTab() {
           ? `/api/finance/accounting/auditoria?year=${year}&month=${month}`
           : report === "diot"
           ? `/api/finance/fiscal/diot?year=${year}&month=${month}`
+          : report === "gastos-sin-cfdi"
+          ? `/api/finance/accounting/gastos-sin-cfdi?year=${year}&month=${month}`
           : `/api/finance/accounting/reports/${report}?year=${year}&month=${month}`;
       const res = await clientApiFetch<{ data: unknown }>(path);
       setData(res.data);
@@ -290,7 +312,7 @@ export function ReportesTab() {
             >
               ⬇ Exportar DIOT (.txt)
             </Button>
-          ) : report !== "e-contabilidad" && report !== "auditoria" ? (
+          ) : report !== "e-contabilidad" && report !== "auditoria" && report !== "gastos-sin-cfdi" ? (
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={loading || !data}>
               ⬇ Exportar CSV
             </Button>
@@ -328,8 +350,10 @@ export function ReportesTab() {
             <EContabilidadView d={data as Validacion} onDownload={downloadXml} />
           ) : report === "auditoria" ? (
             <AuditoriaView d={data as Auditoria} />
-          ) : (
+          ) : report === "diot" ? (
             <DiotView d={data as Diot} />
+          ) : (
+            <GastosSinCfdiView d={data as GastosSinCfdi} />
           )}
         </CardContent>
       </Card>
@@ -575,6 +599,60 @@ function DiotView({ d }: { d: Diot }) {
           </tfoot>
         </table>
       </div>
+    </div>
+  );
+}
+
+function GastosSinCfdiView({ d }: { d: GastosSinCfdi }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-xs uppercase tracking-wide text-amber-700">Gastos sin CFDI</p>
+          <p className="tnum mt-1 text-2xl font-bold text-amber-800">{formatCurrency(d.resumen.monto_en_riesgo)}</p>
+          <p className="text-xs text-amber-700">{d.resumen.con_riesgo} gasto(s) por facturar</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">CFDI del banco</p>
+          <p className="tnum mt-1 text-2xl font-bold text-foreground">{d.resumen.cfdi_del_banco}</p>
+          <p className="text-xs text-muted-foreground">comisiones (las emite el banco)</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">No aplica</p>
+          <p className="tnum mt-1 text-2xl font-bold text-foreground">{d.resumen.no_aplica}</p>
+          <p className="text-xs text-muted-foreground">traspasos / nómina</p>
+        </div>
+      </div>
+      {d.faltantes.length === 0 ? (
+        <p className="text-sm text-emerald-700">Sin gastos deducibles pendientes de CFDI en el periodo. 🎉</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="py-2">Fecha</th>
+                <th className="py-2">Concepto</th>
+                <th className="py-2">Categoría</th>
+                <th className="py-2 text-right">Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.faltantes.map((g) => (
+                <tr key={g.id} className="border-t border-border">
+                  <td className="py-2 whitespace-nowrap">{formatDate(g.date)}</td>
+                  <td className="py-2">{g.concepto || "—"}</td>
+                  <td className="py-2 text-muted-foreground">{g.categoria || "—"}</td>
+                  <td className="tnum py-2 text-right font-medium">{formatCurrency(g.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Estos gastos se pagaron pero no tienen factura conciliada. Captura o descarga sus CFDIs (módulo Descarga SAT)
+        para poder deducirlos.
+      </p>
     </div>
   );
 }
