@@ -22,8 +22,8 @@ interface PendingAction {
 
 const SUGERENCIAS = [
   "¿Cómo va mi IVA este mes?",
+  "¿Quién me debe y desde cuándo?",
   "¿Algo urgente o algún riesgo fiscal?",
-  "¿Qué gastos sin CFDI tengo?",
 ];
 
 export function CopilotWidget() {
