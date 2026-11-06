@@ -121,18 +121,15 @@ async function issueIngreso(input) {
   }
   input = { ...input, receiver };
 
-  // Idempotency: return the existing CFDI for this external document.
-  if (input.source_ref) {
-    const { rows } = await pool.query(
-      `SELECT * FROM finance.cfdi_documents
-        WHERE organization_id = $1 AND source = $2 AND source_ref = $3`,
-      [organizationId, input.source || 'api', input.source_ref]
-    );
-    if (rows[0]) return { data: mapRow(rows[0]), idempotent: true };
-  }
-
   const issuer = await getIssuer(organizationId);
   const { provider, creds } = resolveCreds(issuer);
+
+
+  // Reserve before contacting the PAC. A durable draft also blocks retries after
+  // a crash/timeout: absence of a response is not evidence that no CFDI exists.
+  const { reserveIssuance } = require('./cfdiIssuanceService');
+  const reservation = await reserveIssuance(pool, input);
+  if (reservation.existing) return { data: mapRow(reservation.existing), idempotent: true };
 
   let stamped;
   try {
@@ -147,39 +144,29 @@ async function issueIngreso(input) {
       folio: input.folio,
     });
   } catch (err) {
-    // Persist the failed attempt for observability.
     await pool.query(
-      `INSERT INTO finance.cfdi_documents
-        (organization_id, issuer_id, invoice_id, cfdi_type, status, receiver_rfc,
-         receiver_name, metodo_pago, forma_pago, source, source_ref, error_message, pac_provider)
-       VALUES ($1,$2,$3,'I','error',$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [
-        organizationId, issuer?.id || null, input.invoice_id || null,
-        input.receiver.rfc, input.receiver.name,
-        input.paymentMethod || 'PUE', input.paymentForm || '01',
-        input.source || 'api', input.source_ref || null,
-        String(err.message).slice(0, 500), provider,
-      ]
+      `UPDATE finance.cfdi_documents SET status = 'error', error_message = $3,
+         raw = COALESCE(raw, '{}'::jsonb) || jsonb_build_object('issuance_outcome', $4::text)
+       WHERE organization_id = $1 AND id = $2`,
+      [organizationId, reservation.id, String(err.message).slice(0, 500),
+       err.definiteRejection === true ? 'rejected' : 'unknown']
     );
     throw err;
   }
 
   const { rows } = await pool.query(
-    `INSERT INTO finance.cfdi_documents
-      (organization_id, issuer_id, receiver_id, invoice_id, cfdi_type, status, uuid, folio,
-       receiver_rfc, receiver_name, cfdi_use, metodo_pago, forma_pago, currency,
-       total, pac_provider, pac_document_id, source, source_ref, ghl_contact_id, raw, stamped_at)
-     VALUES ($1,$2,$3,$4,'I','stamped',$5,$6,$7,$8,$9,$10,$11,'MXN',$12,$13,$14,$15,$16,$17,$18, now())
-     RETURNING *`,
-    [
-      organizationId, issuer?.id || null, receiverId, input.invoice_id || null,
-      stamped.uuid, String(stamped.folio ?? ''),
-      input.receiver.rfc, input.receiver.name, input.receiver.use || 'G03',
-      input.paymentMethod || 'PUE', input.paymentForm || '01',
-      round(stamped.total ?? 0), provider, stamped.id,
-      input.source || 'api', input.source_ref || null, receiverContactId,
-      JSON.stringify(stamped.raw || {}),
-    ]
+    `UPDATE finance.cfdi_documents SET issuer_id=$3, receiver_id=$4, invoice_id=$5,
+       status='stamped', uuid=$6, folio=$7, receiver_rfc=$8, receiver_name=$9,
+       cfdi_use=$10, metodo_pago=$11, forma_pago=$12, currency='MXN', total=$13,
+       pac_provider=$14, pac_document_id=$15, ghl_contact_id=$16,
+       raw=COALESCE(raw, '{}'::jsonb) || $17::jsonb, stamped_at=now(), error_message=NULL
+     WHERE organization_id=$1 AND id=$2 RETURNING *`,
+    [organizationId, reservation.id, issuer?.id || null, receiverId, input.invoice_id || null,
+     stamped.uuid, String(stamped.folio ?? ''), input.receiver.rfc, input.receiver.name,
+     input.receiver.use || 'G03', input.paymentMethod || 'PUE',
+     input.paymentMethod === 'PPD' ? '99' : (input.paymentForm || '01'),
+     round(stamped.total ?? 0), provider, stamped.id, receiverContactId,
+     JSON.stringify({ ...stamped.raw, issuance_outcome: 'stamped' })]
   );
 
   const doc = mapRow(rows[0]);
@@ -700,14 +687,17 @@ async function syncInvoices(organizationId) {
 }
 
 /** List issued CFDIs from our DB. */
-async function listIssued({ organization_id, limit = 50, offset = 0 }) {
+async function listIssued({ organization_id, limit = 50, offset = 0, ghl_contact_id }) {
   const { rows } = await pool.query(
     `SELECT * FROM finance.cfdi_documents
       WHERE organization_id = $1 AND cfdi_type = 'I'
+        AND ($4::text IS NULL OR ghl_contact_id = $4)
       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-    [organization_id, limit, offset]
+    [organization_id, limit + offset, 0, ghl_contact_id || null]
   );
   const platform = rows.map((r) => ({ ...mapRow(r), origin: 'platform' }));
+
+  if (ghl_contact_id) return platform.slice(offset, offset + limit);
 
   // Historical issued CFDIs pulled from the SAT (Descarga Masiva). They're real
   // stamped invoices (stamped elsewhere), so they belong in "CFDIs emitidos" —
@@ -719,8 +709,8 @@ async function listIssued({ organization_id, limit = 50, offset = 0 }) {
         AND COALESCE(direction, 'issued') = 'issued'
         AND source = 'sat_download'
       ORDER BY invoice_date DESC
-      LIMIT 500`,
-    [organization_id]
+      LIMIT $2`,
+    [organization_id, limit + offset]
   );
   const historical = sat.map((r) => ({
     id: r.id,
@@ -738,7 +728,13 @@ async function listIssued({ organization_id, limit = 50, offset = 0 }) {
     origin: 'sat',
   }));
 
-  return [...platform, ...historical];
+  const combined = [...platform, ...historical].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const seen = new Set();
+  return combined.filter((doc) => {
+    const key = doc.uuid || doc.id;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  }).slice(offset, offset + limit);
 }
 
 async function getById({ organization_id, id }) {

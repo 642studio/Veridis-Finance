@@ -29,6 +29,7 @@ function authHeader(creds) {
   if (!user || !pass) {
     const err = new Error('Missing Facturama credentials (FACTURAMA_USER / FACTURAMA_PASSWORD)');
     err.statusCode = 500;
+    err.definiteRejection = true;
     throw err;
   }
   return 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64');
@@ -75,6 +76,8 @@ async function request(method, path, body, creds) {
       `Facturama ${res.status}: ${data?.Message || data?.ModelState ? JSON.stringify(data) : text}`
     );
     err.statusCode = res.status >= 500 ? 502 : 400;
+    // Only an explicit validation/auth rejection proves that no CFDI was issued.
+    err.definiteRejection = [400, 401, 403, 422].includes(res.status);
     err.response = { data };
     throw err;
   }

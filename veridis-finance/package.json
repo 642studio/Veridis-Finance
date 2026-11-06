@@ -14,7 +14,8 @@
     "seed": "node scripts/seed.js",
     "test": "node --test \"test/**/*.test.js\"",
     "smoke:phase1": "node scripts/smoke-phase1.js",
-    "e2e": "node scripts/e2e-full.js"
+    "e2e": "node scripts/e2e-full.js",
+    "db:check": "node scripts/check-schema.js"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

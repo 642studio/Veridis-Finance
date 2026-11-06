@@ -66,9 +66,16 @@ async function authenticate(request) {
   }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET, {
+    const isCore = jwt.decode(token)?.iss === '642-core';
+    const secret = isCore ? process.env.CORE_FINANCE_SECRET : process.env.JWT_SECRET;
+    if (!secret || (isCore && secret.length < 32)) throw unauthorized('Finance bridge is not configured');
+    const payload = jwt.verify(token, secret, {
       algorithms: ['HS256'],
+      ...(isCore ? { issuer: '642-core', audience: 'veridis-finance', maxAge: '2m' } : {}),
     });
+    if (isCore && (!payload.exp || !['admin', 'ops', 'viewer'].includes(payload.role))) {
+      throw unauthorized('Invalid Core finance scope');
+    }
 
     if (!payload || typeof payload !== 'object') {
       throw unauthorized('Invalid token payload');

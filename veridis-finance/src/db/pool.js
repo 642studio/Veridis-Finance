@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 
 const useSsl = process.env.DB_SSL === 'true';
 const connectionString = process.env.DATABASE_URL;
+const sslCa = process.env.DB_SSL_CA?.replace(/\\n/g, '\n');
 
 const baseConfig = connectionString
   ? { connectionString }
@@ -27,6 +28,7 @@ const pool = new Pool({
   ssl: useSsl
     ? {
         rejectUnauthorized,
+        ...(sslCa ? { ca: sslCa } : {}),
       }
     : false,
   max: Number(process.env.DB_POOL_MAX || 10),

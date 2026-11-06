@@ -64,3 +64,29 @@ docker compose up --build
 - In production `CORS_ORIGIN` must be an explicit origin — the backend rejects a
   wildcard on purpose (`src/config/env.js`).
 - Both platforms serve HTTPS, so the frontend's secure auth cookie works.
+
+## Core Finance bridge
+
+Deploy the Finance changes together with the Core adapter. Set the same random
+`CORE_FINANCE_SECRET` (minimum 32 characters) on both servers. Core additionally
+requires `VERIDIS_FINANCE_URL` and `VERIDIS_FINANCE_ORGANIZATION_ID` pointing to an
+existing organization in this database. The bridge accepts only signed tokens
+with issuer `642-core`, audience `veridis-finance` and a lifetime of 60 seconds.
+Core staff read-only roles map to `viewer`; Core administrators map to `admin`.
+Browser clients never receive the bridge secret or the provider credentials.
+
+The API production deployment now uses the Core database (`finance` schema) through
+`finance_core_runtime`. Keep `DB_SSL=true`, `DB_SSL_REJECT_UNAUTHORIZED=true` and
+`DB_SSL_CA` set to the official Supabase CA PEM. Preserve the original
+`AI_MASTER_KEY`; changing it makes the migrated encrypted values unreadable.
+The Vercel build runs `npm run db:check`, a read-only check of the 25 applied
+migrations. Do not run `db:migrate` using the restricted runtime login; future
+schema changes require a separate migration account.
+
+Verified on 2026-11-05: production health reports database connected, ten read
+endpoints return 200 with a signed Core token, and unauthenticated requests return
+401. The Core bridge variables are configured locally and in Vercel.
+
+Before enabling real fiscal issuance, verify Facturama sandbox issuance, replay,
+PDF/XML and cancellation from the Core. Unit tests and the isolated SQL harness
+do not replace provider acceptance testing.

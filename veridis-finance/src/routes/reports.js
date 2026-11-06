@@ -71,6 +71,10 @@ async function reportsRoutes(app) {
 
   const READ = [ROLES.OWNER, ROLES.ADMIN, ROLES.OPS, ROLES.VIEWER];
 
+  app.get('/report/history', { preHandler: [authenticate, authorize(READ)] },
+    async (request) => ({ data: await require('../services/dashboardHistoryService')
+      .getDashboardHistory(resolveOrganizationId(request)) }));
+
   // Catálogo canónico de categorías (para poblar selects en Movimientos).
   app.get('/categories/catalog', { preHandler: [authenticate, authorize(READ)] },
     async () => ({ data: categoryReport.catalog() }));

@@ -43,6 +43,8 @@ const itemSchema = z.object({
 const issueSchema = z.object({
   organization_id: z.string().uuid().optional(),
   invoice_id: z.string().uuid().optional(),
+  ghl_contact_id: z.string().trim().min(1).max(255).optional(),
+  pushToCrm: z.boolean().optional(),
   // Either reference a stored receiver profile...
   receiver_id: z.string().uuid().optional(),
   // ...or pass the receiver's fiscal data inline.
@@ -65,6 +67,7 @@ const issueSchema = z.object({
 });
 
 const listQuerySchema = z.object({
+  ghl_contact_id: z.string().trim().min(1).max(255).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -79,9 +82,9 @@ async function issueCfdi(request, reply) {
 }
 
 async function listCfdi(request, reply) {
-  const { limit, offset } = listQuerySchema.parse(request.query);
+  const { limit, offset, ghl_contact_id } = listQuerySchema.parse(request.query);
   const organizationId = resolveOrganizationId(request);
-  const data = await cfdiService.listIssued({ organization_id: organizationId, limit, offset });
+  const data = await cfdiService.listIssued({ organization_id: organizationId, limit, offset, ghl_contact_id });
   reply.send({ data });
 }
 
