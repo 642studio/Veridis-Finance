@@ -157,10 +157,45 @@ async function upsertIssuer(organizationId, input) {
   return toPublic(rows[0]);
 }
 
+/**
+ * Resolve creds for a connection test. Lets an admin verify not-yet-saved
+ * form values (e.g. rotating a password, wiring a new tenant) before
+ * committing them, or re-test what's already stored by leaving them out.
+ */
+async function resolveCredsForTest(organizationId, overrideInput = {}) {
+  const existing = await getActiveIssuer(organizationId);
+  if (!existing && !overrideInput.pac_username && !overrideInput.pac_api_key) {
+    throw badRequest('No hay un emisor configurado. Captura RFC y credenciales primero.');
+  }
+  const provider = (overrideInput.pac_provider || existing?.pac_provider || 'facturama').toLowerCase();
+  const env =
+    (overrideInput.pac_env || existing?.pac_env || 'sandbox') === 'production' ? 'production' : 'sandbox';
+
+  if (provider === 'facturama') {
+    const user =
+      overrideInput.pac_username ||
+      (existing?.pac_username_enc ? decrypt(existing.pac_username_enc) : process.env.FACTURAMA_USER);
+    const password =
+      overrideInput.pac_password ||
+      (existing?.pac_api_key_enc ? decrypt(existing.pac_api_key_enc) : process.env.FACTURAMA_PASSWORD);
+    if (!user || !password) {
+      throw badRequest('Captura usuario y contraseña de Facturama para probar la conexión.');
+    }
+    return { provider, creds: { user, password, env } };
+  }
+
+  const apiKey =
+    overrideInput.pac_api_key ||
+    (existing?.pac_api_key_enc ? decrypt(existing.pac_api_key_enc) : process.env.FACTURAPI_KEY);
+  if (!apiKey) throw badRequest('Captura la API key de Facturapi para probar la conexión.');
+  return { provider, creds: { apiKey } };
+}
+
 module.exports = {
   getActiveIssuer,
   getIssuerPublic,
   resolveCreds,
+  resolveCredsForTest,
   upsertIssuer,
   toPublic,
 };

@@ -69,4 +69,10 @@ async function cancel(id, opts = {}, creds) {
   });
 }
 
-module.exports = { stampIngreso, getDocument, cancel };
+/** Verify the API key actually authenticates, without issuing anything. */
+async function testConnection(creds) {
+  const org = await getClient(creds).organizations.me();
+  return { ok: true, organization: org?.legal_name || org?.name || null };
+}
+
+module.exports = { stampIngreso, getDocument, cancel, testConnection };

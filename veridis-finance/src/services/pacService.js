@@ -86,6 +86,13 @@ function getXml(id, { provider, creds } = {}) {
   return resolve(provider).getXml(id, creds);
 }
 
+/** Verify credentials authenticate against the real PAC, without issuing anything. */
+function testConnection({ provider, creds } = {}) {
+  const p = resolve(provider);
+  if (typeof p.testConnection !== 'function') throw notSupported('prueba de conexión');
+  return p.testConnection(creds);
+}
+
 module.exports = {
   stampIngreso,
   stampEgreso,
@@ -96,5 +103,6 @@ module.exports = {
   list,
   getPdf,
   getXml,
+  testConnection,
   resolve,
 };

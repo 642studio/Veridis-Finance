@@ -399,6 +399,15 @@ async function getDocument(id, creds) {
   return request('GET', `/cfdi/${id}`, null, creds);
 }
 
+/**
+ * Verify the account/password actually authenticate, without issuing or
+ * consuming anything. A read-only call is the only "ping" this API offers.
+ */
+async function testConnection(creds) {
+  await request('GET', '/cfdi?type=received', null, creds);
+  return { ok: true };
+}
+
 /** List CFDIs the account has issued or received. type: 'issued' | 'received'. */
 async function list(type = 'received', creds) {
   const rows = await request('GET', `/cfdi?type=${type}`, null, creds);
@@ -438,4 +447,5 @@ module.exports = {
   getPdf,
   getXml,
   cancel,
+  testConnection,
 };

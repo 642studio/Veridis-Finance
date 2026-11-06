@@ -3,6 +3,7 @@ const { z } = require('zod');
 const cfdiService = require('../services/cfdiService');
 const ghlService = require('../services/ghlService');
 const issuersService = require('../services/cfdiIssuersService');
+const pacService = require('../services/pacService');
 const { resolveOrganizationId } = require('../middleware/auth');
 
 // RFC: 3-4 letters + 6 digits (date) + 3 alphanumeric homoclave. Persona moral
@@ -18,6 +19,16 @@ const issuerSchema = z.object({
   pac_env: z.enum(['sandbox', 'production']).default('sandbox'),
   pac_organization_id: z.string().trim().max(255).optional(),
   // Secrets — write-only, only applied when provided (rotation-friendly).
+  pac_username: z.string().trim().max(255).optional(),
+  pac_password: z.string().trim().max(500).optional(),
+  pac_api_key: z.string().trim().max(500).optional(),
+});
+
+// Same secrets as issuerSchema, but all optional — a test can verify freshly
+// typed credentials before saving, or re-test what's already stored.
+const testIssuerSchema = z.object({
+  pac_provider: z.enum(['facturama', 'facturapi']).optional(),
+  pac_env: z.enum(['sandbox', 'production']).optional(),
   pac_username: z.string().trim().max(255).optional(),
   pac_password: z.string().trim().max(500).optional(),
   pac_api_key: z.string().trim().max(500).optional(),
@@ -337,6 +348,18 @@ async function putIssuer(request, reply) {
   reply.send({ data });
 }
 
+/**
+ * Verify PAC credentials actually authenticate, without issuing or consuming
+ * anything. Lets an admin catch a typo'd password before relying on it.
+ */
+async function testIssuer(request, reply) {
+  const payload = testIssuerSchema.parse(request.body || {});
+  const organizationId = resolveOrganizationId(request);
+  const { provider, creds } = await issuersService.resolveCredsForTest(organizationId, payload);
+  await pacService.testConnection({ provider, creds });
+  reply.send({ data: { ok: true, provider, env: creds.env || null } });
+}
+
 module.exports = {
   issueCfdi,
   listCfdi,
@@ -353,4 +376,5 @@ module.exports = {
   syncInvoices,
   getIssuer,
   putIssuer,
+  testIssuer,
 };

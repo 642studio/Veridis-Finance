@@ -14,6 +14,7 @@ const {
   syncInvoices,
   getIssuer,
   putIssuer,
+  testIssuer,
 } = require('../controllers/cfdiController');
 const { authenticate, authorize, ROLES } = require('../middleware/auth');
 
@@ -28,6 +29,12 @@ async function cfdiRoutes(app) {
     '/cfdi/issuer',
     { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
     putIssuer
+  );
+  // Verify PAC credentials authenticate without issuing anything. Owner/Admin only.
+  app.post(
+    '/cfdi/issuer/test',
+    { preHandler: [authenticate, authorize([ROLES.OWNER, ROLES.ADMIN])] },
+    testIssuer
   );
 
   // Emit (timbrar) a CFDI de Ingreso.
